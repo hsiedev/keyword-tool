@@ -5,6 +5,7 @@ GitHub 커밋 기록(저장소 > Commits)에 파일 단위 변경이 모두 남�
 ## 2026-11-11
 - GitHub 자동 백업: 비공개 저장소(hsiedev/keyword-tool)에 코드 자동 업로드, 설정 > API 설정 > GitHub 백업
 - 새 PC 설치 안내(README 맨 위)
+- AGENTS.md: 다른 AI·개발자용 안내 (GitHub 업로드 구조, 수정 후 할 일, 지켜야 할 규칙)
 
 ## 2026-11-10
 - 화면 디자인 개편 (shadcn 대시보드 스타일): 왼쪽 사이드바, 상단 바, 라이트/다크 모드

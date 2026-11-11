@@ -2,6 +2,8 @@
 
 네이버 검색량·연관 키워드·트렌드·섹션 분석, AI 키워드 생성, 중복 검사, 대량 분석을 내 PC에서 돌리는 도구예요.
 
+> **AI·개발자용 안내는 [AGENTS.md](AGENTS.md)** 에 있어요: GitHub 자동 백업 구조, 파일 구조, 수정 후 해야 할 일, 지켜야 할 규칙.
+
 ## 새 PC에 설치하기 (어디서든 같은 환경으로)
 
 1. **Node.js 설치** (한 번만): https://nodejs.org 에서 LTS 설치. 또는 명령 창에서 `winget install OpenJS.NodeJS.LTS`
