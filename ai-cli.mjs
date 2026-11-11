@@ -11,7 +11,7 @@ const WIN = process.platform === 'win32';
 export const CLI = {
   agy: { name: 'Gemini (구글 로그인)', bin: 'agy', tool: 'Antigravity CLI', loginCmd: (p) => q(p), statusArgs: null,
     install: WIN ? { shell: 'powershell', cmd: 'irm https://antigravity.google/cli/install.ps1 | iex' } : { shell: 'sh', cmd: 'curl -fsSL https://antigravity.google/cli/install.sh | bash' },
-    loginHelp: '창이 열리면 "Google OAuth"를 고르고 브라우저에서 구글 계정으로 로그인하세요. 로그인되면 /exit 를 입력해 닫으면 돼요.' },
+    loginHelp: '처음 실행이면 색 테마 등은 Enter로 넘기고, 폴더 신뢰(trust)는 Yes. 로그인 방법은 Google OAuth를 고르고 브라우저에서 구글 계정으로 로그인하세요. 입력창이 보이면 /exit 로 닫으면 돼요.' },
   claude: { name: 'Claude (로그인)', bin: 'claude', tool: 'Claude Code', loginCmd: (p) => `${q(p)} auth login`, statusArgs: ['auth', 'status'],
     install: WIN ? { shell: 'powershell', cmd: 'irm https://claude.ai/install.ps1 | iex' } : { shell: 'sh', cmd: 'curl -fsSL https://claude.ai/install.sh | bash' },
     loginHelp: '브라우저가 열리면 Claude 구독 계정(Pro·Max)으로 로그인하세요. "Anthropic Console(API)"이 아니라 구독 계정을 고르세요.' },
@@ -29,12 +29,31 @@ const WORK = path.join(os.tmpdir(), 'keyword-tool-ai'); // 빈 작업 폴더 (CL
 
 // ---------------------------------------------------------------- 실행 파일 찾기
 const found = new Map(); // name → { path, at }
+let regPath = { at: 0, value: '' };
+function freshPath() {
+  if (!WIN) return process.env.PATH || '';
+  if (Date.now() - regPath.at < 15000) return regPath.value;
+  const read = (key) => { try { const out = execFileSync('reg.exe', ['query', key, '/v', 'Path'], { encoding: 'utf8', timeout: 4000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }); const m = /Path\s+REG_(?:EXPAND_)?SZ\s+(.*)/i.exec(out); return m ? m[1].trim() : ''; } catch { return ''; } };
+  const expand = (s) => s.replace(/%([^%]+)%/g, (x, k) => process.env[k] ?? x);
+  const parts = [process.env.PATH || '', expand(read('HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment')), expand(read('HKCU\\Environment'))].join(';').split(';').map((s) => s.trim()).filter(Boolean);
+  regPath = { at: Date.now(), value: [...new Set(parts)].join(';') };
+  return regPath.value;
+}
 function candidates(name) {
   const L = process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local');
   const A = process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming');
   if (!WIN) return [path.join(HOME, '.local', 'bin', name), path.join(NODE_DIR, name), `/usr/local/bin/${name}`, `/opt/homebrew/bin/${name}`, path.join(HOME, '.claude', 'local', name)];
+  const PF = process.env.ProgramFiles || 'C:\\Program Files';
+  const fnmDirs = [];
+  for (const base of [path.join(A, 'fnm', 'node-versions'), path.join(L, 'fnm', 'node-versions')]) {
+    try { for (const v of fs.readdirSync(base)) fnmDirs.push(path.join(base, v, 'installation')); } catch {}
+  }
   return [
+    // Antigravity CLI 공식 Windows 위치: %LOCALAPPDATA%\agy\bin
+    path.join(L, 'agy', 'bin', name + '.exe'),
+    path.join(PF, 'Google', 'antigravity-cli', name + '.exe'),
     path.join(HOME, '.local', 'bin', name + '.exe'),
+    ...fnmDirs.flatMap((d) => [path.join(d, name + '.cmd'), path.join(d, name + '.exe')]),
     path.join(NODE_DIR, name + '.cmd'), path.join(NODE_DIR, name + '.exe'),
     path.join(A, 'npm', name + '.cmd'),
     path.join(L, 'Programs', name, name + '.exe'),
@@ -54,7 +73,7 @@ export function cliPath(p, config = {}, fresh = false) {
   const name = CLI[p].bin;
   let out = null;
   try {
-    const r = execFileSync(WIN ? 'where.exe' : 'which', [name], { encoding: 'utf8', timeout: 4000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+    const r = execFileSync(WIN ? 'where.exe' : 'which', [name], { encoding: 'utf8', timeout: 4000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, PATH: freshPath() } });
     const lines = r.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
     out = lines.find((l) => /\.exe$/i.test(l)) || lines.find((l) => /\.(cmd|bat)$/i.test(l)) || (WIN ? null : lines[0]) || null;
   } catch {}
@@ -69,6 +88,7 @@ const childEnv = () => {
   // 키가 환경 변수에 있으면 CLI가 API(유료)로 붙을 수 있어서 지움 → 항상 로그인 계정 사용
   for (const k of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'OPENAI_API_KEY', 'CODEX_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GOOGLE_GENAI_USE_VERTEXAI']) delete e[k];
   e.NO_COLOR = '1';
+  e.PATH = freshPath(); // 설치 후 바뀐 PATH 반영 (CLI가 다른 프로그램을 찾을 수 있게)
   return e;
 };
 function launch(file, args, opts) {
@@ -208,7 +228,8 @@ export function openConsole(p, action, config = {}) {
   const clean = (s) => s.replace(/["&|<>^%]/g, ' ');
   const script = `title ${clean(title)} & echo. & echo ${clean(note)} & echo. & ${line}`;
   // cmd /k "..." : 앞뒤 따옴표만 벗겨지고 안쪽 명령(경로 따옴표 포함)은 그대로 실행됨
-  const child = spawn('cmd.exe', ['/d', '/c', `start "" cmd.exe /k "${script}"`], { detached: true, stdio: 'ignore', windowsHide: false, windowsVerbatimArguments: true, env: childEnv(), cwd: HOME });
+  fs.mkdirSync(WORK, { recursive: true });
+  const child = spawn('cmd.exe', ['/d', '/c', `start "" cmd.exe /k "${script}"`], { detached: true, stdio: 'ignore', windowsHide: false, windowsVerbatimArguments: true, env: childEnv(), cwd: action === 'login' ? WORK : HOME });
   child.unref();
   found.delete(p);
   return { opened: true, command: line };
