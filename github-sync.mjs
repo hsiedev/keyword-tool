@@ -73,14 +73,15 @@ export function createGitSync(root) {
           f.sha = b.sha;
         }
         const t = await api(c, 'POST', '/git/trees', { tree: local.map((f) => ({ path: f.p, mode: /\.(bat|cmd)$/i.test(f.p) ? '100644' : '100644', type: 'blob', sha: f.sha })) });
-        let message = '';
-        try { message = fs.readFileSync(MSG, 'utf8').trim(); } catch {}
+        let message = '', msgRaw = null;
+        try { msgRaw = fs.readFileSync(MSG, 'utf8'); message = msgRaw.trim(); } catch {}
         const list = [...changed.map((f) => f.p), ...removed.map((p) => p + ' (삭제)')];
         if (!message) message = `자동 백업: ${list.slice(0, 6).join(', ')}${list.length > 6 ? ` 외 ${list.length - 6}개` : ''}`;
         message += `\n\n바뀐 파일 (${list.length}):\n${list.map((x) => '- ' + x).join('\n')}`;
         const nc = await api(c, 'POST', '/git/commits', { message, tree: t.sha, parents: [head] });
         await api(c, 'PATCH', `/git/refs/heads/${branch}`, { sha: nc.sha });
-        try { fs.unlinkSync(MSG); } catch {}
+        // 읽은 설명만 지움 (올리는 동안 새로 쓴 설명은 다음 커밋에 씀)
+        try { if (msgRaw != null && fs.readFileSync(MSG, 'utf8') === msgRaw) fs.unlinkSync(MSG); } catch {}
         saveState({ lastSync: Date.now(), lastCheck: Date.now(), lastCommit: nc.sha, lastMessage: message.split('\n')[0], lastFiles: list, error: '', pending: 0 });
         console.log(`  GitHub 백업: ${list.length}개 파일 올림 (${nc.sha.slice(0, 7)})${reason ? ' · ' + reason : ''}`);
         return { ok: true, changed: list.length, commit: nc.sha, files: list };

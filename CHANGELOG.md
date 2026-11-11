@@ -3,6 +3,7 @@
 GitHub 커밋 기록(저장소 > Commits)에 파일 단위 변경이 모두 남아요. 여기는 기능 단위 요약이에요.
 
 ## 2026-11-11
+- GitHub 자동 백업: 업로드 중 새로 쓴 커밋 설명이 지워지던 버그 수정
 - 로그인형 AI 설치 인식 수정: Antigravity CLI Windows 설치 위치(%LOCALAPPDATA%\agy\bin) 추가, 설치 후 바뀐 PATH를 레지스트리에서 다시 읽음, fnm 노드 폴더(npm 전역 설치) 탐색, Antigravity 로그인을 분석 작업 폴더에서 실행
 - GitHub 자동 백업: 비공개 저장소(hsiedev/keyword-tool)에 코드 자동 업로드, 설정 > API 설정 > GitHub 백업
 - 새 PC 설치 안내(README 맨 위)
