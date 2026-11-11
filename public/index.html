@@ -129,7 +129,7 @@
           <div class="muted" style="font-size:12px;line-height:1.7">
             각 회사의 공식 프로그램(CLI)을 이 PC에 설치하고 <b>한 번 로그인</b>해 두면, 분석기가 그 계정으로 AI를 써요.
             API 키·충전이 필요 없고, 대신 <b>각 구독의 사용 한도</b>가 적용돼요. 실행할 때마다 프로그램을 띄우느라 API보다 느려요(한 번에 10~60초).
-            <br>순서: <b>[설치]</b> → 창에서 설치가 끝나면 <b>[다시 확인]</b> → <b>[로그인]</b> → 브라우저에서 로그인 → <b>[테스트]</b>
+            <br><b>[설치]</b>만 누르면 나머지는 자동이에요: 설치가 끝나면 확인 → 로그인이 안 돼 있으면 로그인 창 → 창이 닫히면 테스트. 브라우저에서 로그인만 해주세요.
           </div>
           <div style="display:flex;justify-content:flex-end;margin:6px 0"><button class="btn" type="button" id="cliRefresh">다시 확인</button></div>
           <div id="cliBox"></div>
@@ -364,6 +364,71 @@ $('#c_model').onchange = async (e) => { await setModel(e.target.value); $('#mode
 
 /* 로그인형 AI 카드: 설치 · 로그인 · 테스트 */
 let CLI_ST = null;
+const CLI_MSG = {}, CLI_RUN = {}; // 카드별 안내 문구 / 자동 진행 중인지
+function cliSay(p, h) { CLI_MSG[p] = h; const el = document.querySelector(`.cli-card[data-p="${p}"] .cli-out`); if (el) el.innerHTML = h; }
+const cliWatch = (p, login) => fetch(`/api/ai/cli-watch?provider=${p}${login ? '&login=1' : ''}`).then((r) => r.json());
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// [설치] / [로그인] 을 누르면 끝까지 자동으로: 설치 확인 → (로그인 안 됐으면) 로그인 창 → 창이 닫히면 테스트
+async function cliAuto(p, start) {
+  if (CLI_RUN[p]) return;
+  CLI_RUN[p] = true; drawCli();
+  const P = PROV[p];
+  try {
+    if (start === 'install') {
+      cliSay(p, '설치 창을 여는 중...');
+      const r = await cliPost('/api/ai/cli-open', { provider: p, action: 'install' });
+      if (!r.ok) throw new Error(r.error || '설치 창을 열지 못했어요');
+      if (!r.opened) { cliSay(p, `이 PC에서는 창을 자동으로 못 열어요. 터미널에서 직접 실행하세요: <code>${esc(r.command)}</code>`); return; }
+      const t0 = Date.now();
+      let w = null, after = 0;
+      for (;;) {
+        await wait(3000);
+        w = await cliWatch(p).catch(() => null);
+        const sec = Math.round((Date.now() - t0) / 1000);
+        if (w?.path && !w.job?.running) break; // 설치 창까지 닫히면 완료
+        if (w?.path) cliSay(p, `<span class="spin" style="display:inline-block;width:12px;height:12px;border-width:2px;vertical-align:-2px"></span> 설치된 것을 확인했어요. 설치 창이 닫히길 기다리는 중 · ${sec}초`);
+        else cliSay(p, `<span class="spin" style="display:inline-block;width:12px;height:12px;border-width:2px;vertical-align:-2px"></span> 설치 중 · ${sec}초 (끝나면 자동으로 확인해요)`);
+        if (w && !w.job?.running && !w.path) { if (++after >= 3) throw new Error('설치 창이 닫혔는데 프로그램을 찾지 못했어요. 창에 오류가 있었다면 [설치]를 다시 누르거나, 아래 "실행 파일 위치"에 직접 지정해 주세요.'); }
+        if (Date.now() - t0 > 15 * 60 * 1000) throw new Error('설치가 15분 넘게 끝나지 않아요. 설치 창을 확인해 주세요.');
+      }
+      cliSay(p, '설치를 확인했어요. 상태를 다시 확인하는 중...');
+      await refreshCli();
+      if (CLI_ST?.[p]?.login === true) { cliSay(p, '<b style="color:#16a34a">설치 완료 · 이미 로그인돼 있어요.</b> 테스트하는 중...'); await cliTestRun(p); return; }
+    }
+    // 로그인
+    cliSay(p, '로그인 창을 여는 중...');
+    const r = await cliPost('/api/ai/cli-open', { provider: p, action: 'login' });
+    if (!r.ok) throw new Error(r.error || '로그인 창을 열지 못했어요');
+    if (!r.opened) { cliSay(p, `이 PC에서는 창을 자동으로 못 열어요. 터미널에서 직접 실행하세요: <code>${esc(r.command)}</code>`); return; }
+    const t1 = Date.now();
+    const hint = p === 'agy' ? '검은 창에서 Enter로 넘기고 폴더 신뢰는 Yes → Google OAuth → 브라우저에서 로그인 → 입력칸이 보이면 <b>/exit</b>' : p === 'claude' ? '브라우저에서 Claude 구독 계정으로 로그인 (Console 아님)' : '브라우저에서 <b>Sign in with ChatGPT</b>로 로그인';
+    for (let i = 0; ; i++) {
+      await wait(3000);
+      const w = await cliWatch(p, i % 2 === 1).catch(() => null);
+      const sec = Math.round((Date.now() - t1) / 1000);
+      if (w?.login === true || (w && !w.job?.running)) break; // 로그인 확인됐거나 창이 닫힘
+      cliSay(p, `<span class="spin" style="display:inline-block;width:12px;height:12px;border-width:2px;vertical-align:-2px"></span> 로그인 기다리는 중 · ${sec}초<br>${hint}. 창이 닫히면 자동으로 테스트해요.`);
+      if (Date.now() - t1 > 20 * 60 * 1000) throw new Error('로그인을 20분 넘게 기다렸어요. 로그인 창을 확인하고 [로그인]을 다시 눌러주세요.');
+    }
+    cliSay(p, '로그인 창이 닫혔어요. 테스트하는 중... (처음엔 30초 이상 걸릴 수 있어요)');
+    await cliTestRun(p);
+  } catch (e) {
+    cliSay(p, `<span style="color:#b91c1c">${esc(e.message)}</span>`);
+  } finally {
+    CLI_RUN[p] = false; drawCli();
+  }
+}
+async function cliTestRun(p) {
+  const t0 = Date.now();
+  const r = await cliPost('/api/ai/cli-test', { provider: p });
+  if (r.ok) {
+    if (CLI_ST?.[p]) CLI_ST[p].login = true;
+    cliSay(p, `<b style="color:#16a34a">정상 · 바로 쓸 수 있어요</b> (${Math.round((r.ms || Date.now() - t0) / 1000)}초)${AICFG.provider === p ? '' : ' · [이 AI 쓰기]를 누르면 이 AI로 바뀌어요'}`);
+  } else {
+    cliSay(p, `<span style="color:#b91c1c">${esc(r.error || '응답이 예상과 달라요: ' + (r.text || ''))}</span><br>로그인이 덜 됐으면 <b>[로그인]</b>을 다시 눌러주세요.`);
+  }
+  return r.ok;
+}
 const cliPost = (u, b) => fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) }).then((r) => r.json());
 function drawCli() {
   const box = $('#cliBox');
@@ -376,9 +441,9 @@ function drawCli() {
     return `<div class="cli-card" data-p="${p}">
       <div class="cli-top"><b>${esc(P.name)}</b> <span class="muted">${esc(P.tool)}</span>
         ${AICFG.provider === p ? '<span class="lvl l1">사용 중</span>' : ''}<span style="flex:1"></span>
-        <button class="btn sm" type="button" data-a="install">${inst ? '다시 설치·업데이트' : '설치'}</button>
-        <button class="btn sm" type="button" data-a="login" ${inst ? '' : 'disabled'}>로그인</button>
-        <button class="btn sm" type="button" data-a="test" ${inst ? '' : 'disabled'}>테스트</button>
+        <button class="btn sm" type="button" data-a="install" ${CLI_RUN[p] ? 'disabled' : ''}>${inst ? '다시 설치·업데이트' : '설치'}</button>
+        <button class="btn sm" type="button" data-a="login" ${inst && !CLI_RUN[p] ? '' : 'disabled'}>로그인</button>
+        <button class="btn sm" type="button" data-a="test" ${inst && !CLI_RUN[p] ? '' : 'disabled'}>테스트</button>
         ${AICFG.provider === p ? '' : `<button class="btn sm" type="button" data-a="use" ${inst ? '' : 'disabled'}>이 AI 쓰기</button>`}</div>
       <div class="cli-st">${inst ? `<b style="color:#16a34a">설치됨</b>${st?.version ? ' · ' + esc(st.version) : ''} · ${login}` : '<b style="color:#b91c1c">설치 안 됨</b>'}</div>
       <div class="muted" style="font-size:12px">필요한 계정: ${esc(P.need)}</div>
@@ -388,28 +453,19 @@ function drawCli() {
         <details><summary class="muted" style="font-size:12px;cursor:pointer">실행 파일 위치 ${path ? '· ' + esc(path) : ''}</summary>
           <label class="inl" style="margin-top:4px">직접 지정 <input type="text" data-k="path" value="${esc(AICFG.custom?.[p] || '')}" placeholder="자동으로 못 찾을 때만 (예: C:\\Users\\...\\${p}.exe)" style="width:360px"></label></details>
       </div>
-      <div class="cli-out muted" style="font-size:12px"></div>
+      <div class="cli-out muted" style="font-size:12px">${CLI_MSG[p] || ''}</div>
     </div>`;
   }).join('');
   $$('.cli-card', box).forEach((card) => {
     const p = card.dataset.p, out = card.querySelector('.cli-out');
-    const say = (h) => (out.innerHTML = h);
+    const say = (h) => cliSay(p, h);
     card.querySelectorAll('[data-a]').forEach((b) => (b.onclick = async () => {
       const a = b.dataset.a;
-      if (a === 'install' || a === 'login') {
-        say('창을 여는 중...');
-        const r = await cliPost('/api/ai/cli-open', { provider: p, action: a });
-        if (!r.ok) return say(`<span style="color:#b91c1c">${esc(r.error || '실패')}</span>`);
-        say(r.opened ? (a === 'install' ? '설치 창을 열었어요. 설치가 끝나면 창을 닫고 위의 <b>[다시 확인]</b>을 누르세요.' : '로그인 창을 열었어요. 안내에 따라 브라우저에서 로그인한 뒤 <b>[테스트]</b>를 눌러보세요.')
-          : `이 PC에서는 창을 자동으로 못 열어요. 터미널에서 직접 실행하세요: <code>${esc(r.command)}</code>`);
-      }
+      if (a === 'install' || a === 'login') return cliAuto(p, a);
       if (a === 'test') {
         b.disabled = true; say('테스트 중... (처음엔 30초 이상 걸릴 수 있어요)');
-        const t0 = Date.now();
-        const r = await cliPost('/api/ai/cli-test', { provider: p });
+        await cliTestRun(p);
         b.disabled = false;
-        say(r.ok ? `<b style="color:#16a34a">정상</b> · ${Math.round((r.ms || Date.now() - t0) / 1000)}초 걸렸어요` : `<span style="color:#b91c1c">${esc(r.error || '응답이 예상과 달라요: ' + (r.text || ''))}</span>`);
-        if (CLI_ST?.[p] && r.ok) { CLI_ST[p].login = true; }
       }
       if (a === 'use') { await setProvider(p); drawCli(); $('#modelOut').textContent = `${PROV[p].name}(으)로 바꿨어요.`; }
     }));

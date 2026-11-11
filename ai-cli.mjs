@@ -205,6 +205,9 @@ export async function cliTest(p, config = {}, model = '') {
 }
 
 // ---------------------------------------------------------------- 로그인·설치 창 열기 (Windows: 새 명령 창)
+// 열린 설치·로그인 창 추적: { [p]: { action, running, startedAt, endedAt } }
+const jobs = {};
+export const cliJobs = () => jobs;
 export function openConsole(p, action, config = {}) {
   const c = CLI[p];
   const file = cliPath(p, config, true);
@@ -223,14 +226,23 @@ export function openConsole(p, action, config = {}) {
   } else throw new Error('알 수 없는 동작');
   if (!WIN) return { opened: false, command: line };
   const title = `키워드 분석기 - ${c.tool} ${action === 'login' ? '로그인' : '설치'}`;
-  const note = action === 'login' ? c.loginHelp : '설치가 끝나면 이 창을 닫고 분석기 설정에서 [다시 확인]을 누르세요.';
-  // 새 창: 안내 문구 → 명령 실행 → 창 유지
-  const clean = (s) => s.replace(/["&|<>^%]/g, ' ');
-  const script = `title ${clean(title)} & echo. & echo ${clean(note)} & echo. & ${line}`;
-  // cmd /k "..." : 앞뒤 따옴표만 벗겨지고 안쪽 명령(경로 따옴표 포함)은 그대로 실행됨
+  if (jobs[p]?.running) return { opened: true, already: true, command: line, job: jobs[p] };
+  const note = action === 'login' ? c.loginHelp : '설치 중이에요. 끝나면 이 창은 자동으로 닫히고, 분석기가 알아서 확인한 뒤 로그인으로 이어가요.';
+  const clean = (s) => s.replace(/["&|<>^%()]/g, ' ');
+  // 설치: 성공하면 4초 뒤 자동으로 닫힘, 실패하면 내용을 볼 수 있게 멈춤
+  // 로그인: 로그인 프로그램이 끝나면(Antigravity는 /exit) 3초 뒤 닫힘
+  const tail = action === 'install'
+    ? ` && (echo. & echo 설치 명령이 끝났어요. 4초 뒤 창이 닫혀요. & timeout /t 4 >nul) || (echo. & echo 설치 중 오류가 났어요. 위 내용을 확인한 뒤 아무 키나 누르면 창이 닫혀요. & pause >nul)`
+    : ` & echo. & echo 로그인 창을 닫아요. 분석기가 자동으로 테스트해요. & timeout /t 3 >nul`;
+  const script = `title ${clean(title)} & echo. & echo ${clean(note)} & echo. & ${line}${tail}`;
   fs.mkdirSync(WORK, { recursive: true });
-  const child = spawn('cmd.exe', ['/d', '/c', `start "" cmd.exe /k "${script}"`], { detached: true, stdio: 'ignore', windowsHide: false, windowsVerbatimArguments: true, env: childEnv(), cwd: action === 'login' ? WORK : HOME });
-  child.unref();
+  // start /wait : 새 창이 닫힐 때까지 기다림 → 닫히면 'close' 이벤트로 끝난 것을 앎
+  // cmd /c "..." : 앞뒤 따옴표만 벗겨지고 안쪽 명령(경로 따옴표 포함)은 그대로 실행됨
+  const child = spawn('cmd.exe', ['/d', '/c', `start "" /wait cmd.exe /c "${script}"`], { stdio: 'ignore', windowsHide: false, windowsVerbatimArguments: true, env: childEnv(), cwd: action === 'login' ? WORK : HOME });
+  const job = (jobs[p] = { action, running: true, startedAt: Date.now(), endedAt: 0 });
+  const end = () => { if (!job.running) return; job.running = false; job.endedAt = Date.now(); found.delete(p); regPath.at = 0; };
+  child.on('close', end); child.on('error', end);
+  setTimeout(end, 30 * 60 * 1000); // 30분 넘게 열려 있으면 끝난 것으로 봄
   found.delete(p);
-  return { opened: true, command: line };
+  return { opened: true, command: line, job };
 }

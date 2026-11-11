@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { exec } from 'node:child_process';
 import { DEFAULT_SETTINGS, normalizeSettings } from './settings-defaults.mjs';
 import { parseSections } from './sections.mjs';
-import { CLI, CLI_MODELS, cliPath, runCli, cliStatus, cliTest, openConsole } from './ai-cli.mjs';
+import { CLI, CLI_MODELS, cliPath, runCli, cliStatus, cliTest, openConsole, cliJobs } from './ai-cli.mjs';
 import { createGitSync } from './github-sync.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1127,6 +1127,13 @@ const server = http.createServer(async (req, res) => {
           const out = {};
           for (const p of Object.keys(CLI)) out[p] = await cliStatus(p, config);
           return send(res, 200, { cli: out });
+        }
+        if (u.pathname === '/api/ai/cli-watch') {
+          const p = u.searchParams.get('provider');
+          if (!CLI[p]) return send(res, 400, { error: '알 수 없는 AI' });
+          const st = { path: cliPath(p, config, true), job: cliJobs()[p] || null };
+          if (u.searchParams.get('login') === '1' && st.path && CLI[p].statusArgs) { try { st.login = (await cliStatus(p, config)).login; } catch {} }
+          return send(res, 200, st);
         }
         if (u.pathname === '/api/ai/cli-test' && req.method === 'POST') {
           const b = await readBody(req);
