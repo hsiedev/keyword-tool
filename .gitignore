@@ -1,0 +1,8 @@
+# 키 · 토큰 · 캐시 · 개인 데이터는 올리지 않음
+config.json
+cache.json
+data/*
+!data/settings.json
+backup/
+node_modules/
+*.tmp

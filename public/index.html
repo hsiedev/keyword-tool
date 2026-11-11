@@ -1,0 +1,975 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>키워드 분석기 (로컬)</title>
+<!-- 테마: 화면이 그려지기 전에 다크 모드 적용 (깜빡임 방지) -->
+<script>(function(){try{var t=localStorage.getItem('theme')||'light';if(t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark');}catch(e){}})();</script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">K</span><span class="bname">키워드 분석기</span> <small>LOCAL · NAVER</small></div>
+  <form id="searchForm" autocomplete="off"><input id="q" placeholder="분석할 키워드를 입력하세요 (예: 운전자보험)"><button>분석</button></form>
+  <div class="top-actions">
+    <button class="ghost" id="histBtn">검색 기록 (<span id="histCount">0</span>)</button>
+    <button class="ghost" id="setBtn">설정</button>
+  </div>
+  <div id="histPanel" class="dropdown hidden"></div>
+</header>
+<nav class="tabs hidden" id="tabs">
+  <a href="#sec-basic" class="on">기본 정보</a>
+  <a href="#sec-related">연관 키워드</a>
+  <a href="#sec-trend">트렌드 분석</a>
+  <a href="#sec-section">섹션 분석</a>
+  <a href="#sec-intent">성향 분석</a>
+</nav>
+<div id="banners"></div>
+<main id="main">
+  <div class="empty" id="empty">
+    <h1>네이버 키워드 분석</h1>
+    <div>월간 검색량, 연관 키워드, 트렌드, 검색결과 섹션 배치, 키워드 성향을 한 번에 확인해요.</div>
+    <div class="chips" id="quick"></div>
+  </div>
+  <div id="result"></div>
+</main>
+
+<div class="modal-bg hidden" id="modalBg">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="mh-top">
+        <h2>설정</h2>
+        <div class="mh-btns">
+          <button class="btn act-test" type="button">연결 테스트</button>
+          <button class="btn act-close" type="button">닫기</button>
+          <button class="btn pri act-save" type="button">저장</button>
+        </div>
+      </div>
+      <div class="mtabs">
+        <button type="button" data-mt="api" class="on">API 설정</button>
+        <button type="button" data-mt="ui">화면 · 커스텀</button>
+        <button type="button" data-mt="rules">규칙 · 알고리즘</button>
+      </div>
+      <div id="testOut"></div>
+    </div>
+    <div class="mbody">
+      <div class="api-only">
+        <div class="subtabs"><button type="button" data-st="naver" class="on">네이버 API</button><button type="button" data-st="ai">AI 모델</button><button type="button" data-st="github">GitHub 백업</button></div>
+        <div class="muted" style="margin-top:6px">키는 이 PC의 <code>config.json</code> 파일에만 저장되고, 각 API 제공사 외에는 어디로도 전송되지 않아요.</div>
+      </div>
+      <div class="mpane hidden" data-pane="github">
+        <fieldset>
+          <legend>GitHub 자동 백업 <span class="muted" id="ghBadge"></span></legend>
+          <div class="muted" style="font-size:12px;line-height:1.7">코드·화면·규칙 설정을 비공개 저장소에 올려요. 서버가 켜져 있으면 파일이 바뀐 뒤 30초 안에 자동으로 올라가고, 바뀐 내용은 커밋 기록으로 남아요.<br>
+            <b>올리지 않는 것</b>: API 키(config.json), GitHub 토큰, 캐시, 백업 폴더, 기존 키워드 목록·대량 분석 내역(아래에서 켤 수 있어요)</div>
+          <div id="ghStatus" style="margin:10px 0;font-size:13px;line-height:1.8"></div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn pri" type="button" id="ghSync">지금 올리기</button><a class="btn" id="ghOpen" target="_blank" href="#">저장소 열기</a><a class="btn" id="ghLog" target="_blank" href="#">수정 기록 보기</a></div>
+          <label style="margin-top:14px">저장소 (소유자/이름)</label><input id="ghRepo" placeholder="hsiedev/keyword-tool">
+          <label>토큰 <span class="muted">(fine-grained, 이 저장소 Contents 읽기·쓰기만)</span></label><input id="ghToken" placeholder="github_pat_...">
+          <label class="inl" style="margin-top:10px"><input type="checkbox" id="ghData"> 기존 키워드 목록·대량 분석 내역도 올리기 (다른 PC에서 그대로 이어 쓰기)</label>
+          <div style="margin-top:10px"><button class="btn" type="button" id="ghSave">GitHub 설정 저장</button> <a class="ext" href="https://github.com/settings/personal-access-tokens/new" target="_blank" style="font-size:12px;margin-left:6px">새 토큰 만들기</a></div>
+        </fieldset>
+      </div>
+      <div class="mpane hidden" data-pane="ui"></div>
+      <div class="mpane hidden" data-pane="rules"></div>
+
+      <div class="mpane" data-pane="naver">
+        <fieldset>
+          <legend>① 네이버 검색광고 API <span class="muted">(검색량, 연관 키워드, 입찰가)</span></legend>
+          <ol>
+            <li><a class="ext" href="https://searchad.naver.com" target="_blank">searchad.naver.com</a> 가입 및 로그인 (광고비 충전 필요 없음)</li>
+            <li>광고시스템 &gt; 도구 &gt; API 사용 관리 &gt; 네이버 검색광고 API 서비스 신청</li>
+            <li>액세스 라이선스, 비밀키, CUSTOMER_ID를 아래에 붙여넣기</li>
+          </ol>
+          <label>액세스 라이선스 (API Key)</label><input id="c_adApiKey">
+          <label>비밀키 (Secret Key)</label><input id="c_adSecret">
+          <label>CUSTOMER_ID</label><input id="c_adCustomerId">
+        </fieldset>
+        <fieldset>
+          <legend>② 네이버 검색 · 검색어 트렌드 API <span class="muted">(트렌드, 발행량, 성인 여부)</span></legend>
+          <label>발급처</label>
+          <select id="c_openProvider" class="inp">
+            <option value="hub">NAVER API HUB (네이버 클라우드, 2026년 7월 이후 신규 발급)</option>
+            <option value="legacy">네이버 개발자센터 (기존에 받은 키, 2027년 6월까지)</option>
+          </select>
+          <ol>
+            <li><a class="ext" href="https://console.ncloud.com" target="_blank">네이버 클라우드 콘솔</a> 로그인 (네이버 아이디로 가입 가능, 결제수단 등록이 필요할 수 있음)</li>
+            <li>Menu &gt; All Services &gt; Application Services &gt; <b>NAVER API HUB</b> &gt; Application &gt; [Application 등록]</li>
+            <li>API에서 <b>검색(Search)</b>, <b>검색어 트렌드(Search Trend)</b> 선택 후 완료</li>
+            <li>Application 선택 &gt; API 관리 &gt; [인증 정보]에서 Client ID, Client Secret 복사</li>
+          </ol>
+          <label>Client ID</label><input id="c_clientId">
+          <label>Client Secret</label><input id="c_clientSecret">
+        </fieldset>
+      </div>
+
+      <div class="mpane hidden" data-pane="ai">
+        <fieldset class="ai-pick">
+          <legend>사용할 AI <span class="muted">(AI 키워드 생성기 · 재검증 · 의미 중복 검사)</span></legend>
+          <div class="ai-row">
+            <div><label>AI</label><select id="c_aiProvider" class="inp prov-sel"></select></div>
+            <div style="flex:1"><label>모델</label><div style="display:flex;gap:6px"><select id="c_model" class="inp model-sel"></select><button class="btn" id="modelBtn" type="button" style="white-space:nowrap">목록 새로고침</button></div></div>
+          </div>
+          <label style="display:flex;gap:6px;align-items:center;margin-top:10px;color:var(--ink);font-size:13px"><input type="checkbox" class="pin-cb" id="c_geminiPin" style="width:auto"> 모델 고정 (선택한 모델로만 실행 · Gemini API 키 방식에만 적용)</label>
+          <div class="muted" style="font-size:12px;margin-top:2px">끄면(기본) 모델이 바쁜 동안 같은 AI의 다른 모델로 자동 전환해요. 켜면 같은 모델로 약 70초 동안 5번 재시도하고, 그래도 안 되면 멈추고 알려줘요.</div>
+          <div class="muted" id="modelOut" style="margin-top:4px"></div>
+        </fieldset>
+        <fieldset>
+          <legend>Gemini API 키 <span class="muted" id="st_gemini"></span> <span class="muted" style="font-weight:500">· 키로 쓰는 방식 (무료 등급 있음)</span></legend>
+          <ol>
+            <li><a class="ext" href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio API 키 페이지</a>에서 개인 구글 계정으로 [API 키 만들기]</li>
+            <li>무료 등급이 있지만, 무료로 쓰면 보낸 내용이 구글 모델 개선에 쓰여요.</li>
+          </ol>
+          <label>API 키</label><input id="c_geminiKey">
+        </fieldset>
+        <fieldset>
+          <legend>로그인형 AI <span class="muted">(API 요금 없음 · 구독 계정으로 로그인)</span></legend>
+          <div class="muted" style="font-size:12px;line-height:1.7">
+            각 회사의 공식 프로그램(CLI)을 이 PC에 설치하고 <b>한 번 로그인</b>해 두면, 분석기가 그 계정으로 AI를 써요.
+            API 키·충전이 필요 없고, 대신 <b>각 구독의 사용 한도</b>가 적용돼요. 실행할 때마다 프로그램을 띄우느라 API보다 느려요(한 번에 10~60초).
+            <br>순서: <b>[설치]</b> → 창에서 설치가 끝나면 <b>[다시 확인]</b> → <b>[로그인]</b> → 브라우저에서 로그인 → <b>[테스트]</b>
+          </div>
+          <div style="display:flex;justify-content:flex-end;margin:6px 0"><button class="btn" type="button" id="cliRefresh">다시 확인</button></div>
+          <div id="cliBox"></div>
+        </fieldset>
+      </div>
+
+      <div class="row">
+        <button class="btn act-test" type="button">연결 테스트</button>
+        <button class="btn act-close" type="button">닫기</button>
+        <button class="btn pri act-save" type="button">저장</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="tip" id="tip"></div>
+
+<script>
+/* 설정 불러오기 (화면·규칙) : 다른 스크립트보다 먼저 */
+window.SETTINGS = null; window.SETTINGS_DEFAULTS = null;
+try { const x = new XMLHttpRequest(); x.open('GET', '/api/settings', false); x.send(); if (x.status === 200) { const j = JSON.parse(x.responseText); window.SETTINGS = j.settings; window.SETTINGS_DEFAULTS = j.defaults; window.SETTINGS_FILE = j.file; } } catch {}
+const UI = () => window.SETTINGS?.ui || {};
+const RULES = () => window.SETTINGS?.rules || {};
+function applyUI() {
+  const u = UI();
+  const root = document.documentElement.style;
+  if (u.accent) { root.setProperty('--accent', u.accent); root.setProperty('--accentSoft', u.accent + '22'); }
+  document.body.style.zoom = (u.zoom || 100) / 100;
+  document.body.classList.remove('dense', 'roomy');
+  if (u.density === 'compact') document.body.classList.add('dense');
+  if (u.density === 'roomy') document.body.classList.add('roomy');
+  const b = document.querySelector('.brand .bname'); if (b) b.textContent = u.brand || '키워드 분석기';
+  const hide = new Set(u.hideButtons || []);
+  [['ai', '#aiBtn'], ['dup', '#dupBtn'], ['bulk', '#bulkBtn'], ['hist', '#histBtn']].forEach(([k, s]) => { const el = document.querySelector(s); if (el) el.style.display = hide.has(k) ? 'none' : ''; });
+}
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const NA = '<span class="na">미표시</span>';
+const fmt = (n) => (n == null || isNaN(n) ? NA : Math.round(n).toLocaleString('ko-KR'));
+const fmtK = (n) => {
+  if (n == null || isNaN(n)) return NA;
+  if (UI().numberStyle === 'full') return fmt(n);
+  if (n >= 1e8) return (n / 1e8).toFixed(n >= 1e9 ? 0 : 1).replace(/\.0$/, '') + '억';
+  if (n >= 1e4) return (n / 1e4).toFixed(n >= 1e5 ? 1 : 2).replace(/\.?0+$/, '') + '만';
+  return fmt(n);
+};
+const LVL = { '매우 낮음': 'l1', '낮음': 'l2', '보통': 'l3', '높음': 'l4', '매우 높음': 'l5' };
+const lvl = (t) => `<span class="lvl ${LVL[t] || 'l3'}">${esc(t)}</span>`;
+
+let STATE = null; // 분석 결과
+let REL = { filters: { inc: '', exc: '', min: '', max: '', comp: '' }, sort: { key: 'total', dir: -1 }, page: 1, cluster: '', blog: {}, selected: new Set() };
+const charts = []; // 리사이즈 시 다시 그림
+
+/* ---------------------------------------------------------------- 툴팁 */
+const tip = $('#tip');
+function showTip(e, html) { tip.innerHTML = html; tip.style.display = 'block'; const x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8); tip.style.left = x + 'px'; tip.style.top = (e.clientY + 14) + 'px'; }
+function hideTip() { tip.style.display = 'none'; }
+
+/* ---------------------------------------------------------------- 차트 (SVG) */
+function niceMax(v) { if (v <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); const n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; }
+function register(el, fn) { charts.push({ el, fn }); fn(); }
+
+function lineChart(el, { labels, series, height = 260, yFmt = fmtK, area = true, tipLabel = (l) => l }) {
+  register(el, () => {
+    const W = el.clientWidth || 700, H = height, pl = 52, pr = 14, pt = 12, pb = 28;
+    const max = niceMax(Math.max(1, ...series.flatMap((s) => s.values)));
+    const n = labels.length, step = (W - pl - pr) / Math.max(1, n - 1);
+    const X = (i) => pl + i * step, Y = (v) => pt + (H - pt - pb) * (1 - v / max);
+    let g = '';
+    for (let k = 0; k <= 4; k++) { const v = (max / 4) * k, y = Y(v); g += `<line x1="${pl}" x2="${W - pr}" y1="${y}" y2="${y}" stroke="var(--chart-grid)"/><text x="${pl - 8}" y="${y + 4}" font-size="11" fill="var(--chart-text)" text-anchor="end">${yFmt(v)}</text>`; }
+    const every = Math.max(1, Math.ceil(n / 9));
+    labels.forEach((l, i) => {
+      const show = i === n - 1 || (i % every === 0 && n - 1 - i >= every * 0.6);
+      if (show) g += `<text x="${X(i)}" y="${H - 8}" font-size="11" fill="var(--chart-text)" text-anchor="${i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}">${esc(l)}</text>`;
+    });
+    for (const s of series) {
+      const pts = s.values.map((v, i) => `${X(i)},${Y(v)}`).join(' ');
+      if (area && series.length === 1) g += `<polygon points="${X(0)},${Y(0)} ${pts} ${X(n - 1)},${Y(0)}" fill="${s.color}" opacity=".12"/>`;
+      g += `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="2.2" stroke-linejoin="round" ${s.dash ? 'stroke-dasharray="5 4"' : ''}/>`;
+    }
+    g += `<line class="hl" x1="0" x2="0" y1="${pt}" y2="${H - pb}" stroke="var(--muted-fg)" stroke-dasharray="3 3" style="display:none"/>`;
+    g += series.map((s, si) => `<circle class="dot d${si}" r="4" fill="var(--card)" stroke="${s.color}" stroke-width="2" style="display:none"/>`).join('');
+    el.innerHTML = `<svg width="${W}" height="${H}" style="display:block">${g}<rect x="${pl}" y="0" width="${W - pl - pr}" height="${H}" fill="transparent"/></svg>`;
+    const svg = el.firstChild, hl = $('.hl', svg);
+    svg.lastChild.addEventListener('mousemove', (e) => {
+      const r = svg.getBoundingClientRect(); const i = Math.max(0, Math.min(n - 1, Math.round((e.clientX - r.left - pl) / step)));
+      hl.setAttribute('x1', X(i)); hl.setAttribute('x2', X(i)); hl.style.display = '';
+      series.forEach((s, si) => { const d = $('.d' + si, svg); d.setAttribute('cx', X(i)); d.setAttribute('cy', Y(s.values[i])); d.style.display = ''; });
+      showTip(e, `<b>${esc(tipLabel(labels[i], i))}</b><br>` + series.map((s) => `<span style="color:${s.color}">●</span> ${esc(s.name)}: ${s.fmt ? s.fmt(s.values[i], i) : fmt(s.values[i])}`).join('<br>'));
+    });
+    svg.lastChild.addEventListener('mouseleave', () => { hl.style.display = 'none'; $$('.dot', svg).forEach((d) => (d.style.display = 'none')); hideTip(); });
+  });
+}
+
+function barChart(el, { labels, values, height = 200, color = '#16a34a', yFmt = (v) => v + '%', tipFmt = (v) => v + '%', highlight = true, showValues = true }) {
+  register(el, () => {
+    const W = el.clientWidth || 600, H = height, pl = 8, pr = 8, pt = 22, pb = 26;
+    const max = Math.max(1e-9, ...values);
+    const n = values.length, bw = (W - pl - pr) / n;
+    const maxIdx = values.indexOf(Math.max(...values));
+    let g = '';
+    values.forEach((v, i) => {
+      const h = (H - pt - pb) * (v / max), x = pl + i * bw + bw * 0.18, w = bw * 0.64, y = H - pb - h;
+      const c = highlight && i === maxIdx ? color : color + '66';
+      g += `<rect class="b" data-i="${i}" x="${x}" y="${y}" width="${w}" height="${Math.max(0, h)}" rx="4" fill="${c}"/>`;
+      if (showValues) g += `<text x="${x + w / 2}" y="${y - 6}" font-size="11" fill="var(--muted-fg)" text-anchor="middle">${esc(yFmt(v))}</text>`;
+      g += `<text x="${x + w / 2}" y="${H - 8}" font-size="11" fill="var(--chart-text)" text-anchor="middle">${esc(labels[i])}</text>`;
+    });
+    el.innerHTML = `<svg width="${W}" height="${H}" style="display:block">${g}</svg>`;
+    $$('.b', el).forEach((b) => {
+      b.addEventListener('mousemove', (e) => showTip(e, `<b>${esc(labels[b.dataset.i])}</b> ${tipFmt(values[b.dataset.i], +b.dataset.i)}`));
+      b.addEventListener('mouseleave', hideTip);
+    });
+  });
+}
+
+function donut(pcVal, moVal, size = 120) {
+  const t = pcVal + moVal || 1, p = pcVal / t, R = size / 2 - 10, C = 2 * Math.PI * R;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+    <circle cx="${size / 2}" cy="${size / 2}" r="${R}" fill="none" stroke="var(--mo)" stroke-width="16"/>
+    <circle cx="${size / 2}" cy="${size / 2}" r="${R}" fill="none" stroke="var(--pc)" stroke-width="16" stroke-dasharray="${C * p} ${C}" transform="rotate(-90 ${size / 2} ${size / 2})"/>
+    <text x="50%" y="47%" text-anchor="middle" font-size="12" fill="var(--chart-text)">모바일</text>
+    <text x="50%" y="62%" text-anchor="middle" font-size="16" font-weight="800" fill="var(--foreground)">${Math.round((1 - p) * 100)}%</text></svg>`;
+}
+
+let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => charts.forEach((c) => document.body.contains(c.el) && c.fn()), 150); });
+
+/* ---------------------------------------------------------------- 검색 기록 */
+const hist = () => JSON.parse(localStorage.getItem('kwHistory') || '[]');
+function pushHist(kw) { const h = hist().filter((x) => x.kw !== kw); h.unshift({ kw, at: Date.now() }); localStorage.setItem('kwHistory', JSON.stringify(h.slice(0, 40))); renderHist(); }
+function renderHist() {
+  const h = hist(); $('#histCount').textContent = h.length;
+  $('#histPanel').innerHTML = h.length
+    ? h.map((x) => `<div class="hrow" data-kw="${esc(x.kw)}"><span>${esc(x.kw)}</span><small>${new Date(x.at).toLocaleDateString('ko-KR')}</small></div>`).join('') + `<div class="hrow" id="histClear"><small>기록 전체 삭제</small></div>`
+    : '<div class="hrow"><small>검색 기록이 없어요</small></div>';
+  $('#quick').innerHTML = (h.length ? h.slice(0, 8).map((x) => x.kw) : ['운전자보험', '암보험', '실손보험', '바로발급카드']).map((k) => `<span class="chip click" data-kw="${esc(k)}">${esc(k)}</span>`).join('');
+}
+$('#histBtn').onclick = (e) => { e.stopPropagation(); $('#histPanel').classList.toggle('hidden'); };
+document.addEventListener('click', (e) => {
+  const r = e.target.closest('[data-kw]');
+  if (r && (r.closest('#histPanel') || r.closest('#quick'))) { $('#histPanel').classList.add('hidden'); run(r.dataset.kw); return; }
+  if (e.target.closest('#histClear')) { localStorage.removeItem('kwHistory'); renderHist(); return; }
+  if (!e.target.closest('#histPanel')) $('#histPanel').classList.add('hidden');
+});
+
+/* ---------------------------------------------------------------- 설정 */
+const CFG = ['adApiKey', 'adSecret', 'adCustomerId', 'clientId', 'clientSecret', 'geminiKey'];
+
+/* AI 제공사·모델 드롭다운 (설정 창 + AI 생성기 화면에서 같이 사용) */
+const PROV = {
+  gemini: {
+    name: 'Gemini (API 키)',
+    defaults: ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.1-pro-preview', 'gemini-2.5-pro'],
+    notes: { 'gemini-3.8-flash': '기본 · 추천', 'gemini-3.5-flash-lite': '빠름 · 저렴', 'gemini-3.1-flash-lite': '빠름 · 저렴', 'gemini-2.5-flash': '이전 세대' },
+  },
+  // 로그인형: 각 회사 공식 CLI (빈 값 = 그 CLI의 기본 모델)
+  agy: { name: 'Gemini (구글 로그인)', cli: true, tool: 'Antigravity CLI', defaults: [''], notes: { '': '기본 모델' },
+    need: '개인 구글 계정 (무료 등급 있음, Google AI Pro·Ultra면 한도가 더 넉넉해요)' },
+  claude: { name: 'Claude (로그인)', cli: true, tool: 'Claude Code', defaults: ['', 'sonnet', 'opus', 'haiku'], notes: { '': '기본 (계정 설정)', sonnet: '추천', opus: '고성능 · 한도가 빨리 참', haiku: '빠름' },
+    need: 'Claude 유료 구독 (Pro·Max 등). 무료 계정은 안 돼요' },
+  codex: { name: 'GPT (ChatGPT 로그인)', cli: true, tool: 'Codex CLI', defaults: [''], notes: { '': '기본 모델' },
+    need: 'ChatGPT 계정 (Plus·Pro 등 유료 플랜 권장, 무료 플랜은 제한적일 수 있어요)' },
+};
+let AICFG = { provider: 'gemini', models: {}, has: {}, pin: false };
+const MODEL_LISTS = {};
+let MODEL_LIST = null; // 현재 AI의 모델 목록 (불러왔을 때)
+const postCfg = (b) => fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) }).then((r) => r.json());
+function applyCfg(c) {
+  AICFG = {
+    provider: PROV[c.aiProvider] ? c.aiProvider : 'gemini',
+    models: { gemini: c.geminiModel, agy: c.agyModel || '', claude: c.claudeModel || '', codex: c.codexModel || '' },
+    has: { gemini: !!c.hasGemini, agy: !!c.hasAgy, claude: !!c.hasClaude, codex: !!c.hasCodex },
+    paths: c.cliPaths || {}, custom: c.cliCustom || {},
+    pin: !!c.geminiPin,
+  };
+  MODEL_LIST = MODEL_LISTS[AICFG.provider] || null;
+}
+async function loadModels(force, p = AICFG.provider) {
+  if (MODEL_LISTS[p] && !force) return MODEL_LISTS[p];
+  const j = await (await fetch('/api/ai/models?provider=' + p)).json();
+  if (j.error) throw new Error(j.error);
+  const d = PROV[p].defaults;
+  const rank = (m) => { const i = d.indexOf(m); return i < 0 ? 99 : i; };
+  MODEL_LISTS[p] = j.models.slice().sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+  if (p === AICFG.provider) MODEL_LIST = MODEL_LISTS[p];
+  return MODEL_LISTS[p];
+}
+function fillModelSelect(sel, current, p = AICFG.provider) {
+  const cli = !!PROV[p].cli;
+  current = current ?? '';
+  const list = [...new Set([...(cli ? [''] : []), current, ...(MODEL_LISTS[p]?.length ? MODEL_LISTS[p] : PROV[p].defaults)])].filter((m) => cli || m);
+  const notes = PROV[p].notes;
+  sel.innerHTML = list.map((m) => `<option value="${esc(m)}" ${m === current ? 'selected' : ''}>${m ? esc(m) + (notes[m] ? ` (${notes[m]})` : '') : esc(notes[''] || '기본')}</option>`).join('');
+}
+// AI가 준비 안 됐을 때 표시: API는 키, 로그인형은 설치
+const provNeed = (p) => (AICFG.has[p] ? '' : PROV[p].cli ? ' (설치 안 됨)' : ' (키 없음)');
+const provMissing = (p) => (PROV[p].cli ? `${PROV[p].name}: ${PROV[p].tool} 설치·로그인이 필요해요. 설정 › API 설정 › AI 모델에서 해주세요.` : `${PROV[p].name}: 키가 없어요. 설정 › API 설정 › AI 모델에서 넣어주세요.`);
+function fillProviderSelect(sel) {
+  sel.innerHTML = Object.entries(PROV).map(([k, v]) => `<option value="${k}" ${k === AICFG.provider ? 'selected' : ''}>${v.name}${provNeed(k)}</option>`).join('');
+}
+function syncAISelects() {
+  $$('.prov-sel').forEach((s) => fillProviderSelect(s));
+  $$('.model-sel').forEach((s) => fillModelSelect(s, AICFG.models[AICFG.provider]));
+  $$('.pin-cb').forEach((c) => (c.checked = AICFG.pin));
+}
+async function setProvider(p) {
+  await postCfg({ aiProvider: p });
+  AICFG.provider = p;
+  MODEL_LIST = MODEL_LISTS[p] || null;
+  syncAISelects();
+  if (AICFG.has[p] && !MODEL_LISTS[p]) loadModels(false, p).then(syncAISelects).catch(() => {});
+  window.__AI?.refreshModel?.();
+}
+async function setModel(m) {
+  const p = AICFG.provider;
+  await postCfg({ [p + 'Model']: m });
+  AICFG.models[p] = m;
+  syncAISelects();
+}
+async function setPin(on) {
+  await postCfg({ geminiPin: !!on });
+  AICFG.pin = !!on;
+  $$('.pin-cb').forEach((c) => (c.checked = !!on));
+}
+$('#c_geminiPin').onchange = (e) => setPin(e.target.checked);
+$('#c_aiProvider').onchange = async (e) => {
+  await setProvider(e.target.value);
+  const v = e.target.value;
+  $('#modelOut').textContent = `${PROV[v].name}(으)로 바꿨어요.${AICFG.has[v] ? '' : PROV[v].cli ? ' 아래 "로그인형 AI"에서 설치·로그인하세요.' : ' 아래에 API 키를 넣고 저장하세요.'}`;
+};
+$('#c_model').onchange = async (e) => { await setModel(e.target.value); $('#modelOut').textContent = e.target.value ? `모델을 ${e.target.value}(으)로 바꿨어요.` : '기본 모델을 써요.'; drawCli(); };
+
+/* 로그인형 AI 카드: 설치 · 로그인 · 테스트 */
+let CLI_ST = null;
+const cliPost = (u, b) => fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) }).then((r) => r.json());
+function drawCli() {
+  const box = $('#cliBox');
+  if (!box) return;
+  box.innerHTML = ['agy', 'claude', 'codex'].map((p) => {
+    const P = PROV[p], st = CLI_ST?.[p];
+    const path = st?.path ?? AICFG.paths?.[p];
+    const inst = !!path;
+    const login = st?.login === true ? '<b style="color:#16a34a">로그인됨</b>' : st?.login === false ? '<b style="color:#b45309">로그인 필요</b>' : inst ? '<span class="muted">로그인 상태는 [테스트]로 확인</span>' : '';
+    return `<div class="cli-card" data-p="${p}">
+      <div class="cli-top"><b>${esc(P.name)}</b> <span class="muted">${esc(P.tool)}</span>
+        ${AICFG.provider === p ? '<span class="lvl l1">사용 중</span>' : ''}<span style="flex:1"></span>
+        <button class="btn sm" type="button" data-a="install">${inst ? '다시 설치·업데이트' : '설치'}</button>
+        <button class="btn sm" type="button" data-a="login" ${inst ? '' : 'disabled'}>로그인</button>
+        <button class="btn sm" type="button" data-a="test" ${inst ? '' : 'disabled'}>테스트</button>
+        ${AICFG.provider === p ? '' : `<button class="btn sm" type="button" data-a="use" ${inst ? '' : 'disabled'}>이 AI 쓰기</button>`}</div>
+      <div class="cli-st">${inst ? `<b style="color:#16a34a">설치됨</b>${st?.version ? ' · ' + esc(st.version) : ''} · ${login}` : '<b style="color:#b91c1c">설치 안 됨</b>'}</div>
+      <div class="muted" style="font-size:12px">필요한 계정: ${esc(P.need)}</div>
+      <div class="cli-opts">
+        <label class="inl">모델 <input type="text" data-k="model" value="${esc(AICFG.models[p] || '')}" placeholder="비워두면 기본" list="cliModels_${p}" style="width:160px"></label>
+        <datalist id="cliModels_${p}">${P.defaults.filter(Boolean).map((m) => `<option value="${esc(m)}">`).join('')}</datalist>
+        <details><summary class="muted" style="font-size:12px;cursor:pointer">실행 파일 위치 ${path ? '· ' + esc(path) : ''}</summary>
+          <label class="inl" style="margin-top:4px">직접 지정 <input type="text" data-k="path" value="${esc(AICFG.custom?.[p] || '')}" placeholder="자동으로 못 찾을 때만 (예: C:\\Users\\...\\${p}.exe)" style="width:360px"></label></details>
+      </div>
+      <div class="cli-out muted" style="font-size:12px"></div>
+    </div>`;
+  }).join('');
+  $$('.cli-card', box).forEach((card) => {
+    const p = card.dataset.p, out = card.querySelector('.cli-out');
+    const say = (h) => (out.innerHTML = h);
+    card.querySelectorAll('[data-a]').forEach((b) => (b.onclick = async () => {
+      const a = b.dataset.a;
+      if (a === 'install' || a === 'login') {
+        say('창을 여는 중...');
+        const r = await cliPost('/api/ai/cli-open', { provider: p, action: a });
+        if (!r.ok) return say(`<span style="color:#b91c1c">${esc(r.error || '실패')}</span>`);
+        say(r.opened ? (a === 'install' ? '설치 창을 열었어요. 설치가 끝나면 창을 닫고 위의 <b>[다시 확인]</b>을 누르세요.' : '로그인 창을 열었어요. 안내에 따라 브라우저에서 로그인한 뒤 <b>[테스트]</b>를 눌러보세요.')
+          : `이 PC에서는 창을 자동으로 못 열어요. 터미널에서 직접 실행하세요: <code>${esc(r.command)}</code>`);
+      }
+      if (a === 'test') {
+        b.disabled = true; say('테스트 중... (처음엔 30초 이상 걸릴 수 있어요)');
+        const t0 = Date.now();
+        const r = await cliPost('/api/ai/cli-test', { provider: p });
+        b.disabled = false;
+        say(r.ok ? `<b style="color:#16a34a">정상</b> · ${Math.round((r.ms || Date.now() - t0) / 1000)}초 걸렸어요` : `<span style="color:#b91c1c">${esc(r.error || '응답이 예상과 달라요: ' + (r.text || ''))}</span>`);
+        if (CLI_ST?.[p] && r.ok) { CLI_ST[p].login = true; }
+      }
+      if (a === 'use') { await setProvider(p); drawCli(); $('#modelOut').textContent = `${PROV[p].name}(으)로 바꿨어요.`; }
+    }));
+    card.querySelector('[data-k="model"]').onchange = async (e) => {
+      const v = e.target.value.trim();
+      await postCfg({ [p + 'Model']: v }); AICFG.models[p] = v; syncAISelects();
+      say(v ? `모델을 ${esc(v)}(으)로 저장했어요.` : '기본 모델을 써요.');
+    };
+    card.querySelector('[data-k="path"]').onchange = async (e) => {
+      await postCfg({ cliPaths: { [p]: e.target.value } });
+      say('저장했어요. [다시 확인]을 누르면 반영돼요.');
+    };
+  });
+}
+async function refreshCli() {
+  const btn = $('#cliRefresh');
+  if (btn) { btn.disabled = true; btn.textContent = '확인 중...'; }
+  try {
+    const j = await (await fetch('/api/ai/cli-status')).json();
+    CLI_ST = j.cli || null;
+    const c = await (await fetch('/api/config')).json();
+    applyCfg(c); syncAISelects();
+  } catch {}
+  if (btn) { btn.disabled = false; btn.textContent = '다시 확인'; }
+  drawCli();
+  window.__AI?.refreshModel?.();
+}
+$('#cliRefresh').onclick = refreshCli;
+
+/* GitHub 자동 백업 */
+async function ghDraw(st) {
+  try { st = st || (await (await fetch('/api/github')).json()); } catch { $('#ghStatus').innerHTML = '<span style="color:#b91c1c">서버를 다시 시작하면 쓸 수 있어요 (start.bat)</span>'; return; }
+  const fd = (t) => (t ? new Date(t).toLocaleString('ko-KR') : '-');
+  $('#ghBadge').innerHTML = st.configured ? (st.error ? '<span style="color:#b91c1c">· 오류</span>' : '<span style="color:#16a34a">· 켜짐</span>') : '· 꺼짐';
+  $('#ghStatus').innerHTML = st.configured
+    ? `저장소: <a class="ext" href="${esc(st.url)}" target="_blank">${esc(st.owner + '/' + st.repo)}</a> (${esc(st.branch)}) · 토큰 ${esc(st.tokenHint)}${st.expires ? ' · 만료 ' + esc(st.expires) : ''}<br>
+       마지막으로 올린 때: <b>${fd(st.lastSync)}</b>${st.lastMessage ? ' · ' + esc(st.lastMessage) : ''}<br>
+       마지막 확인: ${fd(st.lastCheck)}${st.running ? ' · <b>올리는 중…</b>' : st.pending ? ' · 바뀐 파일 있음 (곧 올라가요)' : ''}
+       ${st.error ? `<br><span style="color:#b91c1c">${esc(st.error)}</span>` : ''}`
+    : '아직 설정되지 않았어요. 아래에 저장소와 토큰을 넣고 저장하세요.';
+  $('#ghOpen').href = st.url || '#'; $('#ghLog').href = st.url ? st.url + '/commits/' + (st.branch || 'main') : '#';
+  $('#ghRepo').value = st.owner ? st.owner + '/' + st.repo : '';
+  $('#ghToken').value = st.tokenHint || '';
+  $('#ghData').checked = !!st.includeData;
+}
+$('#ghSync').onclick = async () => {
+  $('#ghSync').disabled = true; $('#ghStatus').innerHTML += '<br><b>올리는 중…</b>';
+  try { const st = await (await fetch('/api/github', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sync: true }) })).json(); await ghDraw(st);
+    const r = st.result || {}; $('#ghStatus').innerHTML += r.ok ? (r.changed ? `<br><b style="color:#16a34a">${r.changed}개 파일을 올렸어요.</b>` : '<br>바뀐 파일이 없어서 올릴 게 없어요.') : `<br><span style="color:#b91c1c">${esc(r.error || r.skipped || '실패')}</span>`;
+  } finally { $('#ghSync').disabled = false; }
+};
+$('#ghSave').onclick = async () => {
+  const [owner, repo] = $('#ghRepo').value.trim().split('/');
+  const st = await (await fetch('/api/github', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config: { owner, repo, token: $('#ghToken').value, includeData: $('#ghData').checked } }) })).json();
+  await ghDraw(st); $('#ghStatus').innerHTML += '<br>저장했어요.';
+};
+document.addEventListener('click', (e) => { if (e.target.closest('[data-st="github"]')) ghDraw(); });
+
+/* 설정 창 탭 */
+let MTAB = 'api', STAB = 'naver';
+function showMTab(t, sub) {
+  if (t === 'naver' || t === 'ai') { sub = t; t = 'api'; }
+  MTAB = t; if (sub) STAB = sub;
+  $$('.mtabs [data-mt]').forEach((b) => b.classList.toggle('on', b.dataset.mt === MTAB));
+  $$('.subtabs [data-st]').forEach((b) => b.classList.toggle('on', b.dataset.st === STAB));
+  $('.api-only').classList.toggle('hidden', MTAB !== 'api');
+  $$('.mpane').forEach((p) => p.classList.toggle('hidden', MTAB === 'api' ? p.dataset.pane !== STAB : p.dataset.pane !== MTAB));
+  $$('.act-test').forEach((b) => (b.style.display = MTAB === 'api' ? '' : 'none'));
+  if (MTAB !== 'api') window.__SET?.render(MTAB);
+  $('.modal').scrollTop = 0;
+}
+$$('.mtabs [data-mt]').forEach((b) => (b.onclick = () => showMTab(b.dataset.mt)));
+$$('.subtabs [data-st]').forEach((b) => (b.onclick = () => showMTab('api', b.dataset.st)));
+
+async function openSettings(tab) {
+  const c = await (await fetch('/api/config')).json();
+  applyCfg(c);
+  CFG.forEach((k) => ($('#c_' + k).value = c[k] || ''));
+  syncAISelects();
+  $('#st_gemini').innerHTML = AICFG.has.gemini ? '<span style="color:#16a34a">· 저장됨</span>' : '· 미입력';
+  $('#modelOut').textContent = '';
+  drawCli();
+  if (tab === 'ai' || !CLI_ST) refreshCli();
+  if (AICFG.has[AICFG.provider] && !MODEL_LISTS[AICFG.provider]) loadModels().then(syncAISelects).catch(() => {});
+  $('#c_openProvider').value = c.openProvider || 'hub';
+  $('#testOut').innerHTML = '';
+  showMTab(tab === 'ai' ? 'ai' : tab === 'ui' || tab === 'rules' ? tab : 'naver');
+  $('#modalBg').classList.remove('hidden');
+}
+window.openSettings = openSettings;
+$('#setBtn').onclick = () => openSettings();
+const closeSettings = () => $('#modalBg').classList.add('hidden');
+const saveSettings = async () => {
+  const body = { openProvider: $('#c_openProvider').value };
+  CFG.forEach((k) => (body[k] = $('#c_' + k).value));
+  const r = await postCfg(body);
+  const c = await (await fetch('/api/config')).json();
+  applyCfg(c);
+  CFG.forEach((k) => ($('#c_' + k).value = c[k] || ''));
+  syncAISelects();
+  $('#st_gemini').innerHTML = AICFG.has.gemini ? '<span style="color:#16a34a">· 저장됨</span>' : '· 미입력';
+  drawCli();
+  const yn = (v) => `<b>${v ? '설정됨' : '미설정'}</b>`;
+  const logins = ['agy', 'claude', 'codex'].filter((p) => AICFG.has[p]).map((p) => PROV[p].name);
+  $('#testOut').innerHTML = `저장했어요. 검색광고 ${yn(r.hasAd)} · 검색·트렌드 ${yn(r.hasOpen)} · Gemini API ${yn(c.hasGemini)} · 로그인형 설치: <b>${logins.length ? esc(logins.join(', ')) : '없음'}</b> · 사용 중인 AI: <b>${PROV[AICFG.provider].name}</b>`;
+  window.__AI?.refreshModel?.();
+  if (STATE && $('#aiView')?.classList.contains('hidden')) run(STATE.keyword, false);
+};
+const testSettings = async () => {
+  $('#testOut').innerHTML = '<span class="muted">테스트 중...</span>';
+  const r = await (await fetch('/api/test')).json();
+  const s = (v) => (v === 'ok' ? '<b style="color:#16a34a">정상</b>' : v === '키 미입력' || v === '설치 안 됨' ? `<span class="muted">${v}</span>` : `<span style="color:#b91c1c">${esc(v)}</span>`);
+  $('#testOut').innerHTML = `<div class="test-grid"><span>검색광고 API</span>${s(r.ad)}<span>검색 API</span>${s(r.search)}<span>검색어 트렌드 API</span>${s(r.datalab)}<span>Gemini API</span>${s(r.gemini)}<span>Gemini (구글 로그인)</span>${s(r.agy)}<span>Claude (로그인)</span>${s(r.claude)}<span>GPT (ChatGPT 로그인)</span>${s(r.codex)}</div><div class="muted" style="font-size:11px;margin-top:4px">로그인형은 설치 여부만 확인해요. 로그인까지 확인하려면 AI 모델 탭의 [테스트]를 누르세요.</div>`;
+};
+$$('.act-close').forEach((b) => (b.onclick = closeSettings));
+$$('.act-save').forEach((b) => (b.onclick = saveSettings));
+$$('.act-test').forEach((b) => (b.onclick = testSettings));
+$('#modelBtn').onclick = async () => {
+  const p = AICFG.provider;
+  const key = p === 'gemini' ? $('#c_geminiKey').value : '';
+  if (key && !key.includes('••••')) { await postCfg({ geminiKey: key }); AICFG.has.gemini = true; }
+  $('#modelOut').textContent = '불러오는 중...';
+  try {
+    const list = await loadModels(true, p);
+    syncAISelects();
+    $('#modelOut').textContent = PROV[p].cli ? `${PROV[p].name}: 제안 모델 ${list.length}개 (비워두면 기본 모델). 다른 모델은 아래 카드의 "모델" 칸에 직접 적을 수 있어요.` : `이 키로 쓸 수 있는 ${PROV[p].name} 모델 ${list.length}개를 불러왔어요. 드롭다운에서 고르면 바로 적용돼요.`;
+  } catch (e) { $('#modelOut').innerHTML = `<span style="color:#b91c1c">${esc(e.message)}</span>`; }
+};
+
+/* ---------------------------------------------------------------- 실행 */
+$('#searchForm').onsubmit = (e) => { e.preventDefault(); const k = $('#q').value.trim(); if (k) run(k); };
+
+async function run(kw, push = true) {
+  if (window.showAI && !$('#aiView')?.classList.contains('hidden')) showAI(false);
+  window.__hideDup?.();
+  window.__hideBulk?.();
+  $('#q').value = kw;
+  $('#empty').classList.add('hidden');
+  $('#tabs').classList.remove('hidden');
+  $('#banners').innerHTML = '';
+  charts.length = 0;
+  $('#result').innerHTML = `<div class="loading"><div class="spin"></div>'${esc(kw)}' 분석 중... (처음 조회는 5~10초 걸릴 수 있어요)</div>`;
+  history.replaceState(null, '', '?keyword=' + encodeURIComponent(kw));
+  document.title = `'${kw}' 분석 - 키워드 분석기`;
+  try {
+    const r = await fetch('/api/analyze?keyword=' + encodeURIComponent(kw));
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    STATE = d;
+    REL = { filters: { inc: '', exc: '', min: '', max: '', comp: '' }, sort: { key: 'total', dir: -1 }, page: 1, cluster: '', blog: {}, selected: new Set() };
+    if (push) pushHist(kw);
+    render();
+    loadSections(kw);
+  } catch (e) {
+    $('#result').innerHTML = `<div class="banner err">분석 실패: ${esc(e.message)}<br>서버 창(검은 창)이 켜져 있는지 확인해 주세요.</div>`;
+  }
+}
+
+function banners(d) {
+  let h = '';
+  const miss = [];
+  if (d.missing?.ad) miss.push('검색광고 API → 검색량, 연관 키워드, 광고 효율, 입찰가');
+  if (d.missing?.open) miss.push('검색·검색어 트렌드 API → 발행량, 포화 지수, 등급, 예상 검색량, 트렌드, 최초 등장일, 성인 여부, 이슈성');
+  if (miss.length) h += `<div class="banner"><b>API 키가 없는 항목은 미표시해요.</b> ${miss.join(' / ')}<button onclick="openSettings()">API 설정하기</button></div>`;
+  const errs = Object.entries(d.errors || {});
+  if (errs.length) h += `<div class="banner err">${errs.map(([k, v]) => `<b>${esc(k)}</b>: ${esc(v)}`).join('<br>')}</div>`;
+  $('#banners').innerHTML = h;
+}
+
+function render() {
+  const d = STATE;
+  banners(d);
+  $('#result').innerHTML = `
+    <section class="sec" id="sec-basic"></section>
+    <section class="sec" id="sec-related"></section>
+    <section class="sec" id="sec-trend"></section>
+    <section class="sec" id="sec-section"><h2>섹션 분석</h2><div class="loading"><div class="spin"></div>네이버 검색 결과 읽는 중...</div></section>
+    <section class="sec" id="sec-intent"></section>`;
+  renderBasic(d);
+  renderRelated();
+  renderTrend(d);
+  renderIntent(d);
+}
+
+/* ---------------------------------------------------------------- 기본 정보 */
+function renderBasic(d) {
+  const v = d.volume || {}, c = d.content, t = d.trend, ins = d.insight || {};
+  const low = (flag, n) => (flag ? '&lt; 10' : fmt(n));
+  const g = ins.grade;
+  const sat = ins.saturation;
+  const bids = d.bids;
+  const prevPct = t && t.lastMonth ? ((t.projected - t.lastMonth) / t.lastMonth) * 100 : null;
+  $('#sec-basic').innerHTML = `
+    <h2>기본 정보 <span class="kw">'${esc(d.keyword)}'</span></h2>
+    <div class="chips" style="margin-bottom:14px">
+      <span class="chip">키워드 최초 등장 <b>${t?.firstSeen ? esc(t.firstSeen) : NA}</b></span>
+      <span class="chip">키워드 등급 ${g ? `<span class="grade ${g.grade}">${g.grade}</span> <span class="muted">${esc(g.desc)}</span>` : NA}</span>
+      <span class="chip">성인 키워드 <b>${d.adult == null ? NA : d.adult ? '성인 키워드' : '비성인 키워드'}</b></span>
+      ${d.errata ? `<span class="chip click" data-go="${esc(d.errata)}">혹시 <b>${esc(d.errata)}</b>?</span>` : ''}
+      ${v.notFound ? `<span class="chip" style="color:#b91c1c">검색광고 키워드 도구에 없는 키워드예요</span>` : ''}
+    </div>
+    <div class="grid g3">
+      <div class="card"><h3>월간 검색량 <span class="muted">최근 30일</span></h3>
+        <div class="stat3"><div><div class="v pc">${low(v.pcLow, v.pc)}</div><div class="l">PC</div></div><div><div class="v mo">${low(v.moLow, v.mo)}</div><div class="l">Mobile</div></div><div><div class="v">${fmt(v.total)}</div><div class="l">Total</div></div></div>
+      </div>
+      <div class="card"><h3>월간 콘텐츠 발행량 <span class="muted">누적 문서 수</span></h3>
+        <div class="stat3"><div><div class="v">${fmtK(c?.blog)}</div><div class="l">블로그</div></div><div><div class="v">${fmtK(c?.cafe)}</div><div class="l">카페</div></div><div><div class="v">${fmtK(c?.total)}</div><div class="l">전체</div></div></div>
+        ${c ? `<div class="muted" style="margin-top:8px;text-align:center">최근 30일 블로그 신규 발행 약 <b>${fmt(c.blogRecent30)}</b>건</div>` : ''}
+      </div>
+      <div class="card"><h3>${t ? Number(t.curMonth.slice(5)) + '월' : '이번 달'} 예상 검색량</h3>
+        <div class="big">${fmt(t?.projected)}</div>
+        <div class="kv"><span>${t ? `${Number(t.curMonth.slice(5))}월 1일~어제 누적` : '누적'}</span><b>${fmt(t?.mtd)}</b></div>
+        <div class="kv"><span>지난달 검색량 (추정)</span><b>${fmt(t?.lastMonth)} ${prevPct == null ? '' : `<span style="color:${prevPct >= 0 ? '#16a34a' : '#ef4444'}">(${prevPct >= 0 ? '+' : ''}${prevPct.toFixed(1)}%)</span>`}</b></div>
+      </div>
+    </div>
+    <div class="grid g2" style="margin-top:14px">
+      <div class="card"><h3>콘텐츠 포화 지수 <span class="muted">발행량 ÷ 월간 검색량</span></h3>
+        ${sat ? `<div class="stat3">
+          <div><div class="v">${sat.blog.pct == null ? '-' : fmt(sat.blog.pct) + '%'}</div><div class="l">블로그 ${lvl(sat.blog.label)}</div></div>
+          <div><div class="v">${sat.cafe.pct == null ? '-' : fmt(sat.cafe.pct) + '%'}</div><div class="l">카페 ${lvl(sat.cafe.label)}</div></div>
+          <div><div class="v">${sat.total.pct == null ? '-' : fmt(sat.total.pct) + '%'}</div><div class="l">전체 ${lvl(sat.total.label)}</div></div></div>
+          <div class="muted" style="margin-top:8px">100% 미만이면 검색량보다 문서가 적은 키워드라 상위 노출 기회가 커요.</div>` : `<div class="stat3"><div><div class="v">${NA}</div><div class="l">블로그</div></div><div><div class="v">${NA}</div><div class="l">카페</div></div><div><div class="v">${NA}</div><div class="l">전체</div></div></div>`}
+      </div>
+      <div class="card"><h3>검색 광고 효율</h3>
+        <div class="grid g2" style="gap:6px 18px">
+          <div class="kv"><span>월평균 클릭수 PC</span><b>${fmt(v.pcClk)}</b></div>
+          <div class="kv"><span>월평균 클릭수 Mobile</span><b>${fmt(v.moClk)}</b></div>
+          <div class="kv"><span>월평균 클릭률 PC</span><b>${v.pcCtr == null ? NA : v.pcCtr + '%'}</b></div>
+          <div class="kv"><span>월평균 클릭률 Mobile</span><b>${v.moCtr == null ? NA : v.moCtr + '%'}</b></div>
+          <div class="kv"><span>경쟁 정도</span><b class="comp ${esc(v.comp)}">${v.comp ? esc(v.comp) : NA}</b></div>
+          <div class="kv"><span>월평균 노출 광고수</span><b>${v.adDepth == null ? NA : v.adDepth + '개'}</b></div>
+        </div>
+      </div>
+    </div>
+    ${bids ? `<div class="card" style="margin-top:14px"><h3>순위별 평균 입찰가 <span class="muted">파워링크 최근 4주 평균 (VAT 제외, 원)</span></h3>
+      <table class="mini"><tr><th>기기</th>${[1, 2, 3, 4, 5].map((p) => `<th>${p}위</th>`).join('')}</tr>
+      <tr><td class="pc">PC</td>${(bids.pc || []).map((b) => `<td>${fmt(b.bid)}</td>`).join('')}</tr>
+      <tr><td class="mo">Mobile</td>${(bids.mobile || []).map((b) => `<td>${fmt(b.bid)}</td>`).join('')}</tr></table></div>` : ''}`;
+  $$('[data-go]', $('#sec-basic')).forEach((x) => (x.onclick = () => run(x.dataset.go)));
+}
+
+/* ---------------------------------------------------------------- 연관 키워드 */
+function clustersOf(list) {
+  // 분석 키워드 자체는 떼어내고 남는 말(예: 추천, 삼성, 20대)로 묶음
+  const seed = (STATE?.keyword || '').replace(/\s+/g, '');
+  const isAN = (c) => /[0-9a-z]/i.test(c || '');
+  const cnt = new Map();
+  for (const r of list) {
+    const k = r.keyword.replace(/\s+/g, ''), seen = new Set();
+    const parts = seed && k.includes(seed) ? k.split(seed).filter(Boolean) : [k];
+    for (const p of parts) {
+      for (let len = 2; len <= Math.min(8, p.length); len++) for (let i = 0; i + len <= p.length; i++) {
+        // 숫자/영문 단어 중간에서 잘린 조각(예: 20대 -> 0대) 제외
+        if (isAN(p[i]) && isAN(p[i - 1])) continue;
+        if (isAN(p[i + len - 1]) && isAN(p[i + len])) continue;
+        seen.add(p.slice(i, i + len));
+      }
+    }
+    seen.forEach((t) => cnt.set(t, (cnt.get(t) || 0) + 1));
+  }
+  const arr = [...cnt].filter(([, c]) => c >= 2 && c < list.length).sort((a, b) => b[1] - a[1] || b[0].length - a[0].length);
+  const keep = [];
+  for (const [t, c] of arr) {
+    if (keep.some(([t2, c2]) => (t2.includes(t) || t.includes(t2)) && Math.abs(c2 - c) <= Math.max(1, c * 0.12))) continue;
+    keep.push([t, c]);
+    if (keep.length >= 14) break;
+  }
+  return keep;
+}
+function relRows() {
+  const f = REL.filters;
+  let rows = (STATE.related || []).map((r) => {
+    const blog = REL.blog[r.keyword];
+    const sat = blog != null && r.total ? (blog / r.total) * 100 : null;
+    return { ...r, clk: r.pcClk + r.moClk, ctr: +(((r.pcCtr + r.moCtr) / 2).toFixed(2)), blog, sat };
+  });
+  if (REL.cluster) rows = rows.filter((r) => r.keyword.includes(REL.cluster));
+  const incs = f.inc.split(/[,\s]+/).filter(Boolean), excs = f.exc.split(/[,\s]+/).filter(Boolean);
+  if (incs.length) rows = rows.filter((r) => incs.every((w) => r.keyword.includes(w)));
+  if (excs.length) rows = rows.filter((r) => !excs.some((w) => r.keyword.includes(w)));
+  if (f.min !== '') rows = rows.filter((r) => r.total >= +f.min);
+  if (f.max !== '') rows = rows.filter((r) => r.total <= +f.max);
+  if (f.comp) rows = rows.filter((r) => r.comp === f.comp);
+  const { key, dir } = REL.sort;
+  rows.sort((a, b) => {
+    const x = a[key], y = b[key];
+    if (typeof x === 'string') return x.localeCompare(y, 'ko') * dir;
+    return ((x ?? -1) - (y ?? -1)) * dir;
+  });
+  return rows;
+}
+const COLS = [
+  ['keyword', '키워드', 'l'], ['total', '월간 검색량'], ['pc', 'PC'], ['mo', 'Mobile'], ['clk', '월 클릭'], ['ctr', '클릭률'],
+  ['comp', '경쟁'], ['adDepth', '광고수'], ['blog', '블로그 누적'], ['sat', '포화 지수'],
+];
+const PAGE_REL = () => UI().relPage || 50;
+function renderRelated() {
+  const all = STATE.related || [];
+  const cl = clustersOf(all);
+  $('#sec-related').innerHTML = `
+    <h2>연관 키워드 <span class="muted" style="font-size:14px;font-weight:500">전체 ${fmt(all.length)}개</span></h2>
+    <div class="card">
+      <div class="chips" style="margin-bottom:12px" id="clusters">
+        <span class="chip click ${REL.cluster ? '' : 'on'}" data-cl="">전체 (${all.length})</span>
+        ${cl.map(([t, c]) => `<span class="chip click ${REL.cluster === t ? 'on' : ''}" data-cl="${esc(t)}">${esc(t)} (${c})</span>`).join('')}
+      </div>
+      <div class="toolbar">
+        <input id="fInc" placeholder="포함 단어" value="${esc(REL.filters.inc)}" style="width:120px">
+        <input id="fExc" placeholder="제외 단어" value="${esc(REL.filters.exc)}" style="width:120px">
+        <input id="fMin" type="number" placeholder="최소 검색량" value="${esc(REL.filters.min)}">
+        <input id="fMax" type="number" placeholder="최대 검색량" value="${esc(REL.filters.max)}">
+        <select id="fComp"><option value="">경쟁 정도 전체</option>${['높음', '중간', '낮음'].map((x) => `<option ${REL.filters.comp === x ? 'selected' : ''}>${x}</option>`).join('')}</select>
+        <span style="flex:1"></span>
+        <button class="btn" id="loadBlog">블로그 발행량 불러오기 (이 페이지)</button>
+        <button class="btn" id="cmpSel">선택 키워드 비교</button>
+        <button class="btn pri" id="csvBtn">CSV 다운로드</button>
+        <button class="btn" id="relTxt" title="지금 필터에 맞는 키워드만, 한 줄에 하나씩">TXT</button>
+      </div>
+      <div class="tbl-wrap" style="max-height:640px"><table class="rel" id="relTbl"></table></div>
+      <div class="pager" id="pager"></div>
+      <div class="muted" style="margin-top:8px">키워드를 누르면 그 키워드로 다시 분석해요. 블로그 발행량은 오픈 API 호출을 아끼려고 필요할 때만 불러와요 (하루 25,000회 한도).</div>
+    </div>`;
+  $$('#clusters [data-cl]').forEach((x) => (x.onclick = () => { REL.cluster = x.dataset.cl; REL.page = 1; $$('#clusters .chip').forEach((c) => c.classList.toggle('on', c === x)); drawRelTable(); }));
+  const bind = (id, k) => ($('#' + id).oninput = (e) => { REL.filters[k] = e.target.value; REL.page = 1; drawRelTable(); });
+  bind('fInc', 'inc'); bind('fExc', 'exc'); bind('fMin', 'min'); bind('fMax', 'max'); bind('fComp', 'comp');
+  $('#csvBtn').onclick = downloadCsv;
+  $('#relTxt').onclick = () => downloadTxt(relRows().map((r) => r.keyword), `연관키워드_${STATE.keyword}_${new Date().toISOString().slice(0, 10)}`);
+  $('#loadBlog').onclick = loadBlogCounts;
+  $('#cmpSel').onclick = () => {
+    const sel = [...REL.selected];
+    if (!sel.length) return alert('표 왼쪽 체크박스로 비교할 키워드를 골라주세요 (최대 4개, 현재 키워드 포함 5개).');
+    if (sel.length > 4 && !confirm(`${sel.length}개를 체크했어요. 비교는 최대 4개라 앞의 4개(${sel.slice(0, 4).join(', ')})만 비교할까요?`)) return;
+    $('#cmpInput').value = [STATE.keyword, ...sel].slice(0, 5).join(', ');
+    location.hash = '#sec-trend';
+    runCompare();
+  };
+  drawRelTable();
+}
+function drawRelTable() {
+  const rows = relRows();
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE_REL()));
+  REL.page = Math.min(REL.page, pages);
+  const view = rows.slice((REL.page - 1) * PAGE_REL(), REL.page * PAGE_REL());
+  const { key, dir } = REL.sort;
+  const gradeOf = (r) => {
+    if (r.blog == null) return '<span class="muted">-</span>';
+    const rr = r.blog / Math.max(1, r.total);
+    const A = RULES().analysis || {}, gb = A.gradeBands || [1, 3, 10, 50];
+    const g = r.total < (A.gradeMinVol ?? 100) ? 'D' : rr < gb[0] ? 'S' : rr < gb[1] ? 'A' : rr < gb[2] ? 'B' : rr < gb[3] ? 'C' : 'D';
+    return `<span class="grade ${g}" style="width:22px;height:22px;font-size:12px">${g}</span>`;
+  };
+  $('#relTbl').innerHTML = `<thead><tr><th class="l" style="width:30px"><input type="checkbox" id="relAll" title="표에 보이는 키워드 전체 체크 (필터 적용, 모든 페이지) / 다시 누르면 전체 해제"></th>${COLS.map(([k, n, cl]) => `<th data-k="${k}" class="${cl || ''} ${key === k ? 'sorted' : ''}">${n}<span class="ar">${key === k ? (dir < 0 ? '▼' : '▲') : '↕'}</span></th>`).join('')}<th>등급</th></tr></thead>
+  <tbody>${view.map((r) => `<tr>
+    <td class="l"><input type="checkbox" data-sel="${esc(r.keyword)}" ${REL.selected.has(r.keyword) ? 'checked' : ''}></td>
+    <td class="l kwc"><a href="?keyword=${encodeURIComponent(r.keyword)}" data-run="${esc(r.keyword)}">${esc(r.keyword)}</a></td>
+    <td><b>${fmt(r.total)}</b></td><td class="pc">${r.pcLow ? '&lt;10' : fmt(r.pc)}</td><td class="mo">${r.moLow ? '&lt;10' : fmt(r.mo)}</td>
+    <td>${fmt(r.clk)}</td><td>${r.ctr}%</td><td><span class="comp ${esc(r.comp)}">${esc(r.comp)}</span></td><td>${r.adDepth}</td>
+    <td>${r.blog == null ? '<span class="muted">-</span>' : fmt(r.blog)}</td><td>${r.sat == null ? '<span class="muted">-</span>' : fmt(r.sat) + '%'}</td><td>${gradeOf(r)}</td>
+  </tr>`).join('') || `<tr><td colspan="12" class="l muted" style="padding:20px">${STATE.missing?.ad ? '미표시: 검색광고 API 키를 넣으면 연관 키워드가 표시돼요.' : '조건에 맞는 키워드가 없어요'}</td></tr>`}</tbody>`;
+  $$('#relTbl th[data-k]').forEach((th) => (th.onclick = () => { const k = th.dataset.k; REL.sort = { key: k, dir: REL.sort.key === k ? -REL.sort.dir : k === 'keyword' ? 1 : -1 }; drawRelTable(); }));
+  $$('#relTbl [data-run]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); run(a.dataset.run); scrollTo({ top: 0 }); }));
+  const syncAll = () => {
+    const n = rows.filter((r) => REL.selected.has(r.keyword)).length, cb = $('#relAll');
+    cb.checked = !!rows.length && n === rows.length;
+    cb.indeterminate = n > 0 && n < rows.length;
+  };
+  $$('#relTbl [data-sel]').forEach((c) => (c.onchange = () => { c.checked ? REL.selected.add(c.dataset.sel) : REL.selected.delete(c.dataset.sel); syncAll(); }));
+  $('#relAll').onchange = () => { const on = !(rows.length && rows.every((r) => REL.selected.has(r.keyword))); for (const r of rows) on ? REL.selected.add(r.keyword) : REL.selected.delete(r.keyword); drawRelTable(); };
+  syncAll();
+  $('#pager').innerHTML = pages > 1 ? Array.from({ length: pages }, (_, i) => `<button class="${i + 1 === REL.page ? 'on' : ''}" data-p="${i + 1}">${i + 1}</button>`).join('') : '';
+  $$('#pager [data-p]').forEach((b) => (b.onclick = () => { REL.page = +b.dataset.p; drawRelTable(); }));
+}
+async function loadBlogCounts() {
+  const rows = relRows().slice((REL.page - 1) * PAGE_REL(), REL.page * PAGE_REL()).filter((r) => REL.blog[r.keyword] == null);
+  if (!rows.length) return;
+  const btn = $('#loadBlog'); btn.disabled = true;
+  for (let i = 0; i < rows.length; i += 10) {
+    btn.textContent = `불러오는 중... ${i}/${rows.length}`;
+    const part = rows.slice(i, i + 10).map((r) => r.keyword);
+    const j = await (await fetch('/api/blogcounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keywords: part }) })).json();
+    if (j.missing) { alert('블로그 발행량은 검색 API 키를 넣으면 불러올 수 있어요.'); break; }
+    Object.assign(REL.blog, j.counts);
+    drawRelTable();
+  }
+  btn.disabled = false; btn.textContent = '블로그 발행량 불러오기 (이 페이지)';
+}
+// 공통 TXT 다운로드: 키워드만 한 줄에 하나씩 (같은 키워드는 하나만, UTF-8)
+function downloadTxt(keywords, name) {
+  const seen = new Set(), out = [];
+  for (const k0 of keywords) { const k = String(k0 ?? '').trim(); if (k && !seen.has(k)) { seen.add(k); out.push(k); } }
+  if (!out.length) return alert('내려받을 키워드가 없어요');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff' + out.join('\r\n')], { type: 'text/plain;charset=utf-8' }));
+  a.download = String(name || '키워드').replace(/[\\/:*?"<>|]/g, '').slice(0, 80) + '.txt';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+function downloadCsv() {
+  const rows = relRows();
+  const head = ['키워드', '월간검색량(합계)', 'PC', '모바일', 'PC월평균클릭', '모바일월평균클릭', 'PC클릭률(%)', '모바일클릭률(%)', '경쟁정도', '월평균노출광고수', '블로그누적발행량', '포화지수(%)'];
+  const lines = [head, ...rows.map((r) => [r.keyword, r.total, r.pcLow ? '<10' : r.pc, r.moLow ? '<10' : r.mo, r.pcClk, r.moClk, r.pcCtr, r.moCtr, r.comp, r.adDepth, r.blog ?? '', r.sat == null ? '' : Math.round(r.sat)])];
+  const csv = '\ufeff' + lines.map((l) => l.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = `연관키워드_${STATE.keyword}_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+}
+
+/* ---------------------------------------------------------------- 트렌드 */
+let trendRange = 36;
+function renderTrend(d) {
+  const t = d.trend;
+  if (!t) { $('#sec-trend').innerHTML = `<h2>트렌드 분석</h2><div class="card muted">${d.missing?.open ? '미표시: 검색어 트렌드 API 키를 넣으면 검색량 추이, 월별·요일별 비율, 키워드 비교가 표시돼요.' : '트렌드 데이터를 가져오지 못했어요.'}</div>`; return; }
+  $('#sec-trend').innerHTML = `
+    <h2>트렌드 분석</h2>
+    <div class="grid g4" style="margin-bottom:14px">
+      <div class="card"><div class="muted">${Number(t.curMonth.slice(5))}월 누적 (${t.countedDays}일)</div><div class="big">${fmt(t.mtd)}</div></div>
+      <div class="card"><div class="muted">${Number(t.curMonth.slice(5))}월 예상</div><div class="big">${fmt(t.projected)}</div></div>
+      <div class="card"><div class="muted">지난달 (추정)</div><div class="big">${fmt(t.lastMonth)}</div></div>
+      <div class="card"><div class="muted">전년 대비 (최근 3개월)</div><div class="big" style="color:${(t.yoy ?? 0) >= 0 ? '#16a34a' : '#ef4444'}">${t.yoy == null ? '-' : (t.yoy >= 0 ? '+' : '') + t.yoy + '%'}</div></div>
+    </div>
+    <div class="card"><h3>검색량 트렌드 <span class="seg" id="tr-range">${[[12, '1년'], [36, '3년'], [0, '전체']].map(([v, l]) => `<button data-r="${v}" class="${trendRange === v ? 'on' : ''}">${l}</button>`).join('')}</span></h3>
+      <div class="chart" id="ch-month"></div>
+      <div class="muted">${t.scaled ? '데이터랩 상대지수를 검색광고 월간 검색량에 맞춰 환산한 추정치예요. 이번 달은 예상값.' : '검색광고 검색량이 없어 데이터랩 상대지수(최고점=100)로 표시해요.'}</div></div>
+    <div class="card" style="margin-top:14px"><h3>일별 검색량 <span class="muted">최근 90일</span></h3><div class="chart" id="ch-day"></div></div>
+    <div class="grid g2" style="margin-top:14px">
+      <div class="card"><h3>월별 검색 비율 <span class="muted">최근 3년 평균</span></h3><div class="chart" id="ch-mshare"></div></div>
+      <div class="card"><h3>요일별 검색 비율 <span class="muted">최근 52주</span></h3><div class="chart" id="ch-wshare"></div></div>
+    </div>
+    <div class="card" style="margin-top:14px"><h3>키워드 비교 <span class="muted">최대 5개, 데이터랩 상대지수 (최근 3년 월간)</span></h3>
+      <div class="toolbar"><input id="cmpInput" style="flex:1;min-width:260px" value="${esc(d.keyword)}" placeholder="쉼표로 구분 (예: 운전자보험, 암보험, 실손보험)"><button class="btn pri" id="cmpBtn">비교</button></div>
+      <div id="cmpOut" class="muted">키워드를 쉼표로 넣고 비교를 누르세요.</div></div>`;
+  const drawMonth = () => {
+    const m = trendRange ? t.monthly.slice(-trendRange) : t.monthly;
+    const el = $('#ch-month');
+    charts.splice(charts.findIndex((c) => c.el === el) >>> 0, charts.some((c) => c.el === el) ? 1 : 0);
+    lineChart(el, {
+      labels: m.map((x) => x.month.replace('-', '.')),
+      series: [{ name: t.scaled ? '검색량' : '상대지수', color: '#16a34a', values: m.map((x) => (t.scaled ? x.est : x.ratio)), fmt: (v, i) => fmt(v) + (m[i].partial ? ' (예상)' : '') }],
+      height: 280,
+      yFmt: t.scaled ? fmtK : (v) => Math.round(v),
+    });
+  };
+  drawMonth();
+  $$('#tr-range button').forEach((b) => (b.onclick = () => { trendRange = +b.dataset.r; $$('#tr-range button').forEach((x) => x.classList.toggle('on', x === b)); drawMonth(); }));
+  const dd = t.daily.slice(-90);
+  const WD = ['일', '월', '화', '수', '목', '금', '토'];
+  lineChart($('#ch-day'), {
+    labels: dd.map((x) => x.date.slice(5).replace('-', '.')),
+    series: [{ name: t.scaled ? '검색량' : '상대지수', color: '#3b82f6', values: dd.map((x) => (t.scaled ? x.est : x.ratio)) }],
+    height: 220, yFmt: t.scaled ? fmtK : (v) => Math.round(v),
+    tipLabel: (l, i) => `${dd[i].date} (${WD[new Date(dd[i].date + 'T00:00:00Z').getUTCDay()]})`,
+  });
+  barChart($('#ch-mshare'), { labels: Array.from({ length: 12 }, (_, i) => i + 1 + '월'), values: t.monthShare, height: 210 });
+  const order = [1, 2, 3, 4, 5, 6, 0];
+  barChart($('#ch-wshare'), { labels: order.map((i) => WD[i]), values: order.map((i) => t.weekdayShare[i]), height: 210, color: '#3b82f6' });
+  $('#cmpBtn').onclick = runCompare;
+  $('#cmpInput').onkeydown = (e) => { if (e.key === 'Enter') runCompare(); };
+}
+const PAL = ['#16a34a', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
+async function runCompare() {
+  const kws = $('#cmpInput').value.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 5);
+  if (!kws.length) return;
+  $('#cmpOut').innerHTML = '<div class="loading" style="padding:20px"><div class="spin"></div>비교 중...</div>';
+  const j = await (await fetch('/api/compare', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keywords: kws }) })).json();
+  const errs = Object.entries(j.errors || {});
+  $('#cmpOut').innerHTML = `${errs.length ? `<div class="banner err" style="margin:0 0 10px">${errs.map(([k, v]) => esc(k + ': ' + v)).join('<br>')}</div>` : ''}
+    <div class="chart" id="ch-cmp"></div>
+    <div class="legend">${j.keywords.map((k, i) => `<span><i style="background:${PAL[i]}"></i>${esc(k)}</span>`).join('')}</div>
+    <table class="mini" style="margin-top:12px"><tr><th>키워드</th><th>PC</th><th>Mobile</th><th>월간 검색량</th><th>경쟁 정도</th></tr>
+    ${j.volumes.map((v, i) => `<tr><td><span style="color:${PAL[i]}">●</span> ${esc(v.keyword)}</td><td>${fmt(v.pc)}</td><td>${fmt(v.mo)}</td><td><b>${fmt(v.total)}</b></td><td>${esc(v.comp || '-')}</td></tr>`).join('')}</table>
+    ${j.missing?.open ? '<div class="muted" style="margin-top:6px">추이 차트는 검색어 트렌드 API 키를 넣으면 표시돼요.</div>' : ''}`;
+  if (j.series.length) lineChart($('#ch-cmp'), {
+    labels: j.series[0].data.map((x) => x.month.replace('-', '.')),
+    series: j.series.map((s, i) => ({ name: s.keyword, color: PAL[i], values: s.data.map((x) => +x.ratio.toFixed(1)), fmt: (v) => v.toFixed(1) })),
+    height: 260, yFmt: (v) => Math.round(v), area: false,
+  });
+}
+
+/* ---------------------------------------------------------------- 섹션 분석 */
+async function loadSections(kw) {
+  let j;
+  try { j = await (await fetch('/api/sections?keyword=' + encodeURIComponent(kw))).json(); } catch (e) { j = { error: e.message }; }
+  if (!STATE || STATE.keyword !== kw) return;
+  const box = $('#sec-section');
+  if (j.error) { box.innerHTML = `<h2>섹션 분석</h2><div class="card muted">${esc(j.error)}</div>`; return; }
+  const cls = (k) => (k === 'ad' ? 't-ad' : k === 'ex_csa' ? 't-ai' : ['web', 'review', 'kin'].includes(k) ? 't-web' : '');
+  const desc = (s) => (s.key === 'ad' ? `${s.count}개의 광고 노출 중` : s.name === '웹사이트' ? `${s.count}개 문서` : s.key === 'ex_csa' ? 'AI 답변 노출 중' : '');
+  const list = (arr) => `<ul class="order">${arr.map((s, i) => `<li class="${cls(s.key)}"><span class="n">${i + 1}</span><b>${esc(s.name)}</b><span class="muted">${desc(s)}</span></li>`).join('')}</ul>`;
+  const q = encodeURIComponent(kw);
+  box.innerHTML = `
+    <h2>섹션 분석 <span class="muted" style="font-size:12px;font-weight:500">로그아웃 상태 기준 · ${new Date(j.fetchedAt).toLocaleString('ko-KR')} 조회</span></h2>
+    <div class="grid g2">
+      <div class="card"><h3>PC 섹션 배치 순서 <a class="ext muted" target="_blank" href="https://search.naver.com/search.naver?query=${q}">네이버에서 보기 ↗</a></h3>${list(j.pc)}</div>
+      <div class="card"><h3>Mobile 섹션 배치 순서 <a class="ext muted" target="_blank" href="https://m.search.naver.com/search.naver?query=${q}">네이버에서 보기 ↗</a></h3>${list(j.mobile)}</div>
+    </div>
+    <div class="card" style="margin-top:14px"><h3>AI 브리핑 인용 콘텐츠 <span class="muted">${j.ai.length ? j.ai.length + '건' : ''}</span></h3>
+      ${j.ai.length ? `<table class="mini"><tr><th>#</th><th style="text-align:left">구분</th><th style="text-align:left">출처</th><th style="text-align:left">제목</th><th>날짜</th></tr>
+      ${j.ai.map((a, i) => `<tr><td>${i + 1}</td><td style="text-align:left">${esc(a.kind)}</td><td style="text-align:left">${esc(a.source || '')}<div class="muted">${esc(a.domain)}</div></td><td style="text-align:left"><a class="ext" target="_blank" href="${esc(a.url)}">${esc(a.title)}</a></td><td>${esc(a.date || '-')}</td></tr>`).join('')}</table>`
+      : '<div class="muted">이 키워드는 AI 브리핑이 노출되지 않거나 인용 출처를 찾지 못했어요.</div>'}</div>
+    <div class="card" style="margin-top:14px"><h3>웹사이트 TOP ${j.web.length} <span class="muted">PC 통합검색 웹문서 순서</span></h3>
+      ${j.web.length ? `<table class="mini"><tr><th>#</th><th style="text-align:left">구분</th><th style="text-align:left">출처</th><th style="text-align:left">제목</th><th>발행일</th></tr>
+      ${j.web.map((w, i) => `<tr><td>${i + 1}</td><td style="text-align:left">${esc(w.kind)}</td><td style="text-align:left">${esc(w.source)}<div class="muted">${esc(w.domain)}</div></td><td style="text-align:left"><a class="ext" target="_blank" href="${esc(w.url)}">${esc(w.title || w.url)}</a></td><td>${esc(w.date || '-')}</td></tr>`).join('')}</table>`
+      : '<div class="muted">웹문서를 찾지 못했어요.</div>'}</div>`;
+}
+
+/* ---------------------------------------------------------------- 성향 분석 */
+function renderIntent(d) {
+  const v = d.volume || {}, t = d.trend, cm = d.insight?.commercial;
+  const clkT = (v.pcClk || 0) + (v.moClk || 0);
+  $('#sec-intent').innerHTML = `
+    <h2>성향 분석</h2>
+    <div class="grid g2">
+      <div class="card"><h3>기기별 검색 비율</h3>
+        ${v.total ? `<div style="display:flex;gap:20px;align-items:center">${donut(v.pc || 0, v.mo || 0)}
+          <div style="flex:1">
+            <div class="kv"><span><span class="pc">●</span> PC 검색</span><b>${fmt(v.pc)} (${Math.round((v.pc / v.total) * 100)}%)</b></div>
+            <div class="kv"><span><span class="mo">●</span> Mobile 검색</span><b>${fmt(v.mo)} (${Math.round((v.mo / v.total) * 100)}%)</b></div>
+            <div class="kv"><span>PC 광고 클릭 비중</span><b>${clkT ? Math.round((v.pcClk / clkT) * 100) + '%' : NA}</b></div>
+            <div class="kv"><span>Mobile 광고 클릭 비중</span><b>${clkT ? Math.round((v.moClk / clkT) * 100) + '%' : NA}</b></div>
+          </div></div>` : NA}</div>
+      <div class="card"><h3>성별 · 연령별 검색 비율</h3>
+        <div class="muted" style="line-height:1.7">네이버 공개 API는 성별·연령별 <b>절대 비율</b>을 제공하지 않아요 (데이터랩은 조건마다 최고점을 100으로 따로 맞춰서 집단끼리 비교가 안 됨). 블랙키위 같은 서비스는 별도 데이터를 써요.<br>
+        대신 아래 링크에서 같은 키워드의 성별·연령 그래프를 바로 볼 수 있어요.</div>
+        <div class="chips" style="margin-top:10px">
+          <a class="chip click" target="_blank" href="https://datalab.naver.com/keyword/trendSearch.naver">네이버 데이터랩 ↗</a>
+          <a class="chip click" target="_blank" href="https://manage.searchad.naver.com/customers/">검색광고 키워드 도구 ↗</a>
+        </div></div>
+    </div>
+    <div class="grid g2" style="margin-top:14px">
+      <div class="card"><h3>이슈성 ${t ? lvl(t.issue.label) : ''}</h3>
+        ${t ? `<div class="gauge"><div class="mk" style="left:${t.issue.score}%"></div></div><div class="gscale"><span>꾸준함</span><span>${t.issue.score}점</span><span>이슈성</span></div>
+        <ul class="sig"><li>최근 12개월 변동계수 ${t.issue.cv} (클수록 달마다 들쑥날쑥)</li><li>최근 90일 최고점이 평소(중앙값)의 ${t.issue.peak}배</li></ul>
+        <div class="muted" style="margin-top:6px">이슈성이 낮으면 꾸준히 찾는 키워드라 장기 콘텐츠에 유리해요.</div>` : NA}</div>
+      <div class="card"><h3>정보성 / 상업성 ${cm ? `<span class="lvl l3">${esc(cm.label)}</span>` : ''}</h3>
+        ${cm ? `<div class="gauge info"><div class="mk" style="left:${cm.score}%"></div></div><div class="gscale"><span>정보성</span><span>상업성 ${cm.score}점</span><span>상업성</span></div>
+        <ul class="sig">${cm.signals.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : NA}</div>
+    </div>
+    <div class="muted" style="margin-top:10px">키워드 등급, 포화 지수 구간, 이슈성, 정보성/상업성 점수는 이 도구의 자체 기준이에요 (블랙키위 산식과 다를 수 있음).</div>`;
+}
+
+/* ---------------------------------------------------------------- 탭 활성화 */
+const io = new IntersectionObserver((ents) => {
+  for (const e of ents) if (e.isIntersecting) $$('#tabs a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id));
+}, { rootMargin: '-120px 0px -60% 0px' });
+new MutationObserver(() => $$('.sec').forEach((s) => io.observe(s))).observe($('#result'), { childList: true });
+
+/* ---------------------------------------------------------------- 시작 */
+renderHist();
+const startKw = new URLSearchParams(location.search).get('keyword');
+if (startKw) run(startKw, false);
+fetch('/api/config').then((r) => r.json()).then((c) => { if (!c.hasAd && !c.hasOpen && !startKw) $('#banners').innerHTML = `<div class="banner">API 키를 아직 넣지 않았어요. 키가 없으면 섹션 분석만 표시돼요.<button onclick="openSettings()">API 설정하기</button></div>`; });
+</script>
+<script src="xlsx-lite.js"></script>
+<script src="filters.js"></script>
+<script src="review.js"></script>
+<script src="ai.js"></script>
+<script src="dedup.js"></script>
+<script src="bulk.js"></script>
+<script src="settings.js"></script>
+<script src="layout.js"></script>
+</body>
+</html>
