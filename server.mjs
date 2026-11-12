@@ -1044,11 +1044,13 @@ function send(res, status, obj) {
 const MAX_BODY = 25 * 1024 * 1024; // 25MB (기존 키워드 목록·대량 분석 내역도 넉넉히)
 async function readBody(req) {
   const chunks = []; let n = 0;
+  // 한도를 넘으면 나머지는 버리면서 끝까지 읽은 뒤 413 (중간에 끊으면 브라우저에는 '연결 끊김'으로만 보임)
   for await (const c of req) {
     n += c.length;
-    if (n > MAX_BODY) { const e = new Error('요청이 너무 커요 (25MB 초과)'); e.status = 413; throw e; }
-    chunks.push(c);
+    if (n <= MAX_BODY) chunks.push(c);
+    else if (n > MAX_BODY * 8) { req.destroy(); break; }
   }
+  if (n > MAX_BODY) { const e = new Error('요청이 너무 커요 (25MB 초과)'); e.status = 413; throw e; }
   const s = Buffer.concat(chunks).toString('utf8');
   if (!s) return {};
   try { return JSON.parse(s); } catch { const e = new Error('요청 형식이 JSON이 아니에요'); e.status = 400; throw e; }
