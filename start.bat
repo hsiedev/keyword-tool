@@ -37,7 +37,17 @@ goto nonode
 chcp 65001 >nul
 echo  Node: "%NODE_EXE%"
 set "NODE_OPTIONS="
-"%NODE_EXE%" server.mjs --open
+rem 화면의 [서버 다시 시작] 버튼: 서버가 코드 99로 끝나면 다시 실행 (브라우저는 처음 한 번만 열기)
+set "KT_LOOP=1"
+set "OPENFLAG=--open"
+:again
+"%NODE_EXE%" server.mjs %OPENFLAG%
+if "%errorlevel%"=="99" (
+  set "OPENFLAG="
+  echo.
+  echo  서버를 다시 시작해요...
+  goto again
+)
 pause
 exit /b
 

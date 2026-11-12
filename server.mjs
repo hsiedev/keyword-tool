@@ -549,6 +549,61 @@ async function sections(keyword) {
   });
 }
 
+// 자동완성 · 연관검색어 수집 (API 키 불필요)
+// - 네이버 자동완성 (ac.search.naver.com), 구글 자동완성 (suggestqueries.google.com)
+// - 네이버 '관련 검색어': 통합검색 PC 화면이 따로 불러오는 데이터 주소를 찾아서 읽음
+// - deep: 키워드 뒤에 자음(ㄱ~ㅎ)을 붙여 자동완성을 한 번 더 넓게 수집
+const CONSONANTS = ['ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+async function naverAc(q) {
+  const r = await fetch(`https://ac.search.naver.com/nx/ac?q=${encodeURIComponent(q)}&con=1&frm=nv&ans=2&r_format=json&r_enc=UTF-8&r_unicode=0&t_koreng=1&run=2&rev=4&q_enc=UTF-8&st=100`, { headers: { 'User-Agent': UA_PC, Referer: 'https://www.naver.com/' } });
+  if (!r.ok) throw new Error('네이버 자동완성 ' + r.status);
+  const j = await r.json();
+  return (j.items?.[0] || []).map((x) => String(x[0] || '').trim()).filter(Boolean);
+}
+async function googleAc(q) {
+  const r = await fetch(`https://suggestqueries.google.com/complete/search?client=firefox&hl=ko&gl=kr&q=${encodeURIComponent(q)}`, { headers: { 'User-Agent': UA_PC } });
+  if (!r.ok) throw new Error('구글 자동완성 ' + r.status);
+  const j = JSON.parse(Buffer.from(await r.arrayBuffer()).toString('utf8'));
+  return (j[1] || []).map((x) => String(x).trim()).filter(Boolean);
+}
+async function naverRelated(q) {
+  const r = await fetch(`https://search.naver.com/search.naver?where=nexearch&query=${encodeURIComponent(q)}`, { headers: { 'User-Agent': UA_PC, 'Accept-Language': 'ko-KR,ko;q=0.9', Accept: 'text/html' } });
+  if (!r.ok) throw new Error('네이버 검색 응답 ' + r.status);
+  const html = await r.text();
+  const m = html.match(/"apiURL":"(https:\/\/s\.search\.naver\.com\/p\/qra\/[^"]+)"/);
+  if (!m) return [];
+  const url = m[1].replace(/\\u0026/g, '&').replace(/&amp;/g, '&');
+  const r2 = await fetch(url, { headers: { 'User-Agent': UA_PC, Referer: 'https://search.naver.com/' } });
+  if (!r2.ok) throw new Error('네이버 관련 검색어 응답 ' + r2.status);
+  const j = await r2.json();
+  return (j.result?.contents || []).map((c) => ({ keyword: String(c.query || '').trim(), badge: c.badge?.text || '' })).filter((x) => x.keyword);
+}
+async function suggest(keyword, deep) {
+  return cached('sug:' + (deep ? 'd:' : '') + keyword, 6 * HOUR, async () => {
+    const errors = [];
+    const safe = async (name, fn, fb) => { try { return await fn(); } catch (e) { errors.push(name + ': ' + e.message); return fb; } };
+    const [naver, google, related] = await Promise.all([safe('네이버 자동완성', () => naverAc(keyword), []), safe('구글 자동완성', () => googleAc(keyword), []), safe('네이버 관련 검색어', () => naverRelated(keyword), [])]);
+    const deepN = [], deepG = [];
+    if (deep) {
+      for (const c of CONSONANTS) {
+        deepN.push(...(await safe('네이버 자동완성(' + c + ')', () => naverAc(keyword + ' ' + c), [])));
+        deepG.push(...(await safe('구글 자동완성(' + c + ')', () => googleAc(keyword + ' ' + c), [])));
+        await sleep(120);
+      }
+    }
+    // 띄어쓰기·대소문자만 다른 것은 하나로 (처음 나온 표기 유지), 원래 키워드는 제외
+    const key = (s) => s.replace(/\s+/g, '').toLowerCase();
+    const seen = new Set([key(keyword)]), all = [];
+    const add = (kw, src) => { const k = key(kw); if (!k) return; const hit = all.find((x) => x.k === k); if (hit) { if (!hit.src.includes(src)) hit.src.push(src); return; } if (seen.has(k)) return; all.push({ k, keyword: kw, src: [src] }); };
+    related.forEach((x) => add(x.keyword, '네이버 관련'));
+    naver.forEach((x) => add(x, '네이버 자동완성'));
+    google.forEach((x) => add(x, '구글 자동완성'));
+    deepN.forEach((x) => add(x, '네이버 자동완성'));
+    deepG.forEach((x) => add(x, '구글 자동완성'));
+    return { keyword, deep: !!deep, related, naver, google, all: all.map(({ keyword: kw, src }) => ({ keyword: kw, src })), errors, fetchedAt: new Date().toISOString() };
+  });
+}
+
 async function testConnections() {
   const out = {};
   if (hasAd()) {
@@ -986,16 +1041,71 @@ function send(res, status, obj) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(obj));
 }
+const MAX_BODY = 25 * 1024 * 1024; // 25MB (기존 키워드 목록·대량 분석 내역도 넉넉히)
 async function readBody(req) {
-  let s = '';
-  for await (const c of req) s += c;
-  return s ? JSON.parse(s) : {};
+  const chunks = []; let n = 0;
+  for await (const c of req) {
+    n += c.length;
+    if (n > MAX_BODY) { const e = new Error('요청이 너무 커요 (25MB 초과)'); e.status = 413; throw e; }
+    chunks.push(c);
+  }
+  const s = Buffer.concat(chunks).toString('utf8');
+  if (!s) return {};
+  try { return JSON.parse(s); } catch { const e = new Error('요청 형식이 JSON이 아니에요'); e.status = 400; throw e; }
 }
+
+// ---------------------------------------------------------------- 보안: 이 PC의 분석기 화면에서 온 요청만
+// - Host: localhost / 127.0.0.1 만 (다른 도메인 이름으로 이 서버를 부르는 공격 차단)
+// - 값을 바꾸는 요청(POST 등): Origin이 있으면 localhost / 127.0.0.1 이어야 함 (악성 사이트가 몰래 설정을 바꾸지 못하게)
+const LOCAL_RE = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+function guard(req, u) {
+  const host = String(req.headers.host || '');
+  if (host && !LOCAL_RE.test(host)) return '허용되지 않은 주소로 들어온 요청이에요';
+  if (u.pathname.startsWith('/api/') && req.method !== 'GET' && req.method !== 'HEAD') {
+    const origin = String(req.headers.origin || '');
+    if (origin && origin !== 'null') {
+      let oh = ''; try { oh = new URL(origin).host; } catch {}
+      if (!/^https?:$/.test(new URL(origin).protocol) || !LOCAL_RE.test(oh)) return '다른 사이트에서 온 요청이라 막았어요';
+    }
+    if (req.headers['sec-fetch-site'] === 'cross-site') return '다른 사이트에서 온 요청이라 막았어요';
+  }
+  return '';
+}
+
+// ---------------------------------------------------------------- 버전: 서버 코드가 바뀌었는지 (다시 시작 필요 여부)
+const SERVER_FILES = ['server.mjs', 'ai-cli.mjs', 'github-sync.mjs', 'sections.mjs', 'settings-defaults.mjs'];
+const codeHash = () => {
+  const h = crypto.createHash('sha1');
+  for (const f of SERVER_FILES) { try { h.update(fs.readFileSync(path.join(__dirname, f))); } catch {} }
+  return h.digest('hex').slice(0, 12);
+};
+const BOOT_HASH = codeHash();
+const STARTED_AT = Date.now();
 const mask = (s) => (s ? String(s).slice(0, 4) + '••••' : '');
 
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://localhost');
+  const blocked = guard(req, u);
+  if (blocked) { console.log('  차단: ' + req.method + ' ' + u.pathname + ' (' + (req.headers.origin || req.headers.host || '') + ')'); return send(res, 403, { error: blocked }); }
   try {
+    if (u.pathname === '/api/version') {
+      const now = codeHash();
+      return send(res, 200, { boot: BOOT_HASH, now, stale: now !== BOOT_HASH, startedAt: STARTED_AT, canRestart: process.env.KT_LOOP === '1', node: process.version });
+    }
+    if (u.pathname === '/api/restart' && req.method === 'POST') {
+      if (process.env.KT_LOOP !== '1') return send(res, 200, { ok: false, error: '이번에는 start.bat 창을 닫고 다시 실행해 주세요. 그다음부터는 이 버튼으로 다시 시작돼요.' });
+      send(res, 200, { ok: true });
+      console.log('  화면에서 다시 시작을 요청했어요. 서버를 다시 켜요...');
+      try { fs.writeFileSync(CACHE_PATH, JSON.stringify(cache)); } catch {}
+      setTimeout(() => process.exit(99), 300); // start.bat이 코드 99를 받으면 다시 실행
+      return;
+    }
+    if (u.pathname === '/api/suggest') {
+      const kw = String(u.searchParams.get('keyword') || '').trim().slice(0, 60);
+      if (!kw) return send(res, 400, { error: '키워드를 넣어주세요' });
+      try { return send(res, 200, await suggest(kw, u.searchParams.get('deep') === '1')); }
+      catch (e) { return send(res, 200, { error: '자동완성·연관검색어를 가져오지 못했어요: ' + e.message }); }
+    }
     if (u.pathname === '/api/config' && req.method === 'GET') {
       return send(res, 200, {
         hasAd: hasAd(), hasOpen: hasOpen(),
@@ -1188,8 +1298,8 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': MIME[path.extname(fp)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
     fs.createReadStream(fp).pipe(res);
   } catch (e) {
-    console.error(e);
-    send(res, 500, { error: e.message });
+    if (!e.status) console.error(e);
+    if (!res.headersSent) send(res, e.status || 500, { error: e.message });
   }
 });
 
