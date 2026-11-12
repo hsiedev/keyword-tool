@@ -25,9 +25,13 @@
 <nav class="tabs hidden" id="tabs">
   <a href="#sec-basic" class="on">기본 정보</a>
   <a href="#sec-related">연관 키워드</a>
+  <a href="#sec-suggest">자동완성·관련 검색어</a>
   <a href="#sec-trend">트렌드 분석</a>
   <a href="#sec-section">섹션 분석</a>
   <a href="#sec-intent">성향 분석</a>
+  <span style="flex:1"></span>
+  <button type="button" class="btn sm tab-act" id="rptHtml" title="이 분석 결과를 한 장짜리 HTML 파일로 저장해요 (인터넷 없이 열림)">보고서 저장</button>
+  <button type="button" class="btn sm tab-act" id="rptPrint" title="인쇄 창에서 'PDF로 저장'을 고르면 PDF가 돼요">인쇄·PDF</button>
 </nav>
 <div id="banners"></div>
 <main id="main">
@@ -623,6 +627,7 @@ async function run(kw, push = true) {
     if (push) pushHist(kw);
     render();
     loadSections(kw);
+    loadSuggest(kw, false);
   } catch (e) {
     $('#result').innerHTML = `<div class="banner err">분석 실패: ${esc(e.message)}<br>서버 창(검은 창)이 켜져 있는지 확인해 주세요.</div>`;
   }
@@ -645,6 +650,7 @@ function render() {
   $('#result').innerHTML = `
     <section class="sec" id="sec-basic"></section>
     <section class="sec" id="sec-related"></section>
+    <section class="sec" id="sec-suggest"><h2>자동완성 · 관련 검색어</h2><div class="loading"><div class="spin"></div>네이버·구글 자동완성과 네이버 관련 검색어 모으는 중...</div></section>
     <section class="sec" id="sec-trend"></section>
     <section class="sec" id="sec-section"><h2>섹션 분석</h2><div class="loading"><div class="spin"></div>네이버 검색 결과 읽는 중...</div></section>
     <section class="sec" id="sec-intent"></section>`;
@@ -1011,6 +1017,96 @@ function renderIntent(d) {
     <div class="muted" style="margin-top:10px">키워드 등급, 포화 지수 구간, 이슈성, 정보성/상업성 점수는 이 도구의 자체 기준이에요 (블랙키위 산식과 다를 수 있음).</div>`;
 }
 
+/* ---------------------------------------------------------------- 자동완성 · 관련 검색어 (API 키 불필요) */
+let SUG = null;
+async function loadSuggest(kw, deep) {
+  const sec = $('#sec-suggest');
+  if (!sec) return;
+  if (deep) sec.querySelector('.sug-body')?.insertAdjacentHTML('afterbegin', '<div class="loading" style="padding:16px"><div class="spin"></div>자음(ㄱ~ㅎ)을 붙여 자동완성을 넓게 모으는 중... (10초쯤)</div>');
+  let j;
+  try { j = await (await fetch(`/api/suggest?keyword=${encodeURIComponent(kw)}${deep ? '&deep=1' : ''}`)).json(); } catch (e) { j = { error: e.message }; }
+  if (STATE?.keyword !== kw) return; // 그 사이 다른 키워드로 바뀜
+  if (j.error) { sec.innerHTML = `<h2>자동완성 · 관련 검색어</h2><div class="banner err" style="margin:0">${esc(j.error)}${/404|Not found/i.test(j.error) ? ' (서버를 다시 시작하면 생겨요)' : ''}</div>`; return; }
+  SUG = j;
+  drawSuggest();
+}
+function drawSuggest() {
+  const j = SUG, sec = $('#sec-suggest');
+  if (!j || !sec) return;
+  const have = new Set((STATE.related || []).map((r) => r.keyword.replace(/\s+/g, '').toLowerCase()));
+  const chip = (k, extra = '') => { const n = k.replace(/\s+/g, '').toLowerCase(); return `<span class="chip click" data-sug="${esc(k)}" title="${have.has(n) ? '연관 키워드 표에도 있어요 (검색량 있음)' : '연관 키워드 표에 없는 키워드'}">${esc(k)}${extra}${have.has(n) ? '<i class="sug-dot" title="검색량 데이터 있음"></i>' : ''}</span>`; };
+  const col = (title, note, list) => `<div class="card"><h3>${title} <span class="muted">${note}</span></h3><div class="chips">${list || '<span class="muted">없어요</span>'}</div></div>`;
+  const newOnes = j.all.filter((x) => !have.has(x.keyword.replace(/\s+/g, '').toLowerCase()));
+  sec.innerHTML = `<h2>자동완성 · 관련 검색어 <span class="muted" style="font-size:13px;font-weight:500">합쳐서 ${j.all.length}개 · 그중 연관 키워드 표에 없는 ${newOnes.length}개${j.deep ? ' · 넓게 수집함' : ''}</span></h2>
+    <div class="toolbar">
+      ${j.deep ? '' : '<button class="btn" id="sugDeep" title="키워드 뒤에 ㄱ~ㅎ을 붙여 자동완성을 한 번 더 모아요">넓게 수집 (ㄱ~ㅎ)</button>'}
+      <span style="flex:1"></span>
+      <label class="muted inl"><input type="checkbox" id="sugOnlyNew" checked> 연관 키워드 표에 없는 것만 보내기</label>
+      <button class="btn pri" id="sugBulk">대량 분석으로 보내기</button>
+      <button class="btn" id="sugAi">AI 생성기 예시로</button>
+      <button class="btn" id="sugTxt">TXT</button>
+      <button class="btn" id="sugCopy">복사</button>
+    </div>
+    <div class="sug-body grid g3">
+      ${col('네이버 관련 검색어', '통합검색 하단', j.related.map((x) => chip(x.keyword, x.badge ? ` <small class="sug-badge">${esc(x.badge)}</small>` : '')).join(''))}
+      ${col('네이버 자동완성', '검색창', j.naver.map((k) => chip(k)).join(''))}
+      ${col('구글 자동완성', '검색창', j.google.map((k) => chip(k)).join(''))}
+    </div>
+    ${j.deep ? col('넓게 수집한 전체', `${j.all.length}개 · 네이버·구글, ㄱ~ㅎ`, j.all.map((x) => chip(x.keyword)).join('')) : ''}
+    ${j.errors?.length ? `<div class="muted" style="margin-top:8px">일부를 못 가져왔어요: ${esc(j.errors.slice(0, 3).join(' / '))}</div>` : ''}
+    <div class="muted" style="margin-top:8px"><i class="sug-dot"></i> 표시는 위 연관 키워드 표에도 있는 키워드(검색량 있음)예요. 키워드를 누르면 그 키워드로 다시 분석해요. 자동완성·관련 검색어는 API 키 없이 공개 검색창에서 가져와서, 네이버·구글이 바꾸면 안 될 수 있어요.</div>`;
+  const pick = () => { const all = j.all.map((x) => x.keyword.replace(/\s+/g, '')); return $('#sugOnlyNew').checked ? all.filter((k) => !have.has(k.toLowerCase())) : all; };
+  $$('[data-sug]', sec).forEach((c) => (c.onclick = () => { run(c.dataset.sug); scrollTo({ top: 0 }); }));
+  if ($('#sugDeep')) $('#sugDeep').onclick = () => loadSuggest(STATE.keyword, true);
+  $('#sugBulk').onclick = () => { const l = pick(); if (!l.length) return toast('보낼 키워드가 없어요'); window.__BULK?.setInput(l.slice(0, 1000), `'${STATE.keyword}' 자동완성·관련 검색어 ${l.length}개를 넣었어요. [분석 시작]을 누르면 검색량·입찰가를 조회해요.`); };
+  $('#sugAi').onclick = () => {
+    const l = pick(); if (!l.length) return toast('보낼 키워드가 없어요');
+    showAI(true); $('#sideNew')?.click();
+    const tp = $('#aiTopic'), ex = $('#aiExamples');
+    tp.value = STATE.keyword; ex.value = l.slice(0, 30).join(', ');
+    tp.dispatchEvent(new Event('input')); ex.dispatchEvent(new Event('input'));
+    toast(`AI 생성기 새 탭에 주제와 예시 ${Math.min(30, l.length)}개를 넣었어요.`, 'ok');
+  };
+  $('#sugTxt').onclick = () => downloadTxt(pick(), `자동완성_${STATE.keyword}_${new Date().toISOString().slice(0, 10)}`);
+  $('#sugCopy').onclick = async () => { const t = pick().join('\n'); try { await navigator.clipboard.writeText(t); toast(`${pick().length}개를 복사했어요`, 'ok'); } catch { toast('복사하지 못했어요', 'err'); } };
+}
+
+/* ---------------------------------------------------------------- 보고서 (HTML 저장 · 인쇄) */
+async function reportHtml() {
+  if (!STATE) return toast('먼저 키워드를 분석해 주세요');
+  const css = await (await fetch('app.css')).text().catch(() => '');
+  let logo = '';
+  try { const b = await (await fetch('logo-128.png')).blob(); logo = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); }); } catch {}
+  const body = $('#result').cloneNode(true);
+  body.querySelectorAll('button, input, select, .toolbar, .pager, .seg, script, .loading, details summary').forEach((el) => el.remove());
+  // 연관 키워드는 화면의 한 페이지만 보이므로, 지금 정렬·필터 기준 상위 100개 표로 바꿈
+  const rel = body.querySelector('#relTbl');
+  if (rel && typeof relRows === 'function') {
+    const rows = relRows().slice(0, 100);
+    rel.innerHTML = `<thead><tr><th class="l">키워드</th><th>월간 검색량</th><th>PC</th><th>모바일</th><th>경쟁</th><th>광고수</th><th>블로그 누적</th></tr></thead><tbody>${rows.map((r) => `<tr><td class="l">${esc(r.keyword)}</td><td>${fmt(r.total)}</td><td>${r.pcLow ? '&lt;10' : fmt(r.pc)}</td><td>${r.moLow ? '&lt;10' : fmt(r.mo)}</td><td>${esc(r.comp || '')}</td><td>${r.adDepth ?? ''}</td><td>${r.blog == null ? '-' : fmt(r.blog)}</td></tr>`).join('')}</tbody>`;
+  }
+  const when = new Date().toLocaleString('ko-KR');
+  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>'${esc(STATE.keyword)}' 키워드 분석 보고서</title><style>${css}
+body{padding:0!important;background:#fff} .rpt{max-width:1100px;margin:0 auto;padding:28px} .rpt-head{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);padding-bottom:14px;margin-bottom:18px} .rpt-head img{width:40px;height:40px} .rpt-head h1{margin:0;font-size:22px} .tbl-wrap{max-height:none!important;overflow:visible!important} table.rel th{position:static}
+</style></head><body><div class="rpt"><div class="rpt-head">${logo ? `<img src="${logo}" alt="">` : ''}<div><h1>'${esc(STATE.keyword)}' 키워드 분석 보고서</h1><div class="muted">${esc(when)} 생성 · 키워드 분석기</div></div></div>${body.innerHTML}</div></body></html>`;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
+  a.download = `키워드분석_${STATE.keyword.replace(/[\\/:*?"<>|]/g, '')}_${new Date().toISOString().slice(0, 10)}.html`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast('보고서를 HTML 파일로 저장했어요. 브라우저로 열면 인터넷 없이도 보여요.', 'ok');
+}
+function reportPrint() {
+  if (!STATE) return toast('먼저 키워드를 분석해 주세요');
+  const wasDark = document.documentElement.classList.contains('dark');
+  document.documentElement.classList.remove('dark');
+  const back = () => { if (wasDark) document.documentElement.classList.add('dark'); removeEventListener('afterprint', back); };
+  addEventListener('afterprint', back);
+  setTimeout(() => window.print(), 50);
+}
+$('#rptHtml').onclick = reportHtml;
+$('#rptPrint').onclick = reportPrint;
+
 /* ---------------------------------------------------------------- 탭 활성화 */
 const io = new IntersectionObserver((ents) => {
   for (const e of ents) if (e.isIntersecting) $$('#tabs a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id));
@@ -1024,6 +1120,7 @@ if (startKw) run(startKw, false);
 fetch('/api/config').then((r) => r.json()).then((c) => { if (!c.hasAd && !c.hasOpen && !startKw) $('#banners').innerHTML = `<div class="banner">API 키를 아직 넣지 않았어요. 키가 없으면 섹션 분석만 표시돼요.<button onclick="openSettings()">API 설정하기</button></div>`; });
 </script>
 <script src="xlsx-lite.js"></script>
+<script src="dialogs.js"></script>
 <script src="filters.js"></script>
 <script src="review.js"></script>
 <script src="ai.js"></script>

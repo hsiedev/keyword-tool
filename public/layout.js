@@ -139,6 +139,42 @@
   ['aiView', 'dupView', 'bulkView', 'main'].forEach((id) => { const el = document.getElementById(id); if (el) mo.observe(el, { attributes: true, attributeFilter: ['class'] }); });
   if (typeof window.applyUI === 'function') { const o = window.applyUI; window.applyUI = function () { const r = o.apply(this, arguments); sync(); return r; }; }
 
+  // ---------------------------------------------------------------- 서버 상태 띠: 꺼짐 / 예전 버전 / 코드가 바뀜 → 다시 시작
+  const bar = document.createElement('div');
+  bar.className = 'srv-bar hidden';
+  document.querySelector('.top')?.after(bar);
+  let lastStart = 0, restarting = false;
+  async function checkServer() {
+    if (restarting) return;
+    let v = null, down = false;
+    try { const r = await fetch('/api/version', { cache: 'no-store' }); v = r.ok ? await r.json() : { old: true }; } catch { down = true; }
+    let html = '';
+    if (down) html = '<b>분석기 서버가 꺼져 있어요.</b> 폴더의 <b>start.bat</b>을 실행해 주세요. (켜지면 이 띠는 저절로 사라져요)';
+    else if (v.old) html = '<b>서버가 예전 버전이에요.</b> start.bat 창을 닫고 다시 실행하면 새 기능이 켜져요.';
+    else if (v.stale) html = `<b>서버 코드가 바뀌었어요.</b> 다시 시작해야 적용돼요. ${v.canRestart ? '<button type="button" class="btn sm" id="srvRestart">서버 다시 시작</button>' : '(이번에는 start.bat 창을 닫고 다시 실행해 주세요. 다음부터는 버튼 한 번이면 돼요)'}`;
+    if (v?.startedAt) { if (lastStart && v.startedAt !== lastStart && !v.stale) toast('서버가 새로 켜졌어요.', 'ok'); lastStart = v.startedAt; }
+    bar.innerHTML = html;
+    bar.classList.toggle('hidden', !html);
+    bar.classList.toggle('down', down);
+    const b = document.getElementById('srvRestart');
+    if (b) b.onclick = restart;
+  }
+  async function restart() {
+    restarting = true;
+    bar.innerHTML = '<span class="spin" style="display:inline-block;width:12px;height:12px;border-width:2px;vertical-align:-2px"></span> 서버를 다시 시작하는 중...';
+    try { const r = await (await fetch('/api/restart', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json(); if (!r.ok) { restarting = false; bar.innerHTML = r.error || '다시 시작하지 못했어요'; return; } } catch {}
+    const t0 = Date.now();
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 1000));
+      try { const v = await (await fetch('/api/version', { cache: 'no-store' })).json(); if (v.startedAt && v.startedAt !== lastStart) { location.reload(); return; } } catch {}
+      if (Date.now() - t0 > 30000) { restarting = false; bar.innerHTML = '<b>30초가 지나도 서버가 다시 켜지지 않았어요.</b> start.bat 창을 확인해 주세요.'; return; }
+    }
+  }
+  window.__LAYOUT.checkServer = checkServer;
+  checkServer();
+  setInterval(checkServer, 30000);
+  addEventListener('focus', checkServer);
+
   applyTheme();
   sync();
 })();
