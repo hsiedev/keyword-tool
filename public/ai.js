@@ -117,10 +117,10 @@
   const isBad = (it) => vsum(it).group === '부적합';
   // 부적합 판정 키워드를 탭의 제외 목록에 저장 (다음 생성 때 Gemini에 알려주고, PC에서도 걸러냄)
   // 수동 제외: 체크한 키워드를 판정과 상관없이 제외 목록에 넣고 결과에서 뺌
-  function rejectChecked() {
+  async function rejectChecked() {
     const sel = AI.items.filter((it) => it._sel);
     if (!sel.length) return alert('제외할 키워드를 먼저 체크하세요.');
-    if (!confirm(`체크한 키워드 ${sel.length}개를 제외 목록에 넣고 결과에서 빼까요?\n이 탭에서는 다음 생성부터 다시 나오지 않아요.`)) return;
+    if (!await uiConfirm(`체크한 키워드 ${sel.length}개를 제외 목록에 넣고 결과에서 빼까요?\n이 탭에서는 다음 생성부터 다시 나오지 않아요.`)) return;
     const s = AI.cur;
     s.rejected = s.rejected || [];
     const have = new Set(s.rejected.map((r) => norm(r.keyword)));
@@ -414,14 +414,14 @@
     $('#aiVol').onclick = () => attachVolumes();
     $('#aiSem').onclick = semanticCheck;
     $('#aiVerify').onclick = verify;
-    $('#aiVReset').onclick = () => { if (confirm('이 탭의 재검증 기록과 직접 판정을 모두 지울까요?')) { AI.items.forEach((it) => { delete it.checks; delete it.decision; }); save(); draw(); } };
+    $('#aiVReset').onclick = async () => { if (await uiConfirm('이 탭의 재검증 기록과 직접 판정을 모두 지울까요?')) { AI.items.forEach((it) => { delete it.checks; delete it.decision; }); save(); draw(); } };
     $('#aiMixBtn').onclick = () => openMixed(false);
-    $('#aiDel').onclick = () => {
+    $('#aiDel').onclick = async () => {
       const selItems = AI.items.filter((it) => it._sel);
       const n = selItems.length;
       if (!n) return alert('삭제할 키워드를 먼저 체크하세요.');
       const nBad = selItems.filter(isBad).length;
-      if (!confirm(`체크한 키워드 ${n}개를 삭제할까요?${nBad ? `\n그중 부적합 ${nBad}개는 이 탭의 제외 목록에 저장돼서 다시 생성되지 않아요.` : ''}`)) return;
+      if (!await uiConfirm(`체크한 키워드 ${n}개를 삭제할까요?${nBad ? `\n그중 부적합 ${nBad}개는 이 탭의 제외 목록에 저장돼서 다시 생성되지 않아요.` : ''}`)) return;
       rejectItems(selItems);
       AI.items = AI.items.filter((it) => !it._sel);
       if (AI.vfilter !== '전체' && !viewRows().length) AI.vfilter = '전체';
@@ -437,9 +437,9 @@
     const se = $('#aiSendExisting');
     se.checked = localStorage.getItem('aiSendExisting') !== '0';
     se.onchange = () => localStorage.setItem('aiSendExisting', se.checked ? '1' : '0');
-    $('#aiClear').onclick = () => {
+    $('#aiClear').onclick = async () => {
       const nBad = AI.items.filter(isBad).length;
-      if (!confirm(`이 탭의 결과를 모두 지울까요? (기존 키워드 목록은 그대로)${nBad ? `\n부적합 ${nBad}개는 제외 목록에 남아서 다시 생성되지 않아요.` : ''}`)) return;
+      if (!await uiConfirm(`이 탭의 결과를 모두 지울까요? (기존 키워드 목록은 그대로)${nBad ? `\n부적합 ${nBad}개는 제외 목록에 남아서 다시 생성되지 않아요.` : ''}`)) return;
       rejectItems(AI.items);
       AI.items = []; save(); draw();
     };
@@ -539,12 +539,12 @@
     m.classList.remove('hidden');
     m.style.left = Math.min(e.clientX, innerWidth - 170) + 'px';
     m.style.top = Math.min(e.clientY, innerHeight - 130) + 'px';
-    $$('button', m).forEach((b) => (b.onclick = () => {
+    $$('button', m).forEach((b) => (b.onclick = async () => {
       m.classList.add('hidden');
       if (b.dataset.a === 'pin') { s.pinned = !s.pinned; persist(); drawSide(); }
       if (b.dataset.a === 'rename') rename(s);
       if (b.dataset.a === 'del') {
-        if (!confirm(`'${s.name}' 탭을 삭제할까요? 생성된 키워드 ${s.items.length}개도 같이 지워져요.`)) return;
+        if (!await uiConfirm(`'${s.name}' 탭을 삭제할까요? 생성된 키워드 ${s.items.length}개도 같이 지워져요.`)) return;
         if (s === AI.cur && guardBusy()) return;
         AI.sessions = AI.sessions.filter((x) => x !== s);
         persist();
@@ -666,7 +666,7 @@
     const form = readForm();
     const examples = splitList(form.examples);
     if (!form.topic.trim() && !examples.length) return msg('주제나 예시 키워드를 넣어주세요', true);
-    if (!more && AI.items.length && !confirm('이 탭의 결과를 지우고 새로 생성할까요? (이어서 받으려면 "이어서 더 생성", 다른 주제면 왼쪽 "+ 새 탭")')) return;
+    if (!more && AI.items.length && !await uiConfirm('이 탭의 결과를 지우고 새로 생성할까요? (이어서 받으려면 "이어서 더 생성", 다른 주제면 왼쪽 "+ 새 탭")')) return;
     if (!more) { rejectItems(AI.items); AI.items = []; }
     const avoid = [...examples, ...AI.items.map((it) => it.keyword)];
     const rejected = (AI.cur.rejected || []).slice(-150);
@@ -936,7 +936,7 @@
     $$('[data-rm]', box).forEach((a) => (a.onclick = async (e) => {
       e.preventDefault();
       const s = AI.sources.find((x) => String(x.id) === a.dataset.rm);
-      if (!confirm(`'${s?.name}' 목록(${s?.keywords.length}개)을 파일에서 삭제할까요? 모든 탭에서 사라져요.\n잠깐 안 쓰려면 삭제 대신 체크를 끄세요.`)) return;
+      if (!await uiConfirm(`'${s?.name}' 목록(${s?.keywords.length}개)을 파일에서 삭제할까요? 모든 탭에서 사라져요.\n잠깐 안 쓰려면 삭제 대신 체크를 끄세요.`)) return;
       AI.sources = AI.sources.filter((x) => String(x.id) !== a.dataset.rm);
       await saveSources();
       recheckAll(); drawSources(); draw();
@@ -980,7 +980,7 @@
     if (!activeSources().length) return alert('이 탭에서 켜 둔 ② 기존 키워드 목록이 없어요. 목록을 불러오거나 체크를 켜 주세요.');
     if (!targets.length) return alert('비교할 만큼 비슷한 기존 키워드가 있는 후보가 없어요.');
     const sent = new Set(targets.flatMap((t) => t.sim));
-    if (!confirm(`후보 ${targets.length}개와, 각 후보와 글자가 비슷한 기존 키워드 ${sent.size}개만 AI로 보내 의미가 같은지 판단해요. 진행할까요?`)) return;
+    if (!await uiConfirm(`후보 ${targets.length}개와, 각 후보와 글자가 비슷한 기존 키워드 ${sent.size}개만 AI로 보내 의미가 같은지 판단해요. 진행할까요?`)) return;
     const btn = $('#aiSem'); btn.disabled = true;
     try {
       for (let i = 0; i < targets.length; i += 100) {
@@ -1083,7 +1083,7 @@
     $('#aiRej').innerHTML = `<div style="display:flex;justify-content:flex-end;margin:6px 0"><button class="btn" id="aiRejClear">제외 목록 비우기</button></div>
       <div class="tbl-wrap" style="max-height:260px"><table class="mini"><tr><th>키워드</th><th style="text-align:left">제외 사유</th><th>제외한 때</th><th></th></tr>
       ${rej.slice().reverse().map((r) => `<tr><td>${esc(r.keyword)}</td><td style="text-align:left" class="muted">${esc(r.reason)}</td><td class="muted">${fd(r.at)}</td><td><a href="#" class="ext" data-unrej="${esc(r.keyword)}">제외 해제</a></td></tr>`).join('')}</table></div>`;
-    $('#aiRejClear').onclick = () => { if (confirm(`제외 목록 ${rej.length}개를 모두 비울까요? 비우면 다음 생성에서 다시 나올 수 있어요.`)) { AI.cur.rejected = []; save(); draw(); } };
+    $('#aiRejClear').onclick = async () => { if (await uiConfirm(`제외 목록 ${rej.length}개를 모두 비울까요? 비우면 다음 생성에서 다시 나올 수 있어요.`)) { AI.cur.rejected = []; save(); draw(); } };
     $$('[data-unrej]', $('#aiRej')).forEach((a) => (a.onclick = (e) => { e.preventDefault(); AI.cur.rejected = rej.filter((r) => r.keyword !== a.dataset.unrej); save(); draw(); $('#aiRejBox').open = true; }));
   }
   const fval = (it, k) => {

@@ -157,7 +157,7 @@
       if (b.dataset.a === 'rename') rename(m.id, target);
       if (b.dataset.a === 'del') {
         if (isCur && isBusy()) return;
-        if (!confirm(`'${m.name}' 내역을 삭제할까요? 분석 결과 ${(isCur ? B.order.length : m.count || 0).toLocaleString('ko-KR')}개와 판정 기록이 같이 지워져요.`)) return;
+        if (!await uiConfirm(`'${m.name}' 내역을 삭제할까요? 분석 결과 ${(isCur ? B.order.length : m.count || 0).toLocaleString('ko-KR')}개와 판정 기록이 같이 지워져요.`)) return;
         if (!(isCur && H.cur.draft)) { try { await fetch('/api/bulk-history', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ delete: m.id }) }); } catch {} }
         H.list = H.list.filter((x) => x.id !== m.id); H.cache.delete(m.id);
         if (isCur) { clearTimeout(saveT); loadInto(newSession()); afterOpen(); } else drawSide();
@@ -386,7 +386,7 @@
     if (B.busy) return;
     const kws = inputKeywords();
     if (!kws.length) return ($('#bMsg').innerHTML = '<span style="color:#b91c1c">분석할 키워드를 넣어주세요</span>');
-    if (kws.length > 1000 && !confirm(`키워드가 ${kws.length.toLocaleString('ko-KR')}개예요. 앞의 1,000개만 분석할까요?`)) return;
+    if (kws.length > 1000 && !await uiConfirm(`키워드가 ${kws.length.toLocaleString('ko-KR')}개예요. 앞의 1,000개만 분석할까요?`)) return;
     // 결과가 있는 탭에서 다시 분석하면 이전 결과는 내역에 그대로 두고 새 탭으로 (재검증 조건은 이어받음)
     if (B.order.length || !H.cur) { const vc = { ...B.vc }; clearTimeout(saveT); loadInto(newSession()); B.vc = vc; }
     B.rows = new Map(); B.order = kws.slice(0, 1000); B.page = 1; B.sel = new Set(); B.f.v = '';
@@ -656,10 +656,10 @@
     if ($('#bSelInfo')) $('#bSelInfo').textContent = n ? `체크 ${n.toLocaleString('ko-KR')}개` : '';
     if ($('#bDelSel')) $('#bDelSel').disabled = !n;
   }
-  function delSelected() {
+  async function delSelected() {
     const ks = B.order.filter((k) => B.sel.has(k));
     if (!ks.length) return;
-    if (!confirm(`체크한 ${ks.length.toLocaleString('ko-KR')}개 키워드를 결과에서 지울까요?`)) return;
+    if (!await uiConfirm(`체크한 ${ks.length.toLocaleString('ko-KR')}개 키워드를 결과에서 지울까요?`)) return;
     const del = new Set(ks);
     B.order = B.order.filter((k) => !del.has(k)); ks.forEach((k) => B.rows.delete(k));
     B.sel = new Set(); if (B.f.v && !viewRows().length) B.f.v = ''; persist(); drawResult();
@@ -711,8 +711,8 @@
       B.sel = new Set(bad); B.f.v = '부적합'; B.page = 1; B.fb.reset(); drawResult();
       vmsg(`부적합 ${bad.length.toLocaleString('ko-KR')}개를 체크했어요. 표 위의 [체크한 키워드 삭제]를 누르면 지워져요. (판정이 엇갈린 키워드는 빼고 체크했어요)`);
     };
-    $('#bvClear').onclick = () => {
-      if (!confirm('모든 키워드의 AI 판정 기록과 직접 판정을 지울까요?')) return;
+    $('#bvClear').onclick = async () => {
+      if (!await uiConfirm('모든 키워드의 AI 판정 기록과 직접 판정을 지울까요?')) return;
       B.order.forEach((k) => { delete B.rows.get(k).checks; delete B.rows.get(k).decision; }); B.f.v = ''; persist(); drawResult(); vmsg('판정 기록을 지웠어요.');
     };
   }

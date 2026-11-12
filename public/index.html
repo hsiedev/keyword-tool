@@ -798,10 +798,10 @@ function renderRelated() {
   $('#csvBtn').onclick = downloadCsv;
   $('#relTxt').onclick = () => downloadTxt(relRows().map((r) => r.keyword), `연관키워드_${STATE.keyword}_${new Date().toISOString().slice(0, 10)}`);
   $('#loadBlog').onclick = loadBlogCounts;
-  $('#cmpSel').onclick = () => {
+  $('#cmpSel').onclick = async () => {
     const sel = [...REL.selected];
     if (!sel.length) return alert('표 왼쪽 체크박스로 비교할 키워드를 골라주세요 (최대 4개, 현재 키워드 포함 5개).');
-    if (sel.length > 4 && !confirm(`${sel.length}개를 체크했어요. 비교는 최대 4개라 앞의 4개(${sel.slice(0, 4).join(', ')})만 비교할까요?`)) return;
+    if (sel.length > 4 && !await uiConfirm(`${sel.length}개를 체크했어요. 비교는 최대 4개라 앞의 4개(${sel.slice(0, 4).join(', ')})만 비교할까요?`)) return;
     $('#cmpInput').value = [STATE.keyword, ...sel].slice(0, 5).join(', ');
     location.hash = '#sec-trend';
     runCompare();

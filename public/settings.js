@@ -165,7 +165,7 @@
       try { const j = JSON.parse(await f.text()); DRAFT = { ui: { ...clone(DEF().ui), ...(j.ui || {}) }, rules: deepMerge(clone(DEF().rules), j.rules || {}) }; dirty = true; preview(); render(tab); $('#testOut').innerHTML = '설정 파일을 불러왔어요. [저장]을 누르면 적용돼요.'; }
       catch (err) { alert('설정 파일을 읽지 못했어요: ' + err.message); }
     };
-    if ($('#setResetAll')) $('#setResetAll').onclick = () => { if (confirm('화면과 규칙을 모두 기본값으로 되돌릴까요? ([저장]을 눌러야 적용돼요)')) { DRAFT = clone(DEF()); dirty = true; preview(); render(tab); } };
+    if ($('#setResetAll')) $('#setResetAll').onclick = async () => { if (await uiConfirm('화면과 규칙을 모두 기본값으로 되돌릴까요? ([저장]을 눌러야 적용돼요)')) { DRAFT = clone(DEF()); dirty = true; preview(); render(tab); } };
   }
   const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
   function deepMerge(a, b) { for (const k of Object.keys(b)) a[k] = isObj(a[k]) && isObj(b[k]) ? deepMerge(a[k], b[k]) : b[k]; return a; }
@@ -194,8 +194,8 @@
   // 상단·하단 [저장]: API 탭이면 키 저장, 화면/규칙 탭이면 설정 저장
   $$('.act-save').forEach((b) => (b.onclick = () => (MTAB === 'api' ? saveSettings() : saveRules())));
   // 닫을 때 저장 안 한 변경 확인
-  $$('.act-close').forEach((b) => (b.onclick = () => {
-    if (dirty && !confirm('화면·규칙 설정에 저장하지 않은 변경이 있어요. 저장하지 않고 닫을까요?')) return;
+  $$('.act-close').forEach((b) => (b.onclick = async () => {
+    if (dirty && !await uiConfirm('화면·규칙 설정에 저장하지 않은 변경이 있어요. 저장하지 않고 닫을까요?')) return;
     if (dirty) { DRAFT = null; dirty = false; applyUI(); }
     closeSettings();
   }));

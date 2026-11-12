@@ -107,8 +107,8 @@
       cb.onchange = () => { D.opt[k] = cb.checked; if (D.result) run(); };
     }
     $('#dRun').onclick = run;
-    $('#dReset').onclick = () => {
-      if (!confirm('넣은 신규·기존 키워드와 결과를 모두 비울까요? (저장된 기존 키워드 목록 파일은 그대로)')) return;
+    $('#dReset').onclick = async () => {
+      if (!await uiConfirm('넣은 신규·기존 키워드와 결과를 모두 비울까요? (저장된 기존 키워드 목록 파일은 그대로)')) return;
       for (const side of ['new', 'old']) { D.sides[side] = { files: [], paste: '' }; $('#dp_' + side).value = ''; drawSide(side); }
       D.result = null; drawResult(); $('#dMsg').textContent = '';
     };
