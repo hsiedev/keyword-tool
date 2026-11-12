@@ -8,10 +8,13 @@
 <script>(function(){try{var t=localStorage.getItem('theme')||'light';if(t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark');}catch(e){}})();</script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="stylesheet" href="app.css">
+<link rel="icon" type="image/png" sizes="64x64" href="favicon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span class="logo">K</span><span class="bname">키워드 분석기</span> <small>LOCAL · NAVER</small></div>
+  <div class="brand"><img class="logo" src="logo-128.png" alt="로고"><span class="bname">키워드 분석기</span> <small>LOCAL · NAVER</small></div>
   <form id="searchForm" autocomplete="off"><input id="q" placeholder="분석할 키워드를 입력하세요 (예: 운전자보험)"><button>분석</button></form>
   <div class="top-actions">
     <button class="ghost" id="histBtn">검색 기록 (<span id="histCount">0</span>)</button>
@@ -29,6 +32,7 @@
 <div id="banners"></div>
 <main id="main">
   <div class="empty" id="empty">
+    <img src="logo.png" alt="" class="hero-logo">
     <h1>네이버 키워드 분석</h1>
     <div>월간 검색량, 연관 키워드, 트렌드, 검색결과 섹션 배치, 키워드 성향을 한 번에 확인해요.</div>
     <div class="chips" id="quick"></div>

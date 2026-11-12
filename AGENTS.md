@@ -107,6 +107,7 @@
 | `public\filters.js` | 공통 결과 필터 막대 (검색어·제외어·숫자 범위) |
 | `public\review.js` | 판정 엇갈림 정리 창 |
 | `public\settings.js` | 설정 › 화면·커스텀, 규칙·알고리즘 탭 |
+| `public\logo.png` 외 | 로고 (512·128), 탭 아이콘 `favicon.png`(64)·`favicon-32.png`, `apple-touch-icon.png`(180). 원본은 투명 배경 PNG |
 | `public\xlsx-lite.js` | 엑셀 읽기·쓰기 (의존성 없는 자체 구현) |
 
 AI 제공자는 서버의 `PROVIDERS`에 정의돼 있어요.
