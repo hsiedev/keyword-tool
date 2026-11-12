@@ -585,7 +585,7 @@ const saveSettings = async () => {
 const testSettings = async () => {
   $('#testOut').innerHTML = '<span class="muted">테스트 중...</span>';
   const r = await (await fetch('/api/test')).json();
-  const s = (v) => (v === 'ok' ? '<b style="color:#16a34a">정상</b>' : v === '키 미입력' || v === '설치 안 됨' ? `<span class="muted">${v}</span>` : `<span style="color:#b91c1c">${esc(v)}</span>`);
+  const s = (v) => (v === 'ok' ? '<b style="color:#16a34a">정상</b>' : v === '키 미입력' || v === '설치 안 됨' ? `<span class="muted">${v}</span>` : `<span style="color:#b91c1c">${friendlyErr(v)}</span>`);
   $('#testOut').innerHTML = `<div class="test-grid"><span>검색광고 API</span>${s(r.ad)}<span>검색 API</span>${s(r.search)}<span>검색어 트렌드 API</span>${s(r.datalab)}<span>Gemini API</span>${s(r.gemini)}<span>Gemini (구글 로그인)</span>${s(r.agy)}<span>Claude (로그인)</span>${s(r.claude)}<span>GPT (ChatGPT 로그인)</span>${s(r.codex)}</div><div class="muted" style="font-size:11px;margin-top:4px">로그인형은 설치 여부만 확인해요. 로그인까지 확인하려면 AI 모델 탭의 [테스트]를 누르세요.</div>`;
 };
 $$('.act-close').forEach((b) => (b.onclick = closeSettings));
@@ -633,14 +633,25 @@ async function run(kw, push = true) {
   }
 }
 
+// 네이버 API 오류를 알아보기 쉬운 문장으로 (원문은 마우스를 올리면 보임)
+function friendlyErr(v) {
+  const s = String(v || '');
+  const raw = esc(s.slice(0, 300));
+  if (/활성화되어 있지 않/.test(s)) return `<span title="${raw}">NAVER API HUB에서 이 앱의 <b>검색 API</b>가 꺼져 있어요. API HUB 콘솔에서 이 애플리케이션에 '검색' API를 추가(활성화)하면 보여요.</span>`;
+  if (/401|인증|unauthori/i.test(s)) return `<span title="${raw}">키가 맞지 않아요. 설정 › API 설정에서 키를 다시 확인해 주세요.</span>`;
+  if (/429|한도|quota/i.test(s)) return `<span title="${raw}">오늘 호출 한도를 넘었어요. 내일 다시 하거나 잠시 뒤 다시 해주세요.</span>`;
+  return raw;
+}
 function banners(d) {
   let h = '';
   const miss = [];
   if (d.missing?.ad) miss.push('검색광고 API → 검색량, 연관 키워드, 광고 효율, 입찰가');
   if (d.missing?.open) miss.push('검색·검색어 트렌드 API → 발행량, 포화 지수, 등급, 예상 검색량, 트렌드, 최초 등장일, 성인 여부, 이슈성');
   if (miss.length) h += `<div class="banner"><b>API 키가 없는 항목은 미표시해요.</b> ${miss.join(' / ')}<button onclick="openSettings()">API 설정하기</button></div>`;
-  const errs = Object.entries(d.errors || {});
-  if (errs.length) h += `<div class="banner err">${errs.map(([k, v]) => `<b>${esc(k)}</b>: ${esc(v)}`).join('<br>')}</div>`;
+  // 같은 원인의 오류는 한 줄로 묶고, 알아보기 쉬운 문장으로
+  const groups = new Map();
+  for (const [k, v] of Object.entries(d.errors || {})) { const f = friendlyErr(v); if (!groups.has(f)) groups.set(f, []); groups.get(f).push(k); }
+  if (groups.size) h += `<div class="banner err">${[...groups].map(([msg, ks]) => `<b>${esc(ks.join(' · '))}</b>: ${msg}`).join('<br>')}</div>`;
   $('#banners').innerHTML = h;
 }
 
@@ -1024,9 +1035,9 @@ async function loadSuggest(kw, deep) {
   if (!sec) return;
   if (deep) sec.querySelector('.sug-body')?.insertAdjacentHTML('afterbegin', '<div class="loading" style="padding:16px"><div class="spin"></div>자음(ㄱ~ㅎ)을 붙여 자동완성을 넓게 모으는 중... (10초쯤)</div>');
   let j;
-  try { j = await (await fetch(`/api/suggest?keyword=${encodeURIComponent(kw)}${deep ? '&deep=1' : ''}`)).json(); } catch (e) { j = { error: e.message }; }
+  try { const r = await fetch(`/api/suggest?keyword=${encodeURIComponent(kw)}${deep ? '&deep=1' : ''}`); j = r.status === 404 ? { error: '서버가 예전 버전이라 아직 이 기능이 없어요. start.bat을 다시 실행하면 생겨요.' } : await r.json(); } catch (e) { j = { error: '서버에 연결하지 못했어요: ' + e.message }; }
   if (STATE?.keyword !== kw) return; // 그 사이 다른 키워드로 바뀜
-  if (j.error) { sec.innerHTML = `<h2>자동완성 · 관련 검색어</h2><div class="banner err" style="margin:0">${esc(j.error)}${/404|Not found/i.test(j.error) ? ' (서버를 다시 시작하면 생겨요)' : ''}</div>`; return; }
+  if (j.error) { sec.innerHTML = `<h2>자동완성 · 관련 검색어</h2><div class="banner err" style="margin:0">${esc(j.error)}</div>`; return; }
   SUG = j;
   drawSuggest();
 }

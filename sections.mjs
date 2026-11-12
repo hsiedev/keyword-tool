@@ -19,7 +19,17 @@ const SSUID_NAME = {
   encyc: '지식백과',
   dic: '어학사전',
   influencer: '인플루언서',
+  clip: '네이버 클립',
+  shortents: '숏텐츠',
 };
+
+// 섹션 제목(h2)의 첫 글자 덩어리만 (예: "숏텐츠 | 증권" → "숏텐츠", 뒤는 주제 칩)
+function h2Title(chunk, within = Infinity) {
+  const h = chunk.match(/<h2[^>]*>([\s\S]*?)<\/h2>/);
+  if (!h || h.index > within) return '';
+  const parts = h[1].split(/<[^>]+>/).map((x) => strip(x)).filter(Boolean);
+  return parts[0] || '';
+}
 
 export function strip(s = '') {
   return s
@@ -136,11 +146,14 @@ export function parseSections(html, device = 'pc') {
     } else if (mk.type === 'qra') {
       const h = chunk.match(/<h2[^>]*>([\s\S]*?)<\/h2>/);
       name = (h && strip(h[1])) || (device === 'pc' ? '함께 많이 찾는' : '관련 검색어');
+    } else if (SSUID_NAME[mk.type] === '웹사이트') {
+      // 웹문서 계열이라도 섹션 맨 앞에 제목이 있으면 그 제목 (예: "비즈니스·경제 관련 브랜드 콘텐츠")
+      const ht = h2Title(chunk, 1500);
+      name = ht && !/^(웹사이트|웹문서)$/.test(ht) ? ht : '웹사이트';
     } else if (SSUID_NAME[mk.type] && mk.type !== 'influencer') {
       name = SSUID_NAME[mk.type];
     } else {
-      const h = chunk.match(/<h2[^>]*>([\s\S]*?)<\/h2>/);
-      name = (h && strip(h[1])) || SSUID_NAME[mk.type] || mk.type;
+      name = h2Title(chunk) || SSUID_NAME[mk.type] || mk.type;
     }
 
     if (name === '웹사이트') {
