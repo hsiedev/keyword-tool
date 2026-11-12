@@ -408,7 +408,7 @@ ul.sig{margin:8px 0 0;padding-left:18px;color:var(--foreground);font-size:13px}
 .btn.danger-solid:hover{background:#b91c1c}
 
 /* 서버 상태 띠 */
-.srv-bar{position:sticky;top:var(--head-h);z-index:25;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 20px;background:var(--warn-bg);border-bottom:1px solid color-mix(in oklab,#f59e0b 35%,transparent);color:var(--warn-fg);font-size:13px}
+.srv-bar{position:relative;z-index:5;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 20px;background:var(--warn-bg);border-bottom:1px solid color-mix(in oklab,#f59e0b 35%,transparent);color:var(--warn-fg);font-size:13px}
 .srv-bar.down{background:var(--bad-bg);color:var(--bad-fg);border-bottom-color:color-mix(in oklab,#ef4444 35%,transparent)}
 
 /* 자동완성 · 관련 검색어 */

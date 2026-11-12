@@ -1074,7 +1074,8 @@ function drawSuggest() {
 /* ---------------------------------------------------------------- 보고서 (HTML 저장 · 인쇄) */
 async function reportHtml() {
   if (!STATE) return toast('먼저 키워드를 분석해 주세요');
-  const css = await (await fetch('app.css')).text().catch(() => '');
+  let css = '';
+  try { const r = await fetch('app.css'); if (r.ok) css = await r.text(); } catch {}
   let logo = '';
   try { const b = await (await fetch('logo-128.png')).blob(); logo = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); }); } catch {}
   const body = $('#result').cloneNode(true);

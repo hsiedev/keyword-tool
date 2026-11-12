@@ -26,6 +26,7 @@ export function createGitSync(root) {
     }
     const walk = (dir) => { for (const f of fs.readdirSync(path.join(root, dir))) { const rel = path.join(dir, f); const st = fs.statSync(path.join(root, rel)); if (st.isDirectory()) walk(rel); else if (!/\.tmp$/i.test(f)) add(rel); } };
     try { walk('public'); } catch {}
+    try { walk('tests'); } catch {}
     add(path.join('data', 'settings.json'));
     if (includeData) {
       add(path.join('data', 'existing-keywords.json'));
@@ -102,9 +103,10 @@ export function createGitSync(root) {
   }
   function watch() {
     const skip = /^(config\.json|cache\.json|github-state\.json|github\.json)$|\.tmp$/i;
-    const w = (dir, filter) => { try { fs.watch(path.join(root, dir), { recursive: dir === 'public' }, (ev, f) => { if (f && !skip.test(path.basename(String(f))) && (!filter || filter(String(f)))) schedule(path.join(dir, String(f))); }); } catch {} };
+    const w = (dir, filter) => { try { fs.watch(path.join(root, dir), { recursive: dir === 'public' || dir === 'tests' }, (ev, f) => { if (f && !skip.test(path.basename(String(f))) && (!filter || filter(String(f)))) schedule(path.join(dir, String(f))); }); } catch {} };
     w('.', (f) => /\.(mjs|js|bat|cmd|ps1|md|txt|json)$/i.test(f) || f === '.gitignore');
     w('public');
+    w('tests');
     w('data', (f) => f === 'settings.json' || f === 'next-commit.txt' || (cfg()?.includeData && /^(existing-keywords\.json|bulk-history)/.test(f)));
   }
   function start() {
