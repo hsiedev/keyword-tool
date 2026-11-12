@@ -97,6 +97,7 @@
 | `settings-defaults.mjs` | 화면·규칙 설정 기본값과 정규화 (`data\settings.json`) |
 | `ai-cli.mjs` | **로그인형 AI**: 공식 CLI를 실행해 구독 계정으로 AI 사용<br>Antigravity CLI `agy` / Claude Code `claude -p` / Codex CLI `codex exec` |
 | `github-sync.mjs` | GitHub 자동 백업 (2장) |
+| `tests\run.mjs`, `test.bat` | 자동 테스트. 코드만 임시 폴더로 복사해서 서버를 띄우고 바깥 인터넷 요청은 가짜 응답으로 바꿈. 하위 프로세스 없음 |
 | `start.bat` | Node.js 실행 파일을 찾아 `server.mjs --open` 실행 (fnm·nvm·Volta 등 경로 탐색) |
 | `public\index.html` | 키워드 분석 화면 + 설정 창 + 공통 함수(`$`, `esc`, `fmt`, `run`, 차트) |
 | `public\app.css` | 전체 스타일. 색은 모두 CSS 변수, `html.dark`에서 다크 모드 |
@@ -104,6 +105,7 @@
 | `public\ai.js` | AI 키워드 생성기 (탭, 생성, 중복 검사 엔진, 조건 재검증) |
 | `public\dedup.js` | 키워드 중복 검사 화면 |
 | `public\bulk.js` | 대량 분석 (내역 탭, AI 조건 재검증) |
+| `public\dialogs.js` | 화면 안 알림 `toast(msg, type)`·확인창 `await uiConfirm(msg)`. `window.alert`는 toast로 바뀜. **새 코드에서 브라우저 confirm/alert를 쓰지 말 것** |
 | `public\filters.js` | 공통 결과 필터 막대 (검색어·제외어·숫자 범위) |
 | `public\review.js` | 판정 엇갈림 정리 창 |
 | `public\settings.js` | 설정 › 화면·커스텀, 규칙·알고리즘 탭 |
@@ -143,3 +145,13 @@ AI 제공자는 서버의 `PROVIDERS`에 정의돼 있어요.
 - Only select repositories → `keyword-tool`
 - Repository permissions → Contents: Read and write
 - 토큰 이름은 **영문**으로 하세요. 한글 이름이면 GitHub가 "unknown error"를 냈어요.
+
+## 7. 서버 공통 규칙 (2026-11-12 추가)
+
+- **보안 검사(`guard`)**: `server.mjs`의 라우터 맨 앞에서 모든 요청을 검사해요. Host가 localhost/127.0.0.1이 아니면 403, `/api/`의 GET 외 요청은 Origin이 localhost가 아니거나 Sec-Fetch-Site가 cross-site면 403. 새 POST 엔드포인트도 자동으로 보호되니 따로 검사할 필요 없어요.
+- **요청 본문**: `readBody`는 25MB 제한(413), JSON이 아니면 400. 오류 객체에 `status`를 넣으면 그 상태 코드로 응답해요.
+- **버전·다시 시작**: `/api/version`은 서버 파일(server/ai-cli/github-sync/sections/settings-defaults)의 해시를 시작할 때와 지금 비교해 `stale`을 알려줘요. `/api/restart`는 `KT_LOOP=1`(새 start.bat)일 때만 코드 99로 종료 → start.bat이 다시 실행.
+- **자동완성**: `/api/suggest?keyword=&deep=1`. 네이버 관련 검색어는 통합검색 PC HTML 안의 `"apiURL":"https://s.search.naver.com/p/qra/..."`를 찾아 그 JSON을 읽어요. 네이버가 구조를 바꾸면 여기부터 확인하세요.
+- **테스트**: 고친 뒤 `node tests\run.mjs` (Windows 샌드박스 등에서 하위 프로세스가 막혀 있어도 돌아가요). 새 기능엔 테스트를 한 줄이라도 추가하세요.
+- **긴 작업 중 자동 커밋**: 서버가 켜져 있으면 파일을 저장할 때마다 30초 뒤 올라가요. `next-commit.txt` 설명은 첫 업로드에만 쓰이고 그 뒤는 "자동 백업: 파일명"이 돼요. 여러 단계 작업은 마지막에 문서(CHANGELOG)와 함께 전체 요약 설명으로 한 번 더 커밋하세요.
+- **알려진 한계**: 데이터랩은 요청마다 최댓값=100인 상대값만 줘서 성별·연령 비율은 정확히 낼 수 없어요 (넣지 않기로 함).
