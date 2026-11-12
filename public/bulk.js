@@ -441,10 +441,10 @@
       const notes = [];
       if (done.notFound) notes.push(`검색광고 데이터가 없는 키워드 ${done.notFound}개 (검색량이 거의 없거나 광고 불가 키워드)`);
       if (done.failed) notes.push(`조회 실패 ${done.failed}개`);
-      if (done.bidErr) notes.push(`입찰가 조회 오류: ${done.bidErr}`);
-      if (done.blogErr) notes.push(`블로그 발행량 조회 오류: ${done.blogErr}`);
+      if (done.bidErr) notes.push({ html: '입찰가 조회 오류: ' + (window.friendlyErr ? friendlyErr(done.bidErr) : esc(done.bidErr)) });
+      if (done.blogErr) notes.push({ html: '블로그 발행량 조회 오류: ' + (window.friendlyErr ? friendlyErr(done.blogErr) : esc(done.blogErr)) });
       if (done.blogSkipped) notes.push('검색 API 키가 없어 블로그 발행량은 건너뛰었어요');
-      $('#bMsg').innerHTML = notes.map(esc).join('<br>');
+      $('#bMsg').innerHTML = notes.map((n) => (typeof n === 'string' ? esc(n) : n.html)).join('<br>');
     } catch (e) {
       const aborted = stopped || e.name === 'AbortError';
       $('#bPhase').textContent = aborted ? '중지했어요 (받은 데까지 표시)' : '실패';
