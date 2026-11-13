@@ -297,7 +297,7 @@ const PROV = {
     notes: { 'gemini-3.8-flash': '기본 · 추천', 'gemini-3.5-flash-lite': '빠름 · 저렴', 'gemini-3.1-flash-lite': '빠름 · 저렴', 'gemini-2.5-flash': '이전 세대' },
   },
   // 로그인형: 각 회사 공식 CLI (빈 값 = 그 CLI의 기본 모델)
-  agy: { name: 'Gemini (구글 로그인)', cli: true, tool: 'Antigravity CLI', defaults: [''], notes: { '': '기본 모델' },
+  agy: { name: 'Gemini (구글 로그인)', cli: true, tool: 'Antigravity CLI', defaults: ['gemini-3.8-flash-low', 'gemini-3.8-flash-medium', 'gemini-3.8-flash-high', ''], notes: { '': 'CLI 기본 모델 · 느림 (50개 약 3분)', 'gemini-3.8-flash-low': '빠름 · 추천 (50개 약 20초)', 'gemini-3.8-flash-medium': '보통 (50개 약 1분 30초)', 'gemini-3.8-flash-high': '꼼꼼 · 느림' },
     need: '개인 구글 계정 (무료 등급 있음, Google AI Pro·Ultra면 한도가 더 넉넉해요)' },
   claude: { name: 'Claude (로그인)', cli: true, tool: 'Claude Code', defaults: ['', 'sonnet', 'opus', 'haiku'], notes: { '': '기본 (계정 설정)', sonnet: '추천', opus: '고성능 · 한도가 빨리 참', haiku: '빠름' },
     need: 'Claude 유료 구독 (Pro·Max 등). 무료 계정은 안 돼요' },
