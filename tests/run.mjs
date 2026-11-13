@@ -118,6 +118,67 @@ await test('AI 요청문: 규격·규칙·경쟁 광고·제외 카피가 들어
   const r = CORE.copyGenerateRequest({ format: 'pl_ad', rewrite: { instruction: '더 짧게', items: [{ id: 'x1', angle: '질문형', fields: { title: 'a', desc: 'b' } }] } });
   ok(r.prompt.includes('id=x1') && r.prompt.includes('더 짧게') && r.schema.items.required.includes('id'), r.prompt.slice(-300));
   eq(CORE.cleanCopyItems([{ angle: '질문형', title: ' 제목  하나 ', desc: '설명', extra: 1 }, { angle: 'x' }], 'pl_ad'), [{ id: undefined, angle: '질문형', why: '', f: { title: '제목 하나', desc: '설명' } }]);
+});// ---------------------------------------------------------------- 3-2. 구글 모드 (무료 방식): 키워드 플래너 CSV · 트렌드 · 유튜브
+const GC = await import(pathToFileURL(path.join(TMP, 'google-core.mjs')).href);
+const KP_KO = '키워드 통계 2026-11-13 at 12_00_00\n2025년 11월 1일 - 2026년 10월 31일\n키워드\t통화\t월간 평균 검색량\t3개월 동안의 변화\t전년 대비 변화\t경쟁\t경쟁 색인\t페이지 상단 입찰가(낮은 범위)\t페이지 상단 입찰가(높은 범위)\t검색: 2025년 11월\t검색: 2025년 12월\n운전자보험\tKRW\t1만~10만\t0%\t0%\t높음\t100\t1,234\t5,678\t1만~10만\t1만~10만\n운전자보험 비교\tKRW\t1천~1만\t0%\t+900%\t중간\t56\t800\t2,500\t1천~1만\t1천~1만\n';
+const KP_EN = 'Keyword Stats 2026-11-13 at 12_00_00\nNov 1, 2025 - Oct 31, 2026\nKeyword\tCurrency\tAvg. monthly searches\tThree month change\tYoY change\tCompetition\tCompetition (indexed value)\tTop of page bid (low range)\tTop of page bid (high range)\tSearches: Nov 2025\tSearches: Dec 2025\ncar insurance\tUSD\t100K – 1M\t0%\t0%\tHigh\t100\t12.5\t45.1\t110000\t90500\n';
+await test('키워드 플래너 CSV: 한국어 화면 파일 (범위 검색량 · 입찰가 · 월별 · 경쟁)', () => {
+  const p = GC.parsePlannerCsv(KP_KO);
+  eq(p.rows.length, 2); eq(p.ranged, 2); eq(p.months, ['2025-11', '2025-12']);
+  const r = p.rows[0];
+  eq([r.keyword, r.avg, r.comp, r.compIdx, r.bidLow, r.bidHigh, r.currency], ['운전자보험', { lo: 10000, hi: 100000 }, '높음', 100, 1234, 5678, 'KRW']);
+  eq(r.months[0], { ym: '2025-11', v: { lo: 10000, hi: 100000 } });
+});
+await test('키워드 플래너 CSV: 영어 화면 파일 (100K – 1M, 정확한 월별 값)', () => {
+  const r = GC.parsePlannerCsv(KP_EN).rows[0];
+  eq([r.avg, r.comp, r.bidLow, r.months[1]], [{ lo: 100000, hi: 1000000 }, '높음', 12.5, { ym: '2025-12', v: { lo: 90500, hi: 90500 } }]);
+  let bad = ''; try { GC.parsePlannerCsv('그냥,파일\n1,2'); } catch (e) { bad = e.message; }
+  ok(/키워드 플래너 파일이 아닌/.test(bad), bad);
+});
+await test('구글 트렌드: 응답 · 내보내기 CSV(추이 · 관련 검색어 · 지역) 읽기', () => {
+  eq(GC.parseTrendsTimeline({ default: { timelineData: [{ time: '1762646400', formattedAxisTime: '2025. 11. 9.', value: [51] }] } }), [{ t: 1762646400000, label: '2025. 11. 9.', v: 51, partial: false }]);
+  eq(GC.parseTrendsRelated({ default: { rankedList: [{ rankedKeyword: [{ query: '보람상조', formattedValue: '100' }] }, { rankedKeyword: [{ query: '상조 폐업', formattedValue: '급등' }] }] } }), { top: [{ query: '보람상조', value: '100' }], rising: [{ query: '상조 폐업', value: '급등' }] });
+  const a = GC.parseTrendsCsv('카테고리: 모든 카테고리\n\n주,상조회사: (대한민국)\n2025-11-09,51\n2025-11-16,<1\n');
+  eq([a.keyword, a.timeline.map((x) => x.v)], ['상조회사', [51, 1]]);
+  const b = GC.parseTrendsCsv('카테고리: 모든 카테고리\n\n인기\n보람상조,100\n상조회사 순위,45\n\n급상승\n상조회사 폐업,급등\n');
+  eq([b.related.top.length, b.related.rising[0].query], [2, '상조회사 폐업']);
+  eq(GC.parseTrendsCsv('지역,상조회사: (2025. 11. 13. - 2026. 11. 13.)\n서울특별시,100\n제주특별자치도,0\n').regions, [{ name: '서울특별시', v: 100 }]);
+});
+await test('구글 트렌드 받기: 쿠키 → 429면 다시 시도 → 추이·지역 성공, 관련 검색어만 막히면 그 부분만 오류', async () => {
+  const D = fs.mkdtempSync(path.join(os.tmpdir(), 'kt-g-'));
+  const seen = [];
+  let exploreCalls = 0;
+  const fake = async (u, o = {}) => {
+    seen.push([String(u), o.headers?.Cookie || '']);
+    if (String(u).includes('/trends/?')) return new Response('', { headers: { 'set-cookie': 'NID=abc; path=/' } });
+    if (u.includes('/explore')) { if (++exploreCalls === 1) return new Response('busy', { status: 429 }); return new Response(")]}'\n" + JSON.stringify({ widgets: [{ id: 'TIMESERIES', token: 't1', request: {} }, { id: 'RELATED_QUERIES', token: 't2', request: {} }, { id: 'GEO_MAP', token: 't3', request: {} }] })); }
+    if (u.includes('/multiline')) return new Response(")]}',\n" + JSON.stringify({ default: { timelineData: [{ time: '1', value: [10] }, { time: '2', value: [100] }] } }));
+    if (u.includes('/relatedsearches')) return new Response('busy', { status: 429 });
+    if (u.includes('/comparedgeo')) return new Response(")]}',\n" + JSON.stringify({ default: { geoMapData: [{ geoName: '서울특별시', value: [100], hasData: [true] }] } }));
+    throw new Error('예상 못 한 주소 ' + u);
+  };
+  const G = GC.createGoogle({ dataDir: D, cached: (k, t, fn) => fn(), getConfig: () => ({}), fetchFn: fake, wait: async () => {} });
+  const r = await G.trends('상조회사');
+  eq([r.timeline.map((x) => x.v), r.regions[0].name], [[10, 100], '서울특별시']);
+  ok(r.errors.length === 1 && /관련 검색어/.test(r.errors[0]) && /429/.test(r.errors[0]), JSON.stringify(r.errors));
+  ok(exploreCalls === 2 && seen.some(([u, c]) => u.includes('/explore') && c.includes('NID=abc')), '쿠키를 붙여 다시 시도');
+  // CSV를 넣으면 막힌 관련 검색어를 채움
+  G.importTrendsCsv('상조회사', '인기\n보람상조,100\n');
+  const r2 = await G.trends('상조회사');
+  eq([r2.related.top[0].query, r2.relatedFrom], ['보람상조', 'csv']);
+  fs.rmSync(D, { recursive: true, force: true });
+});
+await test('유튜브: 키가 없으면 미표시, 있으면 상위 영상 조회수', async () => {
+  const D = fs.mkdtempSync(path.join(os.tmpdir(), 'kt-g-'));
+  const none = GC.createGoogle({ dataDir: D, cached: (k, t, fn) => fn(), getConfig: () => ({}) });
+  eq(await none.youtube('상조'), { missing: true });
+  const fake = async (u) => u.includes('/search?')
+    ? new Response(JSON.stringify({ pageInfo: { totalResults: 12345 }, items: [{ id: { videoId: 'v1' }, snippet: { title: '상조 비교', channelTitle: '채널', publishedAt: '2026-10-01T00:00:00Z' } }] }))
+    : new Response(JSON.stringify({ items: [{ id: 'v1', statistics: { viewCount: '9876' }, contentDetails: { duration: 'PT5M' } }] }));
+  const G = GC.createGoogle({ dataDir: D, cached: (k, t, fn) => fn(), getConfig: () => ({ youtubeKey: 'k' }), fetchFn: fake });
+  const r = await G.youtube('상조');
+  eq([r.total, r.videos[0].views, r.videos[0].title], [12345, 9876, '상조 비교']);
+  fs.rmSync(D, { recursive: true, force: true });
 });// ---------------------------------------------------------------- 4. 서버 (가짜 인터넷 응답)
 const realFetch = globalThis.fetch;
 // 가짜 Gemini: 요청문에 '[다시 쓰기]'가 있으면 id를 돌려주고, '판정 기준'이면 판정을 돌려줌
@@ -214,6 +275,19 @@ await test('카피 다시 쓰기 · AI 재검증 스트림', async () => {
   eq([r.items[0].id, r.items[0].f.title], ['k1', '테스트 짧게']);
   const v = (await sse('/api/copy/verify-stream', { format: 'pl_ad', items: [{ id: 'k1', fields: { title: 'a', desc: 'b' } }] })).at(-1);
   eq(v.results, [{ id: 'k1', pass: true, reason: '규격과 근거 모두 맞음', risks: [] }]);
+});
+await test('구글 모드 서버: 플래너 CSV 가져오기 · 키워드 찾기(포함된 키워드) · 자동완성(구글+유튜브) · 유튜브 미표시', async () => {
+  const H = { Origin: 'http://localhost:' + PORT };
+  const j = await (await post('/api/google/planner', { text: KP_KO, name: 'kp.csv' }, H)).json();
+  eq([j.count, j.added, j.ranged, j.total], [2, 2, 2, 2]);
+  const l = await (await get('/api/google/planner?keyword=' + encodeURIComponent('운전자보험'))).json();
+  eq([l.hit.avg, l.related.map((r) => r.keyword), l.files[0].name], [{ lo: 10000, hi: 100000 }, ['운전자보험 비교'], 'kp.csv']);
+  ok(fs.existsSync(path.join(TMP, 'data', 'google', 'planner.json')), '임시 폴더에 저장');
+  const s = await (await get('/api/google/suggest?keyword=' + encodeURIComponent('운전자보험'))).json();
+  eq(s.all, [{ keyword: '운전자보험 가격', src: ['구글', '유튜브'] }, { keyword: '운전자보험비교', src: ['구글', '유튜브'] }]);
+  eq(await (await get('/api/google/youtube?keyword=x')).json(), { missing: true });
+  eq((await get('/api/google/suggest')).status, 400);
+  eq((await post('/api/google/planner', { clear: true }, { Origin: 'https://evil.example' })).status, 403);
 });
 // ---------------------------------------------------------------- 결과
 console.log('\n키워드 분석기 자동 테스트\n' + results.join('\n'));
