@@ -105,6 +105,10 @@
 | `public\ai.js` | AI 키워드 생성기 (탭, 생성, 중복 검사 엔진, 조건 재검증) |
 | `public\dedup.js` | 키워드 중복 검사 화면 |
 | `public\bulk.js` | 대량 분석 (내역 탭, AI 조건 재검증) |
+| `public\copy-spec.js` | 카피 규격(FORMATS)과 자동 검사(check · checkText). **화면 · 서버(copy-core.mjs가 읽어 씀) · 테스트가 같이 씀** → 규격은 여기서만 고치세요 |
+| `copy-core.mjs` | 경쟁 파워링크 읽기(parsePowerlinks: #power_link_body), 카피 생성·다시 쓰기·재검증 요청문, 파일 저장소(createStore: 탭/캠페인 하나 = 파일 하나 + index.json) |
+| `public\copy.js`, `public\copy.css` | AI 카피 생성기 화면 (#copyView, 사이드바 #cSide) |
+| `public\admock.js` | 광고 목업 (#mockView, #mSide). 템플릿 정의 TPL · 확장소재 EXT · 네이버 모양 CSS(MOCK_CSS, PNG 저장에도 씀) · window.__MOCK(addFromCopy, miniPreview) |
 | `public\dialogs.js` | 화면 안 알림 `toast(msg, type)`·확인창 `await uiConfirm(msg)`. `window.alert`는 toast로 바뀜. **새 코드에서 브라우저 confirm/alert를 쓰지 말 것** |
 | `public\filters.js` | 공통 결과 필터 막대 (검색어·제외어·숫자 범위) |
 | `public\review.js` | 판정 엇갈림 정리 창 |
@@ -155,3 +159,13 @@ AI 제공자는 서버의 `PROVIDERS`에 정의돼 있어요.
 - **테스트**: 고친 뒤 `node tests\run.mjs` (Windows 샌드박스 등에서 하위 프로세스가 막혀 있어도 돌아가요). 새 기능엔 테스트를 한 줄이라도 추가하세요.
 - **긴 작업 중 자동 커밋**: 서버가 켜져 있으면 파일을 저장할 때마다 30초 뒤 올라가요. `next-commit.txt` 설명은 첫 업로드에만 쓰이고 그 뒤는 "자동 백업: 파일명"이 돼요. 여러 단계 작업은 마지막에 문서(CHANGELOG)와 함께 전체 요약 설명으로 한 번 더 커밋하세요.
 - **알려진 한계**: 데이터랩은 요청마다 최댓값=100인 상대값만 줘서 성별·연령 비율은 정확히 낼 수 없어요 (넣지 않기로 함).
+## 8. AI 카피 생성기 · 광고 목업 (2026-11-13 추가)
+
+- **규격은 public\copy-spec.js 한 곳**: 네이버 광고 도움말·광고 가이드 기준 (파워링크 /help/faq/344·1454·1422, 브랜드검색 /adguide/1627·1628·1631·1649·1650~1654·1656·1668·1637·1666, 표현 /adguide/24·144). 목업 템플릿(admock.js TPL)의 글자 수·이미지 크기도 같은 출처예요. 바꾸면 tests\run.mjs 기대값도 같이 확인하세요.
+- **검사는 PC가 계산** (AI에 맡기지 않음). AI 재검증은 참고용으로 따로.
+- **사용자 주의어(rules.copy.caution)는 빈 목록이 기본** (사용자 결정). 최상급 검사는 네이버 공통 규정이라 기본 켜짐, 설정에서 끌 수 있음.
+- **카피는 띄어쓰기를 지켜요**: 키워드 생성기의 '붙여 쓰기' 설정을 카피에 쓰지 마세요 (붙여 쓴 문구는 심사 보류).
+- **경쟁 광고 읽기**: 통합검색 PC HTML의 `#power_link_body` 안 `li.lst`에서 `.site · .lnk_url · .lnk_tit(여러 개) · .link_desc · .link_ext_desc(.prefix_ext/.title_ext) · .sublink_text/.lst_link .link`. 네이버가 구조를 바꾸면 여기부터 고치세요. 1시간 캐시(`pl:키워드`).
+- **저장**: `/api/copy-projects`, `/api/ad-mock` (GET ?id= / GET 목록 / POST {doc} / POST {doc, metaOnly} / POST {delete}). 데이터는 GitHub 백업 대상이 아니에요.
+- **미리보기 CSS(MOCK_CSS)는 .nvm 안에서만**: PNG 저장은 SVG foreignObject로 그려서, 바깥 이미지(경쟁사 파비콘 등)를 쓰면 안 돼요 (data URL만).
+- 브라우저 `prompt()`도 쓰지 말고 `await uiPrompt(msg, { value, placeholder })`.

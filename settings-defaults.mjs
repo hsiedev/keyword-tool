@@ -46,6 +46,14 @@ export const DEFAULT_SETTINGS = {
       defaultMinVol: 50, // 새 탭의 최소 월간 검색량
       temperature: 0.7,
     },
+    copy: {
+      caution: '', // 사용자 주의어: 카피에 쓰면 표시 (쉼표·줄바꿈 구분, 빈 목록에서 시작)
+      superCheck: true, // 네이버 공통 규정: 근거 없는 최상급 (타이틀은 불가, 설명은 근거·출처 필요)
+      superWords: '완벽, 초일류, 가장 좋은, 초특급, 최초, 최고, 최상, 최적, 최저, 가장, 제일, 1위, 유일, 넘버원, No.1, 100%',
+      perAngle: 3, // 각도마다 몇 개
+      temperature: 0.9,
+      system: '', // 비우면 기본 지시문
+    },
     dedup: {
       ignoreCase: true,
       ignoreChars: "-_.,·/()[]{}'\"!?~:;+|#*", // 띄어쓰기와 함께 무시할 기호

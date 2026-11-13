@@ -5,6 +5,8 @@
     analyze: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
     ai: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>',
     dup: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
+    copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
+    mock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M7 13h6M7 16h10"/></svg>',
     bulk: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18M3 12h18M3 19h18"/><path d="M8 5v14"/></svg>',
     set: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
     side: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>',
@@ -16,6 +18,8 @@
     ['ai', 'AI 키워드 생성기'],
     ['dup', '키워드 중복 검사'],
     ['bulk', '대량 분석'],
+    ['copy', 'AI 카피 생성기'],
+    ['mock', '광고 목업'],
   ];
   const NAME = Object.fromEntries(VIEWS);
 
@@ -80,10 +84,14 @@
 
   // ---------------------------------------------------------------- 화면 전환
   const isOn = (id) => { const el = document.getElementById(id); return el && !el.classList.contains('hidden'); };
-  const current = () => (isOn('aiView') ? 'ai' : isOn('dupView') ? 'dup' : isOn('bulkView') ? 'bulk' : 'analyze');
+  const current = () => (isOn('copyView') ? 'copy' : isOn('mockView') ? 'mock' : isOn('aiView') ? 'ai' : isOn('dupView') ? 'dup' : isOn('bulkView') ? 'bulk' : 'analyze');
   function go(v) {
     document.body.classList.remove('side-open');
     if (v === current()) return;
+    if (v !== 'copy') window.__hideCopy?.();
+    if (v !== 'mock') window.__hideMock?.();
+    if (v === 'copy') window.showCopy?.(true);
+    if (v === 'mock') window.showMock?.(true);
     if (v === 'analyze') {
       if (isOn('aiView')) window.showAI?.(false);
       if (isOn('dupView')) window.showDup?.(false);
@@ -100,7 +108,7 @@
   // 각 화면의 내역 목록(AI 생성기·대량 분석)을 사이드바 안으로
   function adopt() {
     const slot = document.getElementById('asSlot');
-    ['aiSide', 'bSide'].forEach((id) => { const el = document.getElementById(id); if (el && el.parentElement !== slot) slot.appendChild(el); });
+    ['aiSide', 'bSide', 'cSide', 'mSide'].forEach((id) => { const el = document.getElementById(id); if (el && el.parentElement !== slot) slot.appendChild(el); });
   }
 
   // 키워드 분석: 최근 검색
@@ -125,8 +133,8 @@
     side.querySelectorAll('[data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
     document.getElementById('topTitle').textContent = NAME[v];
     const show = (id, on) => document.getElementById(id)?.classList.toggle('hidden', !on);
-    show('aiSide', v === 'ai'); show('bSide', v === 'bulk'); show('asRecent', v === 'analyze'); show('asNone', v === 'dup');
-    document.getElementById('asLabel').textContent = v === 'analyze' ? '최근 검색' : v === 'dup' ? '내역' : '내역';
+    show('aiSide', v === 'ai'); show('bSide', v === 'bulk'); show('cSide', v === 'copy'); show('mSide', v === 'mock'); show('asRecent', v === 'analyze'); show('asNone', v === 'dup');
+    document.getElementById('asLabel').textContent = v === 'analyze' ? '최근 검색' : v === 'mock' ? '캠페인' : '내역';
     // 설정 › 화면 › 숨길 버튼 → 사이드바에도 적용
     const hide = new Set((window.SETTINGS?.ui?.hideButtons) || []);
     side.querySelectorAll('[data-view]').forEach((b) => { const k = b.dataset.view; b.style.display = k !== 'analyze' && hide.has(k) && k !== v ? 'none' : ''; });
@@ -136,7 +144,7 @@
 
   // 화면이 바뀌면(다른 코드가 바꿔도) 사이드바·제목을 맞춤
   const mo = new MutationObserver(() => sync());
-  ['aiView', 'dupView', 'bulkView', 'main'].forEach((id) => { const el = document.getElementById(id); if (el) mo.observe(el, { attributes: true, attributeFilter: ['class'] }); });
+  ['aiView', 'dupView', 'bulkView', 'copyView', 'mockView', 'main'].forEach((id) => { const el = document.getElementById(id); if (el) mo.observe(el, { attributes: true, attributeFilter: ['class'] }); });
   if (typeof window.applyUI === 'function') { const o = window.applyUI; window.applyUI = function () { const r = o.apply(this, arguments); sync(); return r; }; }
 
   // ---------------------------------------------------------------- 서버 상태 띠: 꺼짐 / 예전 버전 / 코드가 바뀜 → 다시 시작

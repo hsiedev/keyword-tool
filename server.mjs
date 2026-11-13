@@ -11,6 +11,7 @@ import { DEFAULT_SETTINGS, normalizeSettings } from './settings-defaults.mjs';
 import { parseSections } from './sections.mjs';
 import { CLI, CLI_MODELS, cliPath, runCli, cliStatus, cliTest, openConsole, cliJobs } from './ai-cli.mjs';
 import { createGitSync } from './github-sync.mjs';
+import { parsePowerlinks, copyGenerateRequest, cleanCopyItems, copyVerifyRequest, cleanVerifyItems, createStore, copyMeta, mockMeta } from './copy-core.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8787);
@@ -21,6 +22,8 @@ const SOURCES_PATH = path.join(__dirname, 'data', 'existing-keywords.json');
 const SETTINGS_PATH = path.join(__dirname, 'data', 'settings.json');
 const BULK_DIR = path.join(__dirname, 'data', 'bulk-history'); // 대량 분석 내역 (탭 하나 = 파일 하나)
 const BULK_INDEX = path.join(BULK_DIR, 'index.json');
+const COPY_STORE = createStore(path.join(__dirname, 'data', 'copy-projects'), copyMeta); // AI 카피 생성기 탭
+const MOCK_STORE = createStore(path.join(__dirname, 'data', 'ad-mock'), mockMeta); // 광고 목업 캠페인
 let SETTINGS = DEFAULT_SETTINGS;
 try { SETTINGS = normalizeSettings(JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8'))); } catch { SETTINGS = normalizeSettings({}); }
 const RA = () => SETTINGS.rules.analysis;
@@ -549,6 +552,30 @@ async function sections(keyword) {
   });
 }
 
+// 경쟁 파워링크: 통합검색 PC 화면의 광고 문구 (사이트 이름 · 제목 · 설명 · 홍보문구 · 서브링크)
+async function competitorAds(keyword) {
+  return cached('pl:' + keyword, 1 * HOUR, async () => {
+    const r = await fetch(`https://search.naver.com/search.naver?where=nexearch&query=${encodeURIComponent(keyword)}`, { headers: { 'User-Agent': UA_PC, 'Accept-Language': 'ko-KR,ko;q=0.9', Accept: 'text/html' } });
+    if (!r.ok) throw new Error('네이버 검색 응답 ' + r.status);
+    const html = await r.text();
+    return { keyword, fetchedAt: new Date().toISOString(), ads: parsePowerlinks(html), brandSearch: /class="[^"]*brand_search/.test(html) };
+  });
+}
+
+// AI 카피 생성 · 다시 쓰기 (요청문은 copy-core.mjs)
+async function copyGenerateStream(b, emit, signal) {
+  const RC = SETTINGS.rules.copy || {};
+  const q = copyGenerateRequest({ ...b, caution: words(RC.caution), system: RC.system });
+  const { arr, model, fallback } = await llmStream({ system: q.system, prompt: q.prompt, schema: q.schema, temperature: RC.temperature ?? 0.9 }, emit, signal, { total: q.total, label: '카피 작성 중', countKey: q.countKey, provider: b.provider });
+  return { items: cleanCopyItems(arr, q.format), model, fallback, format: q.format };
+}
+// AI 재검증: 카피마다 독립 판정
+async function copyVerifyStream(b, emit, signal) {
+  const q = copyVerifyRequest({ ...b, caution: words((SETTINGS.rules.copy || {}).caution) });
+  const { arr, model } = await llmStream({ system: q.system, prompt: q.prompt, schema: q.schema, temperature: 0.4 }, emit, signal, { total: q.total, label: '검토 중', countKey: q.countKey, provider: b.provider });
+  return { results: cleanVerifyItems(arr), model };
+}
+
 // 자동완성 · 연관검색어 수집 (API 키 불필요)
 // - 네이버 자동완성 (ac.search.naver.com), 구글 자동완성 (suggestqueries.google.com)
 // - 네이버 '관련 검색어': 통합검색 PC 화면이 따로 불러오는 데이터 주소를 찾아서 읽음
@@ -852,7 +879,8 @@ async function aiGenerateStream(b, emit, signal) {
 }
 
 // Gemini 스트리밍 공통: 생각 요약(thought) + 답변의 "keyword" 개수로 진행률, 바쁘면 다른 모델로 대체
-async function geminiStream(baseBody, emit, signal, { total, label = '작성 중', model: modelOver } = {}) {
+async function geminiStream(baseBody, emit, signal, { total, label = '작성 중', model: modelOver, countKey = 'keyword' } = {}) {
+  const countRe = new RegExp(`"${countKey}"\\s*:`, 'g'); // 진행률: 이 필드가 나온 횟수
   if (!hasGemini()) throw new Error('Gemini API 키가 설정되지 않았어요 (API 설정 > AI 모델 탭)');
   const n = total;
   const pin = pinned();
@@ -918,7 +946,7 @@ async function geminiStream(baseBody, emit, signal, { total, label = '작성 중
             else {
               answer += p.text;
               if (!writing) { writing = true; emit('status', { text: label, model, phase: 'writing' }); }
-              const c = (answer.match(/"keyword"\s*:/g) || []).length;
+              const c = (answer.match(countRe) || []).length;
               if (c !== lastCount) { lastCount = c; emit('progress', { count: c, total: n }); }
             }
           }
@@ -1075,7 +1103,7 @@ function guard(req, u) {
 }
 
 // ---------------------------------------------------------------- 버전: 서버 코드가 바뀌었는지 (다시 시작 필요 여부)
-const SERVER_FILES = ['server.mjs', 'ai-cli.mjs', 'github-sync.mjs', 'sections.mjs', 'settings-defaults.mjs'];
+const SERVER_FILES = ['server.mjs', 'ai-cli.mjs', 'github-sync.mjs', 'sections.mjs', 'settings-defaults.mjs', 'copy-core.mjs', 'public/copy-spec.js'];
 const codeHash = () => {
   const h = crypto.createHash('sha1');
   for (const f of SERVER_FILES) { try { h.update(fs.readFileSync(path.join(__dirname, f))); } catch {} }
@@ -1107,6 +1135,16 @@ const server = http.createServer(async (req, res) => {
       if (!kw) return send(res, 400, { error: '키워드를 넣어주세요' });
       try { return send(res, 200, await suggest(kw, u.searchParams.get('deep') === '1')); }
       catch (e) { return send(res, 200, { error: '자동완성·연관검색어를 가져오지 못했어요: ' + e.message }); }
+    }
+    if (u.pathname === '/api/copy/competitors') {
+      const kw = String(u.searchParams.get('keyword') || '').trim().slice(0, 60);
+      if (!kw) return send(res, 400, { error: '키워드를 넣어주세요' });
+      try { return send(res, 200, await competitorAds(kw)); }
+      catch (e) { return send(res, 200, { error: '경쟁 광고를 가져오지 못했어요: ' + e.message }); }
+    }
+    if (u.pathname === '/api/copy-projects' || u.pathname === '/api/ad-mock') {
+      const [st, obj] = await (u.pathname === '/api/ad-mock' ? MOCK_STORE : COPY_STORE).handle(req, u, readBody);
+      return send(res, st, obj);
     }
     if (u.pathname === '/api/config' && req.method === 'GET') {
       return send(res, 200, {
@@ -1233,7 +1271,7 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, { ok: true, count: b.sources.length });
       }
     }
-    if (u.pathname.startsWith('/api/ai/') || u.pathname === '/api/volumes' || u.pathname === '/api/bulk-stream') {
+    if (u.pathname.startsWith('/api/ai/') || u.pathname.startsWith('/api/copy/') || u.pathname === '/api/volumes' || u.pathname === '/api/bulk-stream') {
       try {
         if (u.pathname === '/api/ai/cli-status') {
           const out = {};
@@ -1265,7 +1303,7 @@ const server = http.createServer(async (req, res) => {
         if (u.pathname === '/api/ai/models') { const p = PROVIDERS[u.searchParams.get('provider')] ? u.searchParams.get('provider') : provider(); return send(res, 200, { provider: p, models: await providerModels(p), current: PROVIDERS[p].model() }); }
         const b = req.method === 'POST' ? await readBody(req) : {};
         if (u.pathname === '/api/ai/generate') return send(res, 200, await aiGenerate(b));
-        const streamFn = { '/api/ai/generate-stream': aiGenerateStream, '/api/ai/verify-stream': aiVerifyStream, '/api/bulk-stream': bulkStream }[u.pathname];
+        const streamFn = { '/api/ai/generate-stream': aiGenerateStream, '/api/ai/verify-stream': aiVerifyStream, '/api/bulk-stream': bulkStream, '/api/copy/generate-stream': copyGenerateStream, '/api/copy/verify-stream': copyVerifyStream }[u.pathname];
         if (streamFn) {
           res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
           // 브라우저에서 [중지]하면 Gemini 요청도 같이 끊음

@@ -8,6 +8,7 @@
 <script>(function(){try{var t=localStorage.getItem('theme')||'light';if(t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark');}catch(e){}})();</script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="copy.css">
 <link rel="icon" type="image/png" sizes="64x64" href="favicon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -30,6 +31,7 @@
   <a href="#sec-section">섹션 분석</a>
   <a href="#sec-intent">성향 분석</a>
   <span style="flex:1"></span>
+  <button type="button" class="btn sm tab-act" id="toCopy" title="이 키워드로 AI 카피 생성기를 열어요 (경쟁 광고도 같이 읽어요)">카피 만들기</button>
   <button type="button" class="btn sm tab-act" id="rptHtml" title="이 분석 결과를 한 장짜리 HTML 파일로 저장해요 (인터넷 없이 열림)">보고서 저장</button>
   <button type="button" class="btn sm tab-act" id="rptPrint" title="인쇄 창에서 'PDF로 저장'을 고르면 PDF가 돼요">인쇄·PDF</button>
 </nav>
@@ -1117,6 +1119,7 @@ function reportPrint() {
   setTimeout(() => window.print(), 50);
 }
 $('#rptHtml').onclick = reportHtml;
+$('#toCopy').onclick = () => STATE && window.__COPY?.fromKeyword(STATE.keyword);
 $('#rptPrint').onclick = reportPrint;
 
 /* ---------------------------------------------------------------- 탭 활성화 */
@@ -1139,6 +1142,9 @@ fetch('/api/config').then((r) => r.json()).then((c) => { if (!c.hasAd && !c.hasO
 <script src="dedup.js"></script>
 <script src="bulk.js"></script>
 <script src="settings.js"></script>
+<script src="copy-spec.js"></script>
+<script src="copy.js"></script>
+<script src="admock.js"></script>
 <script src="layout.js"></script>
 </body>
 </html>
