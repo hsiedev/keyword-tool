@@ -945,10 +945,10 @@
       drawSources();
       toast('이름을 바꿨어요', 'ok');
     };
-    $('[data-rn]', box).forEach((a) => (a.onclick = (e) => { e.preventDefault(); rename(a.dataset.rn); }));
-    $('[data-rn2]', box).forEach((el) => (el.ondblclick = (e) => { e.preventDefault(); rename(el.dataset.rn2); }));
+    $$('[data-rn]', box).forEach((a) => (a.onclick = (e) => { e.preventDefault(); rename(a.dataset.rn); }));
+    $$('[data-rn2]', box).forEach((el) => (el.ondblclick = (e) => { e.preventDefault(); rename(el.dataset.rn2); }));
     // 내려받기: TXT(한 줄에 하나) · 엑셀
-    $('[data-dl]', box).forEach((a) => (a.onclick = (e) => {
+    $$('[data-dl]', box).forEach((a) => (a.onclick = (e) => {
       e.preventDefault();
       const s = AI.sources.find((x) => String(x.id) === a.dataset.dl);
       if (!s) return;
@@ -960,7 +960,7 @@
       link.href = URL.createObjectURL(blob); link.download = base + (a.dataset.fmt === 'xlsx' ? '.xlsx' : '.txt');
       document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(link.href), 3000);
     }));
-    $('[data-rm]', box).forEach((a) => (a.onclick = async (e) => {
+    $$('[data-rm]', box).forEach((a) => (a.onclick = async (e) => {
       e.preventDefault();
       const s = AI.sources.find((x) => String(x.id) === a.dataset.rm);
       if (!await uiConfirm(`'${s?.name}' 목록(${s?.keywords.length}개)을 파일에서 삭제할까요? 모든 탭에서 사라져요.\n잠깐 안 쓰려면 삭제 대신 체크를 끄세요.`)) return;
