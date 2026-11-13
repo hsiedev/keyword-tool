@@ -32,9 +32,6 @@ body.mode-google .as-nav [data-view]:not([data-view="analyze"]){display:none!imp
 .g-hero .g-form{max-width:620px;margin:26px auto 0;height:52px;border-radius:12px}
 .g-hero .g-form input{font-size:16px;padding:0 18px}
 .g-hero .g-form button{padding:0 22px;font-size:14px}
-.g-nav{display:flex;gap:4px;flex-wrap:wrap;justify-content:center;margin:4px -28px 14px;padding:8px 28px;position:sticky;top:var(--head-h);z-index:5;background:color-mix(in oklab,var(--background) 90%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid transparent}
-.g-nav a{font-size:13px;padding:5px 12px;border-radius:99px;border:1px solid var(--border);background:var(--background);color:var(--foreground);text-decoration:none}
-.g-nav a:hover{border-color:#1a73e8;color:#1a73e8}
 .g-badge{font-size:11px;font-weight:700;color:#fff;background:#1a73e8;border-radius:5px;padding:1px 7px}
 .grid.g4{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
 .g-big{font-size:26px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;margin:2px 0 2px}
@@ -78,3 +75,8 @@ html.dark .g-src.g{color:#8ab4f8}html.dark .g-src.y{color:#ff8095}
 .g-steps a{color:var(--info-fg)}
 .g-keyrow{display:flex;gap:8px;max-width:520px}
 .g-keyrow .inp{flex:1}
+
+
+/* 네이버 모드: 상단 탭 · 사이드바의 선택된 메뉴 아이콘을 네이버 초록으로 (구글 모드의 파랑과 짝) */
+body:not(.mode-google) .as-item.on svg,body:not(.mode-google) .otab.on svg{color:#03c75a;opacity:1}
+html.dark body:not(.mode-google) .as-item.on svg,html.dark body:not(.mode-google) .otab.on svg{color:#3ddc84}

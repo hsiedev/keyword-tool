@@ -18,7 +18,9 @@
   const v = document.createElement('div');
   v.id = 'gView';
   v.className = 'hidden';
-  v.innerHTML = `<main class="ai-main g-main">
+  v.innerHTML = `<div class="kw-search hidden" id="gSlotTop"></div>
+    <nav class="tabs hidden" id="gNav"><a href="#g-sum" class="on">개요</a><a href="#g-ac">자동완성</a><a href="#g-tr">구글 트렌드</a><a href="#g-kp">키워드 플래너</a><a href="#g-yt">유튜브</a></nav>
+    <main class="ai-main g-main">
     <section class="g-hero" id="gHero">
       <div class="g-mark" aria-hidden="true">G</div>
       <h1>구글 키워드 분석</h1>
@@ -26,9 +28,7 @@
       <div id="gSlotHero"></div>
       <div class="chips" id="gQuick"></div>
     </section>
-    <div class="kw-search hidden" id="gSlotTop"></div>
     <form id="gForm" class="g-form" autocomplete="off"><input id="gQ" placeholder="구글에서 분석할 키워드를 입력하세요 (예: 운전자보험)" maxlength="80"><button>분석</button></form>
-    <nav class="g-nav hidden" id="gNav"><a href="#g-sum">개요</a><a href="#g-ac">자동완성</a><a href="#g-tr">구글 트렌드</a><a href="#g-kp">키워드 플래너</a><a href="#g-yt">유튜브</a></nav>
     <div id="gRes"></div>
   </main>`;
   document.getElementById('main').after(v);
@@ -83,6 +83,9 @@
   const card = (title, sub, body, cls = '') => `<div class="card ${cls}"><h3>${title}${sub ? ` <span class="muted">${sub}</span>` : ''}</h3>${body}</div>`;
   const loading = '<div class="muted g-load">불러오는 중…</div>';
   const errBox = (msg) => `<div class="g-err">${esc(msg)}</div>`;
+  const spy = new IntersectionObserver((ents) => {
+    for (const e of ents) if (e.isIntersecting) $g('#gNav').querySelectorAll('a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id));
+  }, { rootMargin: '-120px 0px -60% 0px' });
   function drawAll() {
     if (!S.kw) { $g('#gRes').innerHTML = ''; return; }
     const keep = scrollY;
@@ -91,6 +94,8 @@
     bind();
     drawTrendChart();
     drawKpChart();
+    spy.disconnect();
+    $g('#gRes').querySelectorAll('.sec').forEach((s) => spy.observe(s));
     if (ytv && $g('#gYtKey')) $g('#gYtKey').value = ytv;
     scrollTo(0, keep);
   }
