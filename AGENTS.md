@@ -169,3 +169,4 @@ AI 제공자는 서버의 `PROVIDERS`에 정의돼 있어요.
 - **저장**: `/api/copy-projects`, `/api/ad-mock` (GET ?id= / GET 목록 / POST {doc} / POST {doc, metaOnly} / POST {delete}). 데이터는 GitHub 백업 대상이 아니에요.
 - **미리보기 CSS(MOCK_CSS)는 .nvm 안에서만**: PNG 저장은 SVG foreignObject로 그려서, 바깥 이미지(경쟁사 파비콘 등)를 쓰면 안 돼요 (data URL만).
 - 브라우저 `prompt()`도 쓰지 말고 `await uiPrompt(msg, { value, placeholder })`.
+- **상단 탭 줄 (2026-11-13)**: layout.js가 상단 바에 #openTabs를 만들고, 한 번이라도 연 화면(VIEWS의 키)을 localStorage 'openViews'에 순서대로 기억해요 (같은 화면은 하나만). 새 화면을 VIEWS에 추가하면 탭도 자동으로 생겨요. 검색창 #searchForm은 상단에서 빠져 #empty(첫 화면) 또는 #kwSearch(결과 위)로 옮겨 다녀요. #histBtn · #topTitle은 다른 코드가 참조해서 지우지 않고 CSS로만 숨겨요.
