@@ -162,21 +162,23 @@ export async function runCli(p, prompt, { model = '', signal, config = {}, timeo
     } finally { try { fs.unlinkSync(outFile); } catch {} }
   }
   if (p === 'agy') {
-    // 짧은 프롬프트는 그대로, 길면(명령줄 길이 제한) 작업 폴더의 파일로 넘기고 읽게 함
-    let arg = prompt, promptFile = null;
-    if (prompt.length > 20000 || /\.(cmd|bat)$/i.test(file)) {
-      promptFile = path.join(WORK, `prompt-${process.pid}-${Date.now()}.txt`);
-      fs.writeFileSync(promptFile, prompt, 'utf8');
-      arg = `이 폴더의 ${path.basename(promptFile)} 파일을 읽고, 그 안의 지시를 그대로 수행해서 결과만 출력해. 파일을 만들거나 고치거나 명령을 실행하지 마.`;
-    }
-    const args = ['-p', arg];
+    // 질문은 표준 입력으로 넘김 (stream-json): 길이 제한이 없고, Gemini에게 파일을 읽히지 않아도 됨
+    const args = ['--input-format', 'stream-json', '--output-format', 'stream-json'];
     if (model) args.push('--model', model);
-    try {
-      const r = await run(file, args, { signal, timeoutMs });
-      if (r.code !== 0 && !r.out.trim()) throw friendly(p, r.code, r.out, r.err);
-      if (/authentication required/i.test(r.out + r.err) && !/[[{]/.test(r.out)) throw friendly(p, 1, r.out, 'authentication required');
-      return r.out;
-    } finally { if (promptFile) try { fs.unlinkSync(promptFile); } catch {} }
+    const line = JSON.stringify({ event: 'user', message: { content: prompt } }) + '\n';
+    const r = await run(file, args, { input: line, signal, timeoutMs });
+    let res = null, text = '';
+    for (const ln of r.out.split(/\r?\n/)) {
+      if (!ln.trim().startsWith('{')) continue;
+      let ev; try { ev = JSON.parse(ln); } catch { continue; }
+      if (ev.event === 'result') res = ev.result || {};
+      else if (ev.event === 'step_update' && ev.step_update?.step_type === 'agent_response' && ev.step_update.text_delta) text += ev.step_update.text_delta;
+    }
+    if (res && res.status && res.status !== 'SUCCESS') throw friendly(p, r.code || 1, res.error || r.out, res.error || r.err);
+    if (/authentication required/i.test(r.out + r.err) && !res?.response) throw friendly(p, 1, r.out, 'authentication required');
+    const out = res?.response || text;
+    if (!out.trim()) throw friendly(p, r.code, r.out, r.err || '응답이 비어 있어요');
+    return out;
   }
   throw new Error('알 수 없는 AI: ' + p);
 }
