@@ -463,4 +463,3 @@ html.dark [style*="color:#ef4444"]{color:#f87171!important}
 /* 본문은 남는 폭을 다 씀 (사이드바를 접으면 그만큼 넓어짐) · 화면마다 걸려 있던 최대 폭(1,180~1,400px) · 가운데 정렬 해제 */
 @media screen{main,.ai-main{max-width:none!important;margin-left:0!important;margin-right:0!important}}
 .src-acts{white-space:nowrap;display:inline-flex;gap:8px;align-items:center}
-.src-row .sn2[data-rn2]{cursor:text}
