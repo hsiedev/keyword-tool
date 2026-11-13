@@ -286,8 +286,7 @@
   const progHTML = (id) => `<div class="prog hidden" id="${id}">
       <div class="prog-top"><b class="p-phase">준비 중</b><span><span class="p-pct">0%</span> · <span class="p-time muted">0초</span></span></div>
       <div class="bar"><div class="p-bar"></div></div>
-      <div class="muted p-model" style="font-size:11px;margin-top:4px"></div>
-      <details class="p-thinkbox" open><summary><span class="ai-name">AI</span> 생각 과정</summary><div class="think p-think"></div></details></div>`;
+      <div class="muted p-model" style="font-size:11px;margin-top:4px"></div></div>`;
   const PIN = '<svg width="12" height="12" viewBox="0 0 24 24" fill="#16a34a" style="flex:none"><path d="M16 3l5 5-3 1-4 4 1 5-2 2-4-4-5 5-1-1 5-5-4-4 2-2 5 1 4-4z"/></svg>';
   function mount() {
     const view = document.createElement('div');
@@ -323,6 +322,7 @@
                 <button class="btn pri" id="aiGen">키워드 생성</button>
                 <button class="btn" id="aiMore">이어서 더 생성</button>
                 <button class="btn hidden" id="aiStop">중지</button>
+                <label class="muted" style="display:flex;gap:5px;align-items:center" title="생성이 끝나면 새로 들어온 키워드를 바로 이 탭의 조건으로 한 번 판정해요 (AI를 한 번 더 써요)"><input type="checkbox" id="aiAutoVerify"> 생성하면서 조건 재검증까지</label>
                 <span class="muted" id="aiMsg" style="align-self:center"></span>
               </div>
               ${progHTML('aiProg')}
@@ -443,6 +443,9 @@
       rejectItems(AI.items);
       AI.items = []; save(); draw();
     };
+    // 생성하면서 조건 재검증까지: 기본 켜짐, 마지막 선택을 기억
+    $('#aiAutoVerify').checked = localStorage.getItem('aiAutoVerify') !== '0';
+    $('#aiAutoVerify').onchange = (e) => localStorage.setItem('aiAutoVerify', e.target.checked ? '1' : '0');
     $('#aiXlsx').onclick = exportXlsx;
     $('#aiTxt').onclick = () => {
       if (!AI.items.length) return alert('내보낼 결과가 없어요');
@@ -677,7 +680,9 @@
     msg('');
     AI.busy = '키워드 생성';
     save();
+    const auto = $('#aiAutoVerify').checked;
     const P = progress($('#aiProg'), Number(form.count), '키워드 작성 중');
+    if (auto) P.stage(0, 60);
     const ctrl = new AbortController();
     const holder = {};
     let stopped = false;
@@ -696,12 +701,21 @@
       const got = notSame.filter((x) => !exN.has(norm(x.keyword)));
       const r = addItems(got.map((x) => ({ ...x, source: 'AI' })));
       const dupEx = notSame.length - got.length + r.dropped;
-      stop.classList.add('hidden');
+      if (!auto) stop.classList.add('hidden');
       // 생성 직후 검색량 자동 조회 (검색광고 API 키가 있을 때)
       let volFail = '';
-      if (AI.hasAd && r.keys.length) volFail = await attachVolumes(r.keys, P);
-      P.finish(`완료 · ${j.items.length}개 받음${AI.hasAd && r.keys.length && !volFail ? ' · 검색량 포함' : ''}`);
-      msg(`${j.items.length}개 받음 → ${r.added}개 추가${outLen ? `, 글자 수 범위 밖 ${outLen}개 제외` : ''}${rejN ? `, 제외 목록과 같은 ${rejN}개 제외` : ''}${sameN ? `, 기존 키워드와 동일한 ${sameN}개 제외` : ''}${dupEx ? `, 예시·결과와 겹친 ${dupEx}개 제외` : ''}${existing.length ? ` · 기존 키워드 ${existing.length.toLocaleString('ko-KR')}개를 AI에 알려줌` : ''}${j.fallback ? ` (선택한 모델이 바빠서 ${j.model}(으)로 대신 생성)` : ''}${volFail ? ` · 검색량 조회 실패: ${volFail}` : ''}${!AI.hasAd ? ' · 검색량은 검색광고 API 키를 넣으면 자동으로 붙어요' : ''}`);
+      if (auto) P.stage(60, 72, r.keys.length, '검색량 조회');
+      if (AI.hasAd && r.keys.length && !stopped) volFail = await attachVolumes(r.keys, P);
+      // 이어서 조건 재검증 (새로 들어온 키워드만)
+      let vr = null;
+      if (auto && r.keys.length && !stopped) {
+        const fresh = new Set(r.keys);
+        P.stage(72, 100, r.keys.length, '조건 재검증');
+        AI.busy = '조건 재검증';
+        vr = await verify({ items: AI.items.filter((it) => fresh.has(it.keyword)), P, stop });
+      }
+      P.finish(vr?.stopped ? '중지했어요' : `완료 · ${j.items.length}개 받음${AI.hasAd && r.keys.length && !volFail ? ' · 검색량 포함' : ''}${vr && !vr.error ? ` · 재검증 적합 ${vr.pass} · 부적합 ${vr.fail}` : ''}`, vr?.stopped ? 'stop' : undefined);
+      msg(`${j.items.length}개 받음 → ${r.added}개 추가${outLen ? `, 글자 수 범위 밖 ${outLen}개 제외` : ''}${rejN ? `, 제외 목록과 같은 ${rejN}개 제외` : ''}${sameN ? `, 기존 키워드와 동일한 ${sameN}개 제외` : ''}${dupEx ? `, 예시·결과와 겹친 ${dupEx}개 제외` : ''}${existing.length ? ` · 기존 키워드 ${existing.length.toLocaleString('ko-KR')}개를 AI에 알려줌` : ''}${j.fallback ? ` (선택한 모델이 바빠서 ${j.model}(으)로 대신 생성)` : ''}${volFail ? ` · 검색량 조회 실패: ${volFail}` : ''}${!AI.hasAd ? ' · 검색량은 검색광고 API 키를 넣으면 자동으로 붙어요' : ''}${vr ? (vr.error ? ` · 조건 재검증 실패: ${vr.error}` : vr.stopped ? ' · 조건 재검증은 중지했어요' : ` · 조건 재검증: 적합 ${vr.pass} · 부적합 ${vr.fail}`) : ''}`);
     } catch (e) {
       const aborted = stopped || e.name === 'AbortError';
       P.finish(aborted ? '중지했어요' : '실패', aborted ? 'stop' : 'fail');
@@ -709,32 +723,30 @@
     } finally { AI.busy = ''; b1.disabled = b2.disabled = false; stop.classList.add('hidden'); save(); }
   }
 
-  // 진행률 + Gemini 생각 과정 표시 (생성 / 재검증 공용)
+  // 진행률 막대 (생성 / 재검증 공용, 생각 과정 글은 표시하지 않음)
   function progress(root, total, label) {
     const q = (c) => root.querySelector(c);
-    const bar = q('.p-bar'), think = q('.p-think');
+    const bar = q('.p-bar');
     root.classList.remove('hidden', 'fail');
-    q('.p-thinkbox').open = true;
-    think.innerHTML = '<span class="muted">아직 생각 요약이 없어요</span>';
-    let thoughts = '', pct = 3, base = 0;
+    let pct = 3, base = 0;
+    let lo = 0, hi = 100; // 여러 단계를 막대 하나로: 이 단계가 막대의 lo~hi% 구간을 씀
     const t0 = Date.now();
     const set = (p, phase, indet) => {
       pct = Math.max(pct, p);
-      bar.style.width = pct + '%';
+      const shown = lo + ((hi - lo) * pct) / 100;
+      bar.style.width = shown + '%';
       bar.parentElement.classList.toggle('indet', !!indet);
-      q('.p-pct').textContent = Math.round(pct) + '%';
+      q('.p-pct').textContent = Math.round(shown) + '%';
       if (phase) q('.p-phase').textContent = phase;
     };
     const timer = setInterval(() => (q('.p-time').textContent = Math.round((Date.now() - t0) / 1000) + '초'), 500);
     q('.p-time').textContent = '0초';
     q('.p-model').textContent = '';
     set(3, '준비 중', true);
-    const md = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
     return {
-      setBase(b, note) {
-        base = b;
-        if (note) { thoughts += (thoughts ? '\n\n' : '') + `**${note}**\n`; think.innerHTML = md(thoughts); }
-      },
+      // 다음 단계로: 막대의 lo~hi% 구간에서 다시 0부터 (생성 → 검색량 → 재검증을 막대 하나로)
+      stage(l, h, t, lab) { lo = l; hi = h; pct = 0; base = 0; if (t) total = t; if (lab) label = lab; set(0); },
+      setBase(b) { base = b; },
       event(ev) {
         if (ev.type === 'status') {
           const head = base ? `${base}/${total}개 완료 · ` : '';
@@ -743,12 +755,7 @@
           else set(base ? pct : 5, head + ev.text, !base);
           q('.p-model').textContent = ev.model ? `사용 중: ${ev.model}` : '';
         }
-        if (ev.type === 'thought') {
-          thoughts += ev.text;
-          think.innerHTML = md(thoughts);
-          think.scrollTop = think.scrollHeight;
-          if (!base) set(Math.min(14, pct + 0.5), null, true);
-        }
+        if (ev.type === 'thought' && !base) set(Math.min(14, pct + 0.5), null, true); // 생각 과정 글은 보여주지 않고 막대만 조금씩
         if (ev.type === 'progress') {
           const c = Math.min(total, base + ev.count);
           set(15 + 80 * (c / total), `${label} ${c} / ${total}개`, false);
@@ -757,29 +764,31 @@
       phase(text, p) { set(p ?? pct, text, false); },
       finish(text, mode) {
         clearInterval(timer);
-        if (!mode) set(100, `${text} · ${Math.round((Date.now() - t0) / 1000)}초`, false);
+        if (!mode) { lo = 0; hi = 100; pct = 0; set(100, `${text} · ${Math.round((Date.now() - t0) / 1000)}초`, false); }
         else { q('.p-phase').textContent = text; bar.parentElement.classList.remove('indet'); if (mode === 'fail') root.classList.add('fail'); }
-        if (!thoughts) q('.p-thinkbox').open = false;
       },
     };
   }
 
   // ---------------------------------------------------------------- 조건 재검증
-  async function verify() {
+  async function verify(opts = {}) {
+    if (opts instanceof Event) opts = {}; // 버튼 클릭으로 불릴 때
+    const inGen = !!opts.items; // 키워드 생성에 이어서 부른 경우
     if (!AI.items.length) return vmsg('검증할 키워드가 없어요', true);
-    const sel = AI.items.filter((it) => it._sel);
-    const targets = sel.length ? sel : AI.items.filter((it) => !it.decision);
+    const sel = inGen ? [] : AI.items.filter((it) => it._sel);
+    const targets = inGen ? opts.items : sel.length ? sel : AI.items.filter((it) => !it.decision);
     if (!targets.length) return vmsg('직접 판정한 키워드만 남았어요. 다시 판정하려면 체크해서 누르세요.', true);
     const form = readForm();
     const conditions = { topic: form.topic, examples: splitList(form.examples), extra: form.extra, judged: MixedReview.judged(AI.items) };
-    if (!conditions.topic.trim() && !conditions.examples.length && !conditions.extra.trim()) return vmsg('이 탭에 주제·예시·요청 사항이 없어서 판정 기준이 없어요', true);
-    const btn = $('#aiVerify'), stop = $('#aiVStop');
+    if (!conditions.topic.trim() && !conditions.examples.length && !conditions.extra.trim()) { vmsg('이 탭에 주제·예시·요청 사항이 없어서 판정 기준이 없어요', true); return { error: '판정 기준 없음' }; }
+    const btn = $('#aiVerify'), stop = opts.stop || $('#aiVStop');
     btn.disabled = true;
     stop.classList.remove('hidden');
     AI.busy = '조건 재검증';
     const runNo = Math.max(0, ...targets.map((t) => (t.checks || []).length)) + 1;
     vmsg(`${runNo}회차 재검증 중... (${targets.length}개${sel.length ? ', 체크한 것만' : ''})`);
-    const P = progress($('#aiVProg'), targets.length, `${runNo}회차 판정 중`);
+    const P = opts.P || progress($('#aiVProg'), targets.length, `${runNo}회차 판정 중`);
+    if (opts.P) P.stage(72, 100, targets.length, `${runNo}회차 판정 중`);
     const ctrl = new AbortController();
     const holder = {};
     let stopped = false;
@@ -817,18 +826,20 @@
         draw();
       }
       const consistent = targets.filter((t) => vsum(t).cls === 'ok').length;
-      P.finish(`${runNo}회차 완료 · 적합 ${pass} · 부적합 ${fail}`);
+      if (!inGen) P.finish(`${runNo}회차 완료 · 적합 ${pass} · 부적합 ${fail}`);
       const noVol = minVol > 0 ? targets.filter((t) => volOf(t) === null).length : 0;
       vmsg(`${runNo}회차 검증 완료 (${targets.length}개${sel.length ? ', 체크한 것만' : ''}): 이번 판정 적합 ${pass} · 부적합 ${fail}${lowVol ? ` (그중 검색량 ${minVol} 미만 ${lowVol}개)` : ''}${missing ? ` · 응답 누락 ${missing}` : ''} → 일관 적합 ${consistent}개${model ? ` · ${model}` : ''}${noVol ? ` · 검색량을 모르는 ${noVol}개는 검색량 기준 없이 판정${AI.hasAd ? '' : ' (검색광고 API 키 필요)'}` : ''}`);
     } catch (e) {
       const aborted = stopped || e.name === 'AbortError';
-      P.finish(aborted ? `중지했어요 (${done}/${targets.length}개 반영)` : '실패', aborted ? 'stop' : 'fail');
+      if (!inGen) P.finish(aborted ? `중지했어요 (${done}/${targets.length}개 반영)` : '실패', aborted ? 'stop' : 'fail');
       vmsg(aborted ? `중지했어요. 끝난 묶음(${done}개)까지만 판정이 반영됐어요.` : e.message, !aborted);
+      if (inGen) return aborted ? { stopped: true } : { error: e.message };
     } finally {
-      AI.busy = ''; btn.disabled = false; stop.classList.add('hidden');
+      AI.busy = inGen ? AI.busy : ''; btn.disabled = false; stop.classList.add('hidden');
       save(); draw();
     }
     if (!stopped && MixedReview.opt.auto && targets.some(MixedReview.isMixed)) openMixed(true, targets);
+    return { pass, fail };
   }
 
   // 판정 엇갈림 → 사용자에게 물어서 확정
