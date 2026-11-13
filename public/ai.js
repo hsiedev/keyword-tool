@@ -319,6 +319,8 @@
               </div>
               <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="aiSendExisting"> 기존 키워드도 AI에 보내 처음부터 피하게 하기 (②에서 켜 둔 목록, 최대 2,000개)</label>
               <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px" title="생성이 끝나면 새로 들어온 키워드를 바로 이 탭의 주제·예시·요청 사항과 최소 월간 검색량으로 한 번 판정해요 (AI를 한 번 더 써요)"><input type="checkbox" id="aiAutoVerify"> 생성하면서 조건 재검증까지 하기 (진행은 막대 하나로)</label>
+              <div class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap" title="예시 키워드(없으면 주제)를 네이버 키워드 도구에 넣어 연관 키워드와 실제 월간 검색량을 받고, 그 목록을 AI에게 보여줘서 거기서 더 넓히게 해요"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="aiSeed"> 네이버 키워드 도구 연관 키워드로 시작하기 (AI가 그 결과를 바탕으로 확장)</label>
+                <span id="aiSeedOpt" style="display:flex;gap:4px;align-items:center">· 연관 키워드도 결과에 <select id="aiSeedAdd" class="hsel" style="height:26px"><option value="0">넣지 않기</option><option value="20">20개</option><option value="30">30개</option><option value="50">50개</option><option value="100">100개</option></select> (검색량 많은 순)</span></div>
               <div style="display:flex;gap:8px;margin-top:12px">
                 <button class="btn pri" id="aiGen">키워드 생성</button>
                 <button class="btn" id="aiMore">이어서 더 생성</button>
@@ -443,6 +445,13 @@
       rejectItems(AI.items);
       AI.items = []; save(); draw();
     };
+    // 키워드 도구로 시작: 기본 켜짐, 결과에 넣을 연관 키워드 수 기본 30개 (마지막 선택 기억)
+    $('#aiSeed').checked = localStorage.getItem('aiSeed') !== '0';
+    $('#aiSeedAdd').value = localStorage.getItem('aiSeedAdd') || '30';
+    const seedUi = () => ($('#aiSeedOpt').style.opacity = $('#aiSeed').checked ? '1' : '.45');
+    $('#aiSeed').onchange = (e) => { localStorage.setItem('aiSeed', e.target.checked ? '1' : '0'); seedUi(); };
+    $('#aiSeedAdd').onchange = (e) => localStorage.setItem('aiSeedAdd', e.target.value);
+    seedUi();
     // 생성하면서 조건 재검증까지: 기본 켜짐, 마지막 선택을 기억
     $('#aiAutoVerify').checked = localStorage.getItem('aiAutoVerify') !== '0';
     $('#aiAutoVerify').onchange = (e) => localStorage.setItem('aiAutoVerify', e.target.checked ? '1' : '0');
@@ -628,7 +637,7 @@
       if (!n || have.has(n)) { dropped++; continue; }
       const sk = sortKey(n);
       if (haveSorted.has(sk) && AI.items.some((it) => { const m = norm(it.keyword); return m.length === n.length && (m + m).includes(n); })) { dropped++; continue; }
-      const it = { ...x, ...checkOne(x.keyword, IDX), vol: null, sem: null, checks: [] };
+      const it = { ...x, ...checkOne(x.keyword, IDX), vol: x.vol || null, sem: null, checks: [] }; // 키워드 도구에서 온 것은 검색량을 이미 가짐
       AI.items.push(it);
       have.set(n, it); haveSorted.add(sk);
       keys.push(it.keyword);
@@ -681,14 +690,38 @@
     AI.busy = '키워드 생성';
     save();
     const auto = $('#aiAutoVerify').checked;
+    const useSeed = $('#aiSeed').checked && AI.hasAd;
     const P = progress($('#aiProg'), Number(form.count), '키워드 작성 중');
-    if (auto) P.stage(0, 60);
     const ctrl = new AbortController();
     const holder = {};
     let stopped = false;
     stop.onclick = () => { stopped = true; ctrl.abort(); holder.reader?.cancel().catch(() => {}); };
     try {
-      const j = await streamPost('/api/ai/generate-stream', { topic: form.topic, examples, count: Number(form.count), extra: form.extra, avoid, existing, rejected, minLen: form.minLen, maxLen: form.maxLen }, (ev) => P.event(ev), ctrl.signal, holder);
+      // 1) 네이버 키워드 도구: 예시 키워드(없으면 주제)로 연관 키워드 + 실제 검색량
+      let seeds = [], seedAdd = { added: 0, keys: [] }, seedFail = '', seedHints = [];
+      if (useSeed) {
+        P.stage(0, 8);
+        P.phase('네이버 키워드 도구에서 연관 키워드 가져오는 중', 30);
+        seedHints = examples.length ? examples.slice(0, 5) : [...new Set([form.topic.replace(/\s+/g, ''), ...form.topic.split(/[\s,]+/).filter((w) => w.length >= 2).sort((x, y) => y.length - x.length).slice(0, 2)])].filter(Boolean).slice(0, 5);
+        try {
+          const sj = await (await fetch('/api/ai/seed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hints: seedHints }), signal: ctrl.signal })).json();
+          if (sj.error) throw new Error(sj.error);
+          seeds = sj.list || [];
+        } catch (e) { if (stopped || e.name === 'AbortError') throw e; seedFail = e.message; }
+        // 연관 키워드 일부를 결과에도 넣음 (검색량은 이미 있음): 글자 수·제외 목록·기존 키워드·예시와 겹치면 뺌
+        const nAdd = Number($('#aiSeedAdd').value) || 0;
+        if (seeds.length && nAdd) {
+          const rejI = buildIndex((AI.cur.rejected || []).map((r) => r.keyword));
+          const exN0 = new Set(examples.map(norm));
+          const pick = seeds.filter((x) => { const L = charLen(x.keyword); return L >= form.minLen && L <= form.maxLen && !isRejected(x.keyword, rejI) && !IDX.exact.has(norm(x.keyword)) && !exN0.has(norm(x.keyword)); }).slice(0, nAdd);
+          seedAdd = addItems(pick.map((x) => ({ keyword: x.keyword, intent: '', reason: '네이버 키워드 도구', source: '키워드도구', vol: { pc: x.pc, mo: x.mo, total: x.total, comp: x.comp, pcLow: x.pcLow, moLow: x.moLow } })));
+          draw();
+        }
+      }
+      // 2) AI 생성 (키워드 도구 결과를 보여주고 거기서 넓힘)
+      P.stage(useSeed ? 8 : 0, auto ? 60 : 100, Number(form.count), '키워드 작성 중');
+      const seedN = new Set(seeds.map((x) => norm(x.keyword)));
+      const j = await streamPost('/api/ai/generate-stream', { topic: form.topic, examples, count: Number(form.count), extra: form.extra, avoid, existing, rejected, minLen: form.minLen, maxLen: form.maxLen, seeds: seeds.slice(0, 200).map((x) => ({ keyword: x.keyword, total: x.total })) }, (ev) => P.event(ev), ctrl.signal, holder);
       const exN = new Set(examples.map(norm));
       const inLen = j.items.filter((x) => { const L = charLen(x.keyword); return L >= form.minLen && L <= form.maxLen; });
       const outLen = j.items.length - inLen.length;
@@ -699,13 +732,16 @@
       const notSame = notRej.filter((x) => !IDX.exact.has(norm(x.keyword)));
       const sameN = notRej.length - notSame.length;
       const got = notSame.filter((x) => !exN.has(norm(x.keyword)));
-      const r = addItems(got.map((x) => ({ ...x, source: 'AI' })));
-      const dupEx = notSame.length - got.length + r.dropped;
+      const r0 = addItems(got.map((x) => ({ ...x, source: 'AI' })));
+      const dupEx = notSame.length - got.length + r0.dropped;
+      // 검색량 조회는 AI가 만든 것만, 재검증은 키워드 도구에서 넣은 것까지
+      const aiKeys = r0.keys;
+      const r = { added: r0.added + seedAdd.added, keys: [...seedAdd.keys, ...r0.keys] };
       if (!auto) stop.classList.add('hidden');
       // 생성 직후 검색량 자동 조회 (검색광고 API 키가 있을 때)
       let volFail = '';
       if (auto) P.stage(60, 72, r.keys.length, '검색량 조회');
-      if (AI.hasAd && r.keys.length && !stopped) volFail = await attachVolumes(r.keys, P);
+      if (AI.hasAd && aiKeys.length && !stopped) volFail = await attachVolumes(aiKeys, P);
       // 이어서 조건 재검증 (새로 들어온 키워드만)
       let vr = null;
       if (auto && r.keys.length && !stopped) {
@@ -714,8 +750,9 @@
         AI.busy = '조건 재검증';
         vr = await verify({ items: AI.items.filter((it) => fresh.has(it.keyword)), P, stop });
       }
-      P.finish(vr?.stopped ? '중지했어요' : `완료 · ${j.items.length}개 받음${AI.hasAd && r.keys.length && !volFail ? ' · 검색량 포함' : ''}${vr && !vr.error ? ` · 재검증 적합 ${vr.pass} · 부적합 ${vr.fail}` : ''}`, vr?.stopped ? 'stop' : undefined);
-      msg(`${j.items.length}개 받음 → ${r.added}개 추가${outLen ? `, 글자 수 범위 밖 ${outLen}개 제외` : ''}${rejN ? `, 제외 목록과 같은 ${rejN}개 제외` : ''}${sameN ? `, 기존 키워드와 동일한 ${sameN}개 제외` : ''}${dupEx ? `, 예시·결과와 겹친 ${dupEx}개 제외` : ''}${existing.length ? ` · 기존 키워드 ${existing.length.toLocaleString('ko-KR')}개를 AI에 알려줌` : ''}${j.fallback ? ` (선택한 모델이 바빠서 ${j.model}(으)로 대신 생성)` : ''}${volFail ? ` · 검색량 조회 실패: ${volFail}` : ''}${!AI.hasAd ? ' · 검색량은 검색광고 API 키를 넣으면 자동으로 붙어요' : ''}${vr ? (vr.error ? ` · 조건 재검증 실패: ${vr.error}` : vr.stopped ? ' · 조건 재검증은 중지했어요' : ` · 조건 재검증: 적합 ${vr.pass} · 부적합 ${vr.fail}`) : ''}`);
+      P.finish(vr?.stopped ? '중지했어요' : `완료 · ${seedAdd.added ? `키워드 도구 ${seedAdd.added}개 + ` : ''}AI ${j.items.length}개 받음${AI.hasAd && r.keys.length && !volFail ? ' · 검색량 포함' : ''}${vr && !vr.error ? ` · 재검증 적합 ${vr.pass} · 부적합 ${vr.fail}` : ''}`, vr?.stopped ? 'stop' : undefined);
+      const seedTxt = useSeed ? (seedFail ? `키워드 도구 실패(${seedFail}) → AI만으로 생성 · ` : `키워드 도구 연관 ${seeds.length.toLocaleString('ko-KR')}개(${seedHints.join(', ')}) 중 상위 ${Math.min(200, seeds.length)}개를 AI에 보여줌${seedAdd.added ? `, ${seedAdd.added}개 결과에 추가` : ''} · `) : '';
+      msg(`${seedTxt}AI ${j.items.length}개 받음 → ${r0.added}개 추가${outLen ? `, 글자 수 범위 밖 ${outLen}개 제외` : ''}${rejN ? `, 제외 목록과 같은 ${rejN}개 제외` : ''}${sameN ? `, 기존 키워드와 동일한 ${sameN}개 제외` : ''}${dupEx ? `, 예시·결과와 겹친 ${dupEx}개 제외` : ''}${existing.length ? ` · 기존 키워드 ${existing.length.toLocaleString('ko-KR')}개를 AI에 알려줌` : ''}${j.fallback ? ` (선택한 모델이 바빠서 ${j.model}(으)로 대신 생성)` : ''}${volFail ? ` · 검색량 조회 실패: ${volFail}` : ''}${!AI.hasAd ? ' · 검색량은 검색광고 API 키를 넣으면 자동으로 붙어요' : ''}${vr ? (vr.error ? ` · 조건 재검증 실패: ${vr.error}` : vr.stopped ? ' · 조건 재검증은 중지했어요' : ` · 조건 재검증: 적합 ${vr.pass} · 부적합 ${vr.fail}`) : ''}`);
     } catch (e) {
       const aborted = stopped || e.name === 'AbortError';
       P.finish(aborted ? '중지했어요' : '실패', aborted ? 'stop' : 'fail');
@@ -1085,7 +1122,7 @@
     $('#aiTbl').innerHTML = `<thead><tr><th class="l" style="width:30px"><input type="checkbox" id="aiAll" title="표에 보이는 키워드 전체 체크 / 다시 누르면 전체 해제"></th>${COLS.map(([k, n, c]) => `<th data-k="${k}" class="${c || ''} ${key === k ? 'sorted' : ''}">${n}<span class="ar">${key === k ? (dir < 0 ? '▼' : '▲') : '↕'}</span></th>`).join('')}<th></th></tr></thead>
       <tbody>${rows.map((it) => `<tr>
         <td class="l"><input type="checkbox" data-sel="${esc(it.keyword)}" ${it._sel ? 'checked' : ''}></td>
-        <td class="l kwc"><a href="#" data-go="${esc(it.keyword)}">${esc(it.keyword)}</a>${it.source === '직접' ? ' <span class="muted">(직접)</span>' : ''}</td>
+        <td class="l kwc"><a href="#" data-go="${esc(it.keyword)}">${esc(it.keyword)}</a>${it.source === '직접' ? ' <span class="muted">(직접)</span>' : it.source === '키워드도구' ? ' <span class="muted" title="네이버 키워드 도구 연관 키워드">(키워드도구)</span>' : ''}</td>
         <td class="l"><span class="st" data-s="${esc(it.status)}">${esc(it.status)}</span>${it.kind ? `<div class="muted" style="font-size:11px">${esc(it.kind)}</div>` : ''}</td>
         <td class="l" style="min-width:150px">${verifyCell(it, form)}</td>
         <td class="l">${esc(it.match || '')}</td>
