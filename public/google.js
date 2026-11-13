@@ -101,7 +101,8 @@
     const last = vals.slice(-4), prev = vals.slice(-8, -4);
     const avg = (a) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0);
     const a1 = avg(last), a0 = avg(prev);
-    const peak = tl.reduce((m, x) => (x.v > m.v ? x : m), tl[0]);
+    const peak = { ...tl.reduce((m, x) => (x.v > m.v ? x : m), tl[0]) };
+    if (!peak.label && peak.t) { const d = new Date(peak.t); peak.label = `20${String(d.getFullYear()).slice(2)}. ${d.getMonth() + 1}. ${d.getDate()}. 주`; }
     return { now: Math.round(a1), chg: a0 ? Math.round(((a1 - a0) / a0) * 100) : null, peak };
   }
   function secSum() {
@@ -187,7 +188,7 @@
       body = `<div class="g-kp-stat">가져온 키워드 <b>${n0(kp.total)}</b>개${files.length ? ` · 최근 파일 ${esc(files[0].name)} (${esc(dt(files[0].at))}, ${n0(files[0].count)}개)` : ''}${kp.total ? ' <button class="btn sm" data-a="kp-clear">모두 지우기</button>' : ''}</div>
         ${hit ? `<div class="card" style="margin-top:10px"><h3>'${esc(hit.keyword)}' <span class="muted">월평균 ${vol(hit.avg) || '-'} · 경쟁 ${esc(hit.comp || '-')} · 입찰가 ${won(hit.bidLow, hit.currency)} ~ ${won(hit.bidHigh, hit.currency)}${hit.yoy ? ` · 전년 대비 ${esc(hit.yoy)}` : ''}</span></h3>
           ${hit.months?.length ? (hit.months.some((m) => ranged(m.v)) ? '<div class="muted">월별 값도 범위라 그래프는 생략했어요: ' + hit.months.map((m) => `${m.ym.slice(2).replace('-', '.')} ${vol(m.v)}`).join(' · ') + '</div>' : '<div class="g-chart" id="gKpChart"></div>') : '<div class="muted">이 파일에는 월별 검색량 칸이 없어요</div>'}</div>` : (kp.total ? `<div class="g-note">가져온 파일에 '${esc(S.kw)}'가 없어요. 키워드 플래너에서 이 키워드로 조회해서 다시 내려받아 주세요.</div>` : '')}
-        ${rel.length ? `<div class="card" style="margin-top:10px"><h3>'${esc(S.kw)}'가 들어간 키워드 <span class="muted">${n0(kp.relatedTotal)}개${kp.relatedTotal > rel.length ? ` 중 ${rel.length}개` : ''}</span><span class="g-acts"><button class="btn sm" data-a="nv-kp">네이버 검색량 붙이기</button><button class="btn sm" data-a="txt-kp">TXT</button><button class="btn sm" data-a="csv-kp">CSV</button></span></h3>
+        ${rel.length ? `<div class="card" style="margin-top:10px"><h3><span>'${esc(S.kw)}'가 들어간 키워드 <span class="muted">${n0(kp.relatedTotal)}개${kp.relatedTotal > rel.length ? ` 중 ${rel.length}개` : ''}</span></span><span class="g-acts"><button class="btn sm" data-a="nv-kp">네이버 검색량 붙이기</button><button class="btn sm" data-a="txt-kp">TXT</button><button class="btn sm" data-a="csv-kp">CSV</button></span></h3>
           <div class="tbl-wrap"><table class="g-tbl"><thead><tr><th>키워드</th><th class="r">월평균 검색량</th><th>경쟁</th><th class="r">상단 입찰가</th><th class="r">네이버 검색량</th></tr></thead><tbody>
           ${rel.map((r) => `<tr><td><a href="#" class="g-run" data-run="${esc(r.keyword)}">${esc(r.keyword)}</a></td><td class="r">${vol(r.avg) || '-'}</td><td>${esc(r.comp || '-')}</td><td class="r">${r.bidLow != null || r.bidHigh != null ? `${won(r.bidLow, r.currency)} ~ ${won(r.bidHigh, r.currency)}` : '-'}</td><td class="r">${nvCell(r.keyword)}</td></tr>`).join('')}
           </tbody></table></div></div>` : ''}
