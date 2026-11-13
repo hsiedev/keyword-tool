@@ -22,6 +22,9 @@
     ['mock', '광고 목업'],
   ];
   const NAME = Object.fromEntries(VIEWS);
+  // NAVER / Google 모드 (구글은 지금 '키워드 분석'만)
+  const getMode = () => (localStorage.getItem('siteMode') === 'google' ? 'google' : 'naver');
+  const isG = () => getMode() === 'google';
 
   // ---------------------------------------------------------------- 테마
   const media = matchMedia('(prefers-color-scheme: dark)');
@@ -59,6 +62,17 @@
   // 로고·이름은 사이드바로
   const brand = document.querySelector('.top .brand');
   if (brand) side.querySelector('.as-head').appendChild(brand);
+  const modeTg = document.createElement('div');
+  modeTg.className = 'mode-tg'; modeTg.id = 'modeTg'; modeTg.setAttribute('role', 'group'); modeTg.setAttribute('aria-label', '검색 엔진 모드');
+  modeTg.innerHTML = '<button type="button" data-mode="naver" title="네이버 모드">NAVER</button><button type="button" data-mode="google" title="구글 모드 (무료 데이터 · 지금은 키워드 분석만)">Google</button>';
+  const small = brand?.querySelector('small');
+  if (small) small.replaceWith(modeTg); else side.querySelector('.as-head').appendChild(modeTg);
+  modeTg.querySelectorAll('[data-mode]').forEach((b) => (b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); setMode(b.dataset.mode); }));
+  // 사이드바를 접었을 때는 한 글자 버튼(N / G)
+  const modeMini = document.createElement('button');
+  modeMini.type = 'button'; modeMini.className = 'as-item mode-mini'; modeMini.id = 'modeMini';
+  modeMini.onclick = () => setMode(isG() ? 'naver' : 'google');
+  side.querySelector('.as-nav').prepend(modeMini);
 
   // 상단 바: [사이드바 접기] | 화면 이름 · 검색 · 테마 · 기록 · 설정
   const top = document.querySelector('.top');
@@ -92,9 +106,10 @@
 
   // ---------------------------------------------------------------- 화면 전환
   const isOn = (id) => { const el = document.getElementById(id); return el && !el.classList.contains('hidden'); };
-  const current = () => (isOn('copyView') ? 'copy' : isOn('mockView') ? 'mock' : isOn('aiView') ? 'ai' : isOn('dupView') ? 'dup' : isOn('bulkView') ? 'bulk' : 'analyze');
+  const current = () => (isG() ? 'analyze' : isOn('copyView') ? 'copy' : isOn('mockView') ? 'mock' : isOn('aiView') ? 'ai' : isOn('dupView') ? 'dup' : isOn('bulkView') ? 'bulk' : 'analyze');
   function go(v) {
     document.body.classList.remove('side-open');
+    if (isG()) { if (v === 'analyze') return; setMode('naver'); }
     if (v === current()) return;
     if (v !== 'copy') window.__hideCopy?.();
     if (v !== 'mock') window.__hideMock?.();
@@ -122,13 +137,13 @@
   // 키워드 분석: 최근 검색
   function recent() {
     let h = [];
-    try { h = JSON.parse(localStorage.getItem('kwHistory') || '[]'); } catch {}
+    try { h = JSON.parse(localStorage.getItem(isG() ? 'gHistory' : 'kwHistory') || '[]'); } catch {}
     const box = document.getElementById('asRecent');
     const esc2 = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     box.innerHTML = h.length
       ? h.slice(0, 30).map((x) => `<div class="rk" data-rk="${esc2(x.kw)}"><span>${esc2(x.kw)}</span><small>${new Date(x.at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}</small></div>`).join('')
       : '<div class="as-empty">분석한 키워드가 여기 쌓여요.</div>';
-    box.querySelectorAll('[data-rk]').forEach((r) => (r.onclick = () => { document.body.classList.remove('side-open'); window.run?.(r.dataset.rk); scrollTo({ top: 0 }); }));
+    box.querySelectorAll('[data-rk]').forEach((r) => (r.onclick = () => { document.body.classList.remove('side-open'); if (isG()) window.__G?.run(r.dataset.rk); else window.run?.(r.dataset.rk); scrollTo({ top: 0 }); }));
   }
   if (typeof window.renderHist === 'function') {
     const orig = window.renderHist;
@@ -136,6 +151,7 @@
   }
 
   function sync() {
+    if (isG() && ['aiView', 'dupView', 'bulkView', 'copyView', 'mockView'].some(isOn)) { localStorage.setItem('siteMode', 'naver'); applyMode(); return; }
     adopt();
     const v = current();
     side.querySelectorAll('[data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
@@ -153,10 +169,12 @@
   window.__LAYOUT = { sync, go, current };
 
   // ---------------------------------------------------------------- 열린 탭 줄
-  let OPEN = [];
-  try { OPEN = JSON.parse(localStorage.getItem('openViews') || '[]').filter((k) => NAME[k]); } catch {}
-  const saveOpen = () => localStorage.setItem('openViews', JSON.stringify(OPEN));
+  const openKey = () => (isG() ? 'openViews_g' : 'openViews');
+  let OPEN = [], openFor = '';
+  const loadOpen = () => { openFor = getMode(); try { OPEN = JSON.parse(localStorage.getItem(openKey()) || '[]').filter((k) => NAME[k]); } catch { OPEN = []; } };
+  const saveOpen = () => localStorage.setItem(openKey(), JSON.stringify(OPEN));
   function drawTabs(v) {
+    if (openFor !== getMode()) loadOpen();
     if (!OPEN.includes(v)) { OPEN.push(v); saveOpen(); }
     otabs.innerHTML = OPEN.map((k) => `<div class="otab ${k === v ? 'on' : ''}" role="tab" aria-selected="${k === v}" data-otab="${k}" title="${NAME[k]}">${I[k]}<span>${NAME[k]}</span>${OPEN.length > 1 ? `<button type="button" class="otab-x" data-x="${k}" title="탭 닫기 (내용은 그대로 남아요)" aria-label="${NAME[k]} 탭 닫기">×</button>` : ''}</div>`).join('');
     otabs.querySelectorAll('[data-otab]').forEach((t) => (t.onclick = () => go(t.dataset.otab)));
@@ -175,8 +193,32 @@
     const hero = empty && !empty.classList.contains('hidden');
     if (hero) { if (form.parentElement !== empty) empty.insertBefore(form, document.getElementById('quick')); }
     else if (form.parentElement !== kwBox) kwBox.appendChild(form);
-    kwBox.classList.toggle('hidden', v !== 'analyze' || !!hero);
+    kwBox.classList.toggle('hidden', v !== 'analyze' || !!hero || isG());
   }
+
+  // ---------------------------------------------------------------- NAVER / Google 모드 바꾸기
+  function setMode(m) {
+    if (m === getMode()) return;
+    localStorage.setItem('siteMode', m === 'google' ? 'google' : 'naver');
+    applyMode();
+    scrollTo({ top: 0 });
+  }
+  function applyMode() {
+    const g = isG();
+    document.body.classList.toggle('mode-google', g);
+    modeTg.querySelectorAll('[data-mode]').forEach((b) => { b.classList.toggle('on', b.dataset.mode === getMode()); b.setAttribute('aria-pressed', String(b.dataset.mode === getMode())); });
+    modeMini.textContent = g ? 'G' : 'N';
+    modeMini.title = g ? '지금 구글 모드 · 누르면 네이버로' : '지금 네이버 모드 · 누르면 구글로';
+    if (g) {
+      window.__hideCopy?.(); window.__hideMock?.();
+      if (isOn('aiView')) window.showAI?.(false);
+      if (isOn('dupView')) window.showDup?.(false);
+      if (isOn('bulkView')) window.showBulk?.(false);
+      window.__G?.show(true);
+    } else window.__G?.show(false);
+    sync();
+  }
+  window.__MODE = { get: getMode, set: setMode };
 
   // 화면이 바뀌면(다른 코드가 바꿔도) 사이드바·제목을 맞춤
   const mo = new MutationObserver(() => sync());
@@ -221,4 +263,5 @@
 
   applyTheme();
   sync();
+  applyMode();
 })();

@@ -86,10 +86,12 @@
   function drawAll() {
     if (!S.kw) { $g('#gRes').innerHTML = ''; return; }
     const keep = scrollY;
+    const ytv = $g('#gYtKey')?.value; // 입력 중인 유튜브 키는 다시 그려도 유지
     $g('#gRes').innerHTML = [secSum(), secAc(), secTr(), secKp(), secYt()].join('');
     bind();
     drawTrendChart();
     drawKpChart();
+    if (ytv && $g('#gYtKey')) $g('#gYtKey').value = ytv;
     scrollTo(0, keep);
   }
 
