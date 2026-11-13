@@ -479,3 +479,17 @@ table.fp-table tr.fp-on>td:first-child{box-shadow:inset 3px 0 0 #16a34a,inset 0 
 .fp-btn.on{background:#16a34a;border-color:#16a34a;color:#fff}
 .tb-sep{width:1px;height:22px;background:var(--border,#e5e7eb);margin:0 2px}
 @media print{#fpShade,#fpPill,.fp-btn,.fp-bar{display:none!important}}
+
+/* 키워드 열 틀 고정 + 열 순서 바꾸기 (tablecols.js) */
+table .fz{position:sticky;z-index:2;background:var(--card)}
+table th.fz{z-index:4;background:var(--muted)}
+table.rel tr:hover td.fz{background:color-mix(in oklab,var(--muted) 60%,var(--card))}
+table .fz-last{box-shadow:inset -1px 0 0 var(--border),6px 0 8px -6px rgba(0,0,0,.18)}
+table.g-tbl th.fz{position:sticky}
+table.g-tbl{position:relative}
+th.cw-drag{cursor:grab}
+th.cw-src{opacity:.45}
+th.cw-over-l{box-shadow:inset 3px 0 0 var(--accent,#16a34a)}
+th.cw-over-r{box-shadow:inset -3px 0 0 var(--accent,#16a34a)}
+table.fp-table tr.fp-on>td.fz{background:var(--card)!important}
+@media print{table .fz{position:static;box-shadow:none}}
