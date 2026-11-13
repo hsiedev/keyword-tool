@@ -11,6 +11,7 @@ import { DEFAULT_SETTINGS, normalizeSettings } from './settings-defaults.mjs';
 import { parseSections } from './sections.mjs';
 import { CLI, CLI_MODELS, cliPath, runCli, cliStatus, cliTest, openConsole, cliJobs } from './ai-cli.mjs';
 import { createGitSync } from './github-sync.mjs';
+import { createGoogle } from './google-core.mjs';
 import { parsePowerlinks, copyGenerateRequest, cleanCopyItems, copyVerifyRequest, cleanVerifyItems, createStore, copyMeta, mockMeta } from './copy-core.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -23,6 +24,7 @@ const SETTINGS_PATH = path.join(__dirname, 'data', 'settings.json');
 const BULK_DIR = path.join(__dirname, 'data', 'bulk-history'); // 대량 분석 내역 (탭 하나 = 파일 하나)
 const BULK_INDEX = path.join(BULK_DIR, 'index.json');
 const COPY_STORE = createStore(path.join(__dirname, 'data', 'copy-projects'), copyMeta); // AI 카피 생성기 탭
+const GOOGLE = createGoogle({ dataDir: path.join(__dirname, 'data'), cached: (...a) => cached(...a), getConfig: () => config }); // 구글 모드 (무료 방식)
 const MOCK_STORE = createStore(path.join(__dirname, 'data', 'ad-mock'), mockMeta); // 광고 목업 캠페인
 let SETTINGS = DEFAULT_SETTINGS;
 try { SETTINGS = normalizeSettings(JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8'))); } catch { SETTINGS = normalizeSettings({}); }
@@ -1103,7 +1105,7 @@ function guard(req, u) {
 }
 
 // ---------------------------------------------------------------- 버전: 서버 코드가 바뀌었는지 (다시 시작 필요 여부)
-const SERVER_FILES = ['server.mjs', 'ai-cli.mjs', 'github-sync.mjs', 'sections.mjs', 'settings-defaults.mjs', 'copy-core.mjs', 'public/copy-spec.js'];
+const SERVER_FILES = ['server.mjs', 'ai-cli.mjs', 'github-sync.mjs', 'sections.mjs', 'settings-defaults.mjs', 'copy-core.mjs', 'public/copy-spec.js', 'google-core.mjs'];
 const codeHash = () => {
   const h = crypto.createHash('sha1');
   for (const f of SERVER_FILES) { try { h.update(fs.readFileSync(path.join(__dirname, f))); } catch {} }
@@ -1136,6 +1138,10 @@ const server = http.createServer(async (req, res) => {
       try { return send(res, 200, await suggest(kw, u.searchParams.get('deep') === '1')); }
       catch (e) { return send(res, 200, { error: '자동완성·연관검색어를 가져오지 못했어요: ' + e.message }); }
     }
+    if (u.pathname.startsWith('/api/google/')) {
+      const [st, obj] = await GOOGLE.handle(req, u, readBody);
+      return send(res, st, obj);
+    }
     if (u.pathname === '/api/copy/competitors') {
       const kw = String(u.searchParams.get('keyword') || '').trim().slice(0, 60);
       if (!kw) return send(res, 400, { error: '키워드를 넣어주세요' });
@@ -1152,7 +1158,7 @@ const server = http.createServer(async (req, res) => {
         adApiKey: mask(config.adApiKey), adSecret: mask(config.adSecret), adCustomerId: config.adCustomerId || '',
         clientId: mask(config.clientId), clientSecret: mask(config.clientSecret),
         openProvider: config.openProvider || 'hub',
-        hasGemini: hasGemini(), geminiKey: mask(config.geminiKey), geminiModel: config.geminiModel || GEMINI_DEFAULT, geminiPin: !!config.geminiPin,
+        hasGemini: hasGemini(), geminiKey: mask(config.geminiKey), hasYoutube: !!config.youtubeKey, youtubeKey: mask(config.youtubeKey), geminiModel: config.geminiModel || GEMINI_DEFAULT, geminiPin: !!config.geminiPin,
         aiProvider: provider(), hasAI: hasAI(),
         // 로그인형 AI: 설치 여부(경로)와 모델
         hasAgy: PROVIDERS.agy.has(), agyModel: config.agyModel || '',
@@ -1165,7 +1171,7 @@ const server = http.createServer(async (req, res) => {
     if (u.pathname === '/api/config' && req.method === 'POST') {
       const b = await readBody(req);
       const before = JSON.stringify([config.adApiKey, config.adSecret, config.adCustomerId, config.clientId, config.clientSecret, config.openProvider]);
-      for (const k of ['adApiKey', 'adSecret', 'adCustomerId', 'clientId', 'clientSecret', 'geminiKey', 'geminiModel']) {
+      for (const k of ['adApiKey', 'adSecret', 'adCustomerId', 'clientId', 'clientSecret', 'geminiKey', 'geminiModel', 'youtubeKey']) {
         if (typeof b[k] === 'string' && b[k].trim() && !b[k].includes('••••')) config[k] = b[k].trim();
         if (b[k] === null) delete config[k];
       }
