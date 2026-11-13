@@ -66,6 +66,14 @@
   lead.style.cssText = 'display:flex;align-items:center;gap:10px;min-width:0';
   lead.innerHTML = `<button type="button" class="icon-btn" id="sideBtn" title="사이드바 접기/펴기">${I.side}</button><span class="top-sep"></span><span class="top-title" id="topTitle">키워드 분석</span>`;
   top.prepend(lead);
+  // 한 번이라도 연 화면을 탭으로 (같은 화면은 하나만) · 새로고침해도 기억
+  const otabs = document.createElement('div');
+  otabs.className = 'otabs'; otabs.id = 'openTabs'; otabs.setAttribute('role', 'tablist');
+  lead.after(otabs);
+  // 키워드 검색창: 상단 바에서 빼서, 키워드 분석 화면에서만 본문 가운데에
+  const kwBox = document.createElement('div');
+  kwBox.className = 'kw-search hidden'; kwBox.id = 'kwSearch';
+  document.getElementById('tabs')?.before(kwBox);
   const acts = top.querySelector('.top-actions');
   const tb = document.createElement('button');
   tb.type = 'button'; tb.className = 'icon-btn'; tb.id = 'themeBtn';
@@ -139,12 +147,40 @@
     const hide = new Set((window.SETTINGS?.ui?.hideButtons) || []);
     side.querySelectorAll('[data-view]').forEach((b) => { const k = b.dataset.view; b.style.display = k !== 'analyze' && hide.has(k) && k !== v ? 'none' : ''; });
     if (v === 'analyze') recent();
+    drawTabs(v);
+    placeSearch(v);
   }
   window.__LAYOUT = { sync, go, current };
 
+  // ---------------------------------------------------------------- 열린 탭 줄
+  let OPEN = [];
+  try { OPEN = JSON.parse(localStorage.getItem('openViews') || '[]').filter((k) => NAME[k]); } catch {}
+  const saveOpen = () => localStorage.setItem('openViews', JSON.stringify(OPEN));
+  function drawTabs(v) {
+    if (!OPEN.includes(v)) { OPEN.push(v); saveOpen(); }
+    otabs.innerHTML = OPEN.map((k) => `<div class="otab ${k === v ? 'on' : ''}" role="tab" aria-selected="${k === v}" data-otab="${k}" title="${NAME[k]}">${I[k]}<span>${NAME[k]}</span>${OPEN.length > 1 ? `<button type="button" class="otab-x" data-x="${k}" title="탭 닫기 (내용은 그대로 남아요)" aria-label="${NAME[k]} 탭 닫기">×</button>` : ''}</div>`).join('');
+    otabs.querySelectorAll('[data-otab]').forEach((t) => (t.onclick = () => go(t.dataset.otab)));
+    otabs.querySelectorAll('[data-x]').forEach((b) => (b.onclick = (e) => {
+      e.stopPropagation();
+      const k = b.dataset.x, i = OPEN.indexOf(k);
+      OPEN = OPEN.filter((x) => x !== k); saveOpen();
+      if (k === current()) go(OPEN[Math.max(0, i - 1)] || 'analyze'); else drawTabs(current());
+    }));
+    otabs.querySelector('.otab.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+  // 검색창 자리: 첫 화면이면 로고 아래 가운데, 분석 결과가 있으면 결과 위 가운데
+  function placeSearch(v) {
+    const form = document.getElementById('searchForm'), empty = document.getElementById('empty');
+    if (!form) return;
+    const hero = empty && !empty.classList.contains('hidden');
+    if (hero) { if (form.parentElement !== empty) empty.insertBefore(form, document.getElementById('quick')); }
+    else if (form.parentElement !== kwBox) kwBox.appendChild(form);
+    kwBox.classList.toggle('hidden', v !== 'analyze' || !!hero);
+  }
+
   // 화면이 바뀌면(다른 코드가 바꿔도) 사이드바·제목을 맞춤
   const mo = new MutationObserver(() => sync());
-  ['aiView', 'dupView', 'bulkView', 'copyView', 'mockView', 'main'].forEach((id) => { const el = document.getElementById(id); if (el) mo.observe(el, { attributes: true, attributeFilter: ['class'] }); });
+  ['aiView', 'dupView', 'bulkView', 'copyView', 'mockView', 'main', 'empty'].forEach((id) => { const el = document.getElementById(id); if (el) mo.observe(el, { attributes: true, attributeFilter: ['class'] }); });
   if (typeof window.applyUI === 'function') { const o = window.applyUI; window.applyUI = function () { const r = o.apply(this, arguments); sync(); return r; }; }
 
   // ---------------------------------------------------------------- 서버 상태 띠: 꺼짐 / 예전 버전 / 코드가 바뀜 → 다시 시작

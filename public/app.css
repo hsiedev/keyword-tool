@@ -438,3 +438,24 @@ html.dark [style*="color:#b91c1c"],html.dark [style*="color:#dc2626"],html.dark 
 html.dark [style*="color:#16a34a"]{color:#4ade80!important}
 html.dark [style*="color:#b45309"]{color:#fbbf24!important}
 html.dark [style*="color:#ef4444"]{color:#f87171!important}
+
+/* 상단: 열린 탭 줄 (검색창·검색 기록은 상단에서 뺌) */
+#topTitle,#histBtn,#histPanel{display:none!important}
+.otabs{flex:1;min-width:0;display:flex;gap:4px;align-items:center;overflow-x:auto;scrollbar-width:none;padding:2px 0}
+.otabs::-webkit-scrollbar{display:none}
+.otab{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 6px 0 11px;border:1px solid transparent;border-radius:var(--radius-sm);color:var(--muted-fg);font-size:13px;font-weight:500;white-space:nowrap;cursor:pointer;flex:none;user-select:none}
+.otab:hover{background:var(--muted);color:var(--foreground)}
+.otab.on{background:var(--card);border-color:var(--border);color:var(--foreground);font-weight:650;box-shadow:var(--shadow-sm)}
+.otab svg{width:15px;height:15px;flex:none;opacity:.85}
+.otab.on svg{color:var(--accent);opacity:1}
+.otab:not(:has(.otab-x)){padding-right:12px}
+.otab-x{width:20px;height:20px;display:inline-grid;place-items:center;border:0;background:none;border-radius:5px;font-size:15px;line-height:1;color:var(--muted-fg);padding:0;opacity:.6}
+.otab-x:hover{background:var(--border);color:var(--foreground);opacity:1}
+/* 키워드 분석 검색창: 본문 가운데 */
+.kw-search{display:flex;justify-content:center;padding:20px 28px 6px}
+.kw-search #searchForm{flex:1;max-width:640px;margin:0}
+#searchForm{margin-left:0}
+.empty #searchForm{max-width:620px;margin:26px auto 0;height:52px;border-radius:12px}
+.empty #q{font-size:16px;padding:0 18px;color:var(--foreground)}
+.empty #searchForm button{padding:0 22px;font-size:14px}
+@media(max-width:900px){.otab span{display:none}.otab.on span{display:inline}.kw-search{padding:14px 12px 4px}}
