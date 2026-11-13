@@ -183,6 +183,26 @@ export async function runCli(p, prompt, { model = '', signal, config = {}, timeo
   throw new Error('알 수 없는 AI: ' + p);
 }
 
+// 로그인형 모델 목록: Gemini(agy)는 'agy models'로 읽음 (계정마다 다름, 10분 캐시)
+const modelCache = {};
+export async function cliModels(p, config = {}) {
+  if (p !== 'agy') return CLI_MODELS[p] || [];
+  const c = modelCache[p];
+  if (c && Date.now() - c.at < 600000) return c.list;
+  const file = cliPath(p, config);
+  if (!file) return [];
+  try {
+    const r = await run(file, ['models'], { timeoutMs: 30000 });
+    const list = [];
+    for (const ln of String(r.out).split(/\r?\n/)) {
+      const m = ln.trim().match(/^([a-z0-9][a-z0-9.\-]+)\s{2,}(.+)$/i);
+      if (m) list.push({ id: m[1], label: m[2].trim() });
+    }
+    if (list.length) modelCache[p] = { at: Date.now(), list };
+    return list;
+  } catch { return []; }
+}
+
 // ---------------------------------------------------------------- 상태 확인 · 테스트
 export async function cliStatus(p, config = {}) {
   const file = cliPath(p, config, true);

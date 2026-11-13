@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { exec } from 'node:child_process';
 import { DEFAULT_SETTINGS, normalizeSettings } from './settings-defaults.mjs';
 import { parseSections } from './sections.mjs';
-import { CLI, CLI_MODELS, cliPath, runCli, cliStatus, cliTest, openConsole, cliJobs } from './ai-cli.mjs';
+import { CLI, CLI_MODELS, cliPath, runCli, cliStatus, cliTest, openConsole, cliJobs, cliModels } from './ai-cli.mjs';
 import { createGitSync } from './github-sync.mjs';
 import { createGoogle } from './google-core.mjs';
 import { parsePowerlinks, copyGenerateRequest, cleanCopyItems, copyVerifyRequest, cleanVerifyItems, createStore, copyMeta, mockMeta } from './copy-core.mjs';
@@ -813,6 +813,7 @@ async function llmJson(prompt, schema, { temperature = 0.9, system } = {}) {
 }
 async function providerModels(p) {
   if (p === 'gemini') return geminiModels();
+  if (p === 'agy') return (await cliModels('agy', config)).map((m) => m.id);
   return CLI_MODELS[p] || [];
 }
 
