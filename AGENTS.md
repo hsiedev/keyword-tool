@@ -109,6 +109,8 @@
 | `copy-core.mjs` | 경쟁 파워링크 읽기(parsePowerlinks: #power_link_body), 카피 생성·다시 쓰기·재검증 요청문, 파일 저장소(createStore: 탭/캠페인 하나 = 파일 하나 + index.json) |
 | `public\copy.js`, `public\copy.css` | AI 카피 생성기 화면 (#copyView, 사이드바 #cSide) |
 | `public\admock.js` | 광고 목업 (#mockView, #mSide). 템플릿 정의 TPL · 확장소재 EXT · 네이버 모양 CSS(MOCK_CSS, PNG 저장에도 씀) · window.__MOCK(addFromCopy, miniPreview) |
+| `google-core.mjs` | 구글 모드 서버: 자동완성(구글·유튜브), 구글 트렌드(비공식 · 쿠키 · 429 재시도 · 메모리 저장), 키워드 플래너 CSV 읽기(parsePlannerCsv) · 모음(data\google\planner.json), 트렌드 CSV(parseTrendsCsv), 유튜브(config.youtubeKey). 라우트는 /api/google/* (handle) |
+| `public\google.js`, `public\google.css` | 구글 키워드 분석 화면 (#gView). window.__G = { show, run } |
 | `public\dialogs.js` | 화면 안 알림 `toast(msg, type)`·확인창 `await uiConfirm(msg)`. `window.alert`는 toast로 바뀜. **새 코드에서 브라우저 confirm/alert를 쓰지 말 것** |
 | `public\filters.js` | 공통 결과 필터 막대 (검색어·제외어·숫자 범위) |
 | `public\review.js` | 판정 엇갈림 정리 창 |
@@ -170,3 +172,12 @@ AI 제공자는 서버의 `PROVIDERS`에 정의돼 있어요.
 - **미리보기 CSS(MOCK_CSS)는 .nvm 안에서만**: PNG 저장은 SVG foreignObject로 그려서, 바깥 이미지(경쟁사 파비콘 등)를 쓰면 안 돼요 (data URL만).
 - 브라우저 `prompt()`도 쓰지 말고 `await uiPrompt(msg, { value, placeholder })`.
 - **상단 탭 줄 (2026-11-13)**: layout.js가 상단 바에 #openTabs를 만들고, 한 번이라도 연 화면(VIEWS의 키)을 localStorage 'openViews'에 순서대로 기억해요 (같은 화면은 하나만). 새 화면을 VIEWS에 추가하면 탭도 자동으로 생겨요. 검색창 #searchForm은 상단에서 빠져 #empty(첫 화면) 또는 #kwSearch(결과 위)로 옮겨 다녀요. #histBtn · #topTitle은 다른 코드가 참조해서 지우지 않고 CSS로만 숨겨요.
+
+## 9. 구글 모드 (2026-11-13 추가)
+
+- **무료 방식만** (사용자 결정). 키워드 플래너 API는 Basic 승인 + 브랜드 인증이 필요해서 쓰지 않고 CSV 가져오기로 해요. 구글 검색 결과 API(Custom Search)는 신규 가입이 막혔고, Gemini 검색 연결은 무료 등급에서 안 돼서 넣지 않았어요.
+- **모드 상태**: localStorage `siteMode`('naver'|'google'), `body.mode-google`. layout.js의 `getMode/isG/setMode/applyMode`가 담당하고 `window.__MODE`로 열어 둠. 구글 모드에서 네이버 전용 화면이 열리면(해시·다른 코드) 자동으로 네이버 모드로 바뀜. 상단 탭 `openViews_g`, 최근 검색 `gHistory`.
+- **구글 메뉴를 늘릴 때**: CSS `body.mode-google .as-nav [data-view]:not([data-view="analyze"])` 숨김 규칙과 layout.js `go()`의 구글 분기를 같이 고치세요.
+- **구글 트렌드**는 비공식이라 언제든 막힐 수 있어요. explore → widgetdata(multiline · relatedsearches · comparedgeo) 순서, 요청 사이 0.9초, 429면 쿠키 새로 받아 최대 3번. 실패한 부분만 errors에 넣고 CSV 가져온 값으로 채움. 관련 검색어가 원래 없는 키워드도 있어요(예: 상조회사).
+- **플래너 CSV**는 UTF-16(탭)인 경우가 많아 화면(google.js decode)에서 글자를 풀어 텍스트로 보내요. 머리글은 '키워드/Keyword' 칸이 있는 줄, 월별 칸은 '검색:/Searches:'로 시작.
+- 테스트: tests\run.mjs '3-2. 구글 모드' (가짜 응답으로 429 재시도 · CSV · 유튜브).
