@@ -196,7 +196,7 @@ export async function cliModels(p, config = {}) {
     cliModels.raw = { code: r.code, out: tail(r.out, 1500), err: tail(r.err, 600) };
     const list = [];
     for (const ln of String(r.out + '\n' + r.err).replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/)) {
-      const m = ln.trim().match(/^([a-z0-9][a-z0-9.\-]+)\s{2,}(.+)$/i);
+      const m = ln.trim().match(/^([a-z0-9][a-z0-9.\-]+)(?:\t+|\s{2,})(.+)$/i); // 'slug<탭>이름'
       if (m) list.push({ id: m[1], label: m[2].trim() });
     }
     if (list.length) modelCache[p] = { at: Date.now(), list };
