@@ -713,7 +713,7 @@
         if (seeds.length && nAdd) {
           const rejI = buildIndex((AI.cur.rejected || []).map((r) => r.keyword));
           const exN0 = new Set(examples.map(norm));
-          const pick = seeds.filter((x) => { const L = charLen(x.keyword); return L >= form.minLen && L <= form.maxLen && !isRejected(x.keyword, rejI) && !IDX.exact.has(norm(x.keyword)) && !exN0.has(norm(x.keyword)); }).slice(0, nAdd);
+          const pick = seeds.filter((x) => { const L = charLen(x.keyword); return L >= form.minLen && L <= form.maxLen && (!(form.minVol > 0) || x.total >= form.minVol) && !isRejected(x.keyword, rejI) && !IDX.exact.has(norm(x.keyword)) && !exN0.has(norm(x.keyword)); }).slice(0, nAdd);
           seedAdd = addItems(pick.map((x) => ({ keyword: x.keyword, intent: '', reason: '네이버 키워드 도구', source: '키워드도구', vol: { pc: x.pc, mo: x.mo, total: x.total, comp: x.comp, pcLow: x.pcLow, moLow: x.moLow } })));
           draw();
         }
