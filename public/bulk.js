@@ -276,8 +276,8 @@
           <span style="flex:1"></span>
           <button class="btn pri" id="bvRun">조건 재검증</button>
           <button class="btn hidden" id="bvStop">중지</button>
-          <button class="btn" id="bvMix" title="AI 판정이 엇갈린 키워드를 적합/부적합/보류로 직접 정해요">엇갈림 정리</button>
-          <button class="btn" id="bvBad">부적합만 체크</button>
+          <button class="btn hidden" id="bvMix" title="AI 판정이 엇갈린 키워드를 적합/부적합/보류로 직접 정해요">엇갈림 정리</button>
+          <button class="btn hidden" id="bvBad">부적합만 체크</button>
           <button class="btn" id="bvClear">판정 기록 지우기</button>
         </div>
         <div id="bvProgBox"></div>
@@ -562,11 +562,13 @@
       ${hasChecks ? `<select id="bfV">${['', '일관 적합', '적합 (1회)', '엇갈림', '부적합', '미검증'].map((x) => `<option value="${x}" ${B.f.v === x ? 'selected' : ''}>${x ? 'AI 판정: ' + x + ' (' + all.filter((r) => vs(r).group === x).length + ')' : 'AI 판정 전체'}</option>`).join('')}</select>` : ''}
       <span style="flex:1"></span>
       <span class="muted" id="bSelInfo"></span>
+      ${hasChecks ? '<button class="btn" data-proxy="bvMix" title="AI 판정이 엇갈린 키워드를 적합/부적합/보류로 직접 정해요">엇갈림 정리</button><button class="btn danger-btn" data-proxy="bvBad">부적합만 체크</button>' : ''}
       <button class="btn" id="bDelSel">체크한 키워드 삭제</button>
       <span class="muted"><b>${rows.length.toLocaleString('ko-KR')}</b>개 표시${rows.length !== all.length ? ` / 전체 ${all.length.toLocaleString('ko-KR')}` : ''}</span>
       <button class="btn pri" id="bXlsx">엑셀 다운로드</button>
       <button class="btn" id="bCsv">CSV</button>
       <button class="btn" id="bTxt" title="지금 필터에 맞는 키워드만, 한 줄에 하나씩">TXT</button>`;
+    tools.querySelectorAll('[data-proxy]').forEach((x) => (x.onclick = () => $('#' + x.dataset.proxy).click())); // 재검증 칸의 버튼을 표 바로 위에서
     const wrap = $('#bTblWrap');
     const keepScroll = wrap.scrollTop, keepLeft = wrap.scrollLeft;
     wrap.innerHTML = `<table class="rel" style="min-width:${hasBids ? 1500 : 1000}px">
@@ -648,7 +650,7 @@
     return MixedReview.open({
       items: items || B.order.map((k) => B.rows.get(k)), auto,
       volText: (r) => (lb(r) == null ? (r.notFound ? '데이터 없음' : '') : '월 ' + volText(r)),
-      onApply: (n) => { persist(true); drawResult(); vmsg(n ? `${n}개를 직접 판정했어요. 부적합은 [부적합만 체크] → [체크한 키워드 삭제]로 지울 수 있어요.${MixedReview.opt.teach ? ' 다음 재검증 때 이 결정을 AI에게 예시로 알려줘요.' : ''}` : '바꾼 판정이 없어요 (모두 보류).'); },
+      onApply: (n) => { persist(true); drawResult(); vmsg(n ? `${n}개를 직접 판정했어요. 부적합은 표 위의 [부적합만 체크] → [체크한 키워드 삭제]로 지울 수 있어요.${MixedReview.opt.teach ? ' 다음 재검증 때 이 결정을 AI에게 예시로 알려줘요.' : ''}` : '바꾼 판정이 없어요 (모두 보류).'); },
     });
   }
   function selInfo() {

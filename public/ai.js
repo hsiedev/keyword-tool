@@ -347,11 +347,6 @@
               <button class="btn hidden" id="aiVStop">중지</button>
               <label class="mv" title="이 값보다 월간 검색량(PC+Mobile)이 적으면 부적합으로 처리해요. 0이면 검색량 기준 없이 AI 판단만 써요.">최소 월간 검색량 <input type="number" id="aiMinVol" min="0" step="10"></label>
               <button class="btn" id="aiVReset">검증 기록 지우기</button>
-              <span style="flex:1"></span>
-              <button class="btn" id="aiMixBtn" title="AI 판정이 엇갈린 키워드를 적합/부적합/보류로 직접 정해요">엇갈림 정리</button>
-              <button class="btn danger-btn" id="aiSelBad">부적합 선택</button>
-              <button class="btn" id="aiRejSel" title="체크한 키워드를 결과에서 빼고 이 탭의 제외 목록에 넣어요. 다음 생성부터 다시 나오지 않아요.">체크한 키워드 제외</button>
-              <button class="btn" id="aiDel2">체크한 키워드 삭제</button>
               <span class="muted" id="aiVMsg" style="flex-basis:100%">체크한 키워드만, 체크가 없으면 전체를 이 탭의 주제·예시·요청 사항과 월간 검색량으로 다시 판정해요. 여러 번 눌러 판정이 계속 같으면 "일관 적합"이 돼요.</span>
               <div style="flex-basis:100%">${progHTML('aiVProg')}</div>
             </div>
@@ -359,8 +354,13 @@
             <div class="frow"><span class="flabel">조건 검증</span><div class="chips" id="aiVFilters"></div></div>
               <div id="aiFbar" style="margin-top:8px"></div>
             <div class="toolbar" style="margin-top:10px">
-              <input id="aiManual" placeholder="후보 직접 추가 (쉼표로 구분)" style="flex:1;min-width:200px">
+              <input id="aiManual" placeholder="후보 직접 추가 (쉼표로 구분)" style="flex:1;min-width:180px">
               <button class="btn" id="aiManualAdd">추가</button>
+              <span class="tb-sep"></span>
+              <button class="btn" id="aiMixBtn" title="AI 판정이 엇갈린 키워드를 적합/부적합/보류로 직접 정해요">엇갈림 정리</button>
+              <button class="btn danger-btn" id="aiSelBad">부적합 선택</button>
+              <button class="btn" id="aiRejSel" title="체크한 키워드를 결과에서 빼고 이 탭의 제외 목록에 넣어요. 다음 생성부터 다시 나오지 않아요.">체크한 키워드 제외</button>
+              <button class="btn" id="aiDel2">체크한 키워드 삭제</button>
               <span style="flex:1"></span>
               <button class="btn" id="aiVol">검색량 붙이기</button>
               <button class="btn" id="aiSem">의미 중복 검사</button>
