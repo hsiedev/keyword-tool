@@ -96,7 +96,7 @@
       th.addEventListener('contextmenu', async (e) => {
         if (!load(t)) return;
         e.preventDefault();
-        const ok = window.uiConfirm ? await window.uiConfirm('이 표의 열 순서를 처음대로 되돌릴까요?') : confirm('이 표의 열 순서를 처음대로 되돌릴까요?');
+        const ok = window.uiConfirm ? await window.uiConfirm('이 표의 열 순서를 처음대로 되돌릴까요?', { ok: '되돌리기', danger: false }) : confirm('이 표의 열 순서를 처음대로 되돌릴까요?');
         if (!ok) return;
         const key = KEY(t);
         if (DEF[key]) { localStorage.setItem(key, JSON.stringify(DEF[key])); refresh(t); }
