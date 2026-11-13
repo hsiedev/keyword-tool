@@ -677,7 +677,7 @@ function retryDelaySec(text) {
 function pinnedError(status, model, msg, waited) {
   if (status === 429) return new Error(`${model} 모델의 사용 한도를 넘었어요. 분당 한도면 1분 뒤, 일일 한도면 내일 다시 돼요 (유료 API는 크레딧 잔액도 확인하세요). 지금 쓰려면 [모델 고정]을 끄거나 다른 모델을 고르세요. (${msg.slice(0, 120)})`);
   if (status === 404) return new Error(`${model} 모델을 지금 쓸 수 없어요. 모델을 다시 고르세요.`);
-  return new Error(`${model} 모델이 계속 바빠서 멈췄어요 (약 ${waited}초 동안 ${retryPlan().length}번 재시도). 모델 고정 중이라 다른 모델로 넘어가지 않았어요. 1~2분 뒤 다시 하거나, [모델 고정]을 끄면 바쁜 동안 다른 모델로 자동 전환돼요.`);
+  return new Error(`${model} 모델이 지금 구글 쪽에서 바빠요 (요청 몰림, 503 · 약 ${waited}초 기다리며 재시도했지만 계속 거절). 모델 고정 중이라 다른 모델로 넘어가지 않았어요. 다른 모델(예: gemini-3.6-flash, gemini-3.5-flash-lite)을 고르거나 [모델 고정]을 끄면 바쁜 동안 자동으로 다른 모델을 써요.`);
 }
 async function waitSec(sec, signal, onTick) {
   for (let s = sec; s > 0; s--) {
@@ -892,6 +892,7 @@ async function geminiStream(baseBody, emit, signal, { total, label = '작성 중
   emit('start', { total: n });
   for (const model of modelChain(modelOver)) {
     let thinking = true, waited = 0, waited429 = false;
+    const tModel = Date.now(); // 모델 고정일 때 한 모델에 쓰는 시간 상한 (90초)
     for (let attempt = 0; ; attempt++) {
       emit('status', { text: `${model}${pin ? ' (고정)' : ''}에 요청 중${attempt ? ` (재시도 ${attempt}/${plan.length})` : ''}`, model });
       const body = thinking ? { ...baseBody, generationConfig: { ...baseBody.generationConfig, thinkingConfig: { includeThoughts: true } } } : baseBody;
@@ -903,7 +904,7 @@ async function geminiStream(baseBody, emit, signal, { total, label = '작성 중
         let msg = text.slice(0, 300);
         try { msg = JSON.parse(text).error?.message || msg; } catch {}
         if (res.status === 400 && thinking && /think/i.test(msg)) { thinking = false; attempt--; emit('status', { text: `${model}: 생각 요약 미지원 모델이라 바로 생성해요`, model }); continue; }
-        if ((res.status === 503 || res.status === 500) && attempt < plan.length) {
+        if ((res.status === 503 || res.status === 500) && attempt < plan.length && !(pin && Date.now() - tModel + plan[attempt] * 1000 > 90000)) {
           await waitSec(plan[attempt], signal, (s) => emit('status', { text: `${model} 요청이 몰려 ${s}초 후 다시 시도해요 (${attempt + 1}/${plan.length})`, model, phase: 'wait' }));
           waited += plan[attempt];
           continue;

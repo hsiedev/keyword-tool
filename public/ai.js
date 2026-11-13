@@ -596,7 +596,7 @@
       $('#aiModel').innerHTML = `AI <select id="aiProvSel" class="prov-sel hsel"></select> 모델 <select id="aiModelSel" class="model-sel hsel"></select>
         <label class="pin-tg" title="켜면 선택한 모델로만 돌려요. 바쁘면 약 70초 동안 5번 재시도하고, 그래도 안 되면 멈춰요. 끄면(기본) 바쁜 동안 같은 AI의 다른 모델로 자동 전환해요."><input type="checkbox" class="pin-cb" id="aiPin" ${c.geminiPin ? 'checked' : ''}> <span>모델 고정</span></label>
         <span id="aiModelOk" class="muted"></span>
-        ${c.hasAI ? '' : `<span style="color:#b45309">${PROV[p].name} ${PROV[p].cli ? '설치·로그인 필요' : 'API 키 미설정'}</span> <a class="ext" href="#" onclick="openSettings('ai');return false">설정하기</a>`}${PROV[p].cli ? '<span class="muted" style="font-size:12px"> · 로그인형은 생각 과정이 표시되지 않고, 한 번에 10~60초 걸려요</span>' : ''}`;
+        ${c.hasAI ? '' : `<span style="color:#b45309">${PROV[p].name} ${PROV[p].cli ? '설치·로그인 필요' : 'API 키 미설정'}</span> <a class="ext" href="#" onclick="openSettings('ai');return false">설정하기</a>`}${PROV[p].cli ? '<span class="muted" style="font-size:12px"> · 로그인형은 한 번에 20초~3분 걸려요 (모델에 따라 다름)</span>' : ''}`;
       fillProviderSelect($('#aiProvSel'));
       const sel = $('#aiModelSel');
       fillModelSelect(sel, AICFG.models[p]);
