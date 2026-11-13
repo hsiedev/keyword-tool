@@ -340,6 +340,19 @@
         </div>
         <div class="sec"><h2>결과 <span class="muted" style="font-size:13px;font-weight:500" id="aiSummary"></span></h2>
           <div class="card">
+            <div class="verify-bar vb-first">
+              <button class="btn pri" id="aiVerify">조건 재검증 (AI)</button>
+              <button class="btn hidden" id="aiVStop">중지</button>
+              <label class="mv" title="이 값보다 월간 검색량(PC+Mobile)이 적으면 부적합으로 처리해요. 0이면 검색량 기준 없이 AI 판단만 써요.">최소 월간 검색량 <input type="number" id="aiMinVol" min="0" step="10"></label>
+              <button class="btn" id="aiVReset">검증 기록 지우기</button>
+              <span style="flex:1"></span>
+              <button class="btn" id="aiMixBtn" title="AI 판정이 엇갈린 키워드를 적합/부적합/보류로 직접 정해요">엇갈림 정리</button>
+              <button class="btn danger-btn" id="aiSelBad">부적합 선택</button>
+              <button class="btn" id="aiRejSel" title="체크한 키워드를 결과에서 빼고 이 탭의 제외 목록에 넣어요. 다음 생성부터 다시 나오지 않아요.">체크한 키워드 제외</button>
+              <button class="btn" id="aiDel2">체크한 키워드 삭제</button>
+              <span class="muted" id="aiVMsg" style="flex-basis:100%">체크한 키워드만, 체크가 없으면 전체를 이 탭의 주제·예시·요청 사항과 월간 검색량으로 다시 판정해요. 여러 번 눌러 판정이 계속 같으면 "일관 적합"이 돼요.</span>
+              <div style="flex-basis:100%">${progHTML('aiVProg')}</div>
+            </div>
             <div class="frow"><span class="flabel">중복 검사</span><div class="chips" id="aiFilters"></div></div>
             <div class="frow"><span class="flabel">조건 검증</span><div class="chips" id="aiVFilters"></div></div>
               <div id="aiFbar" style="margin-top:8px"></div>
@@ -353,19 +366,6 @@
               <button class="btn" id="aiClear">결과 비우기</button>
               <button class="btn pri" id="aiXlsx">엑셀 다운로드</button>
               <button class="btn" id="aiTxt" title="지금 필터에 맞는 키워드만, 한 줄에 하나씩">TXT</button>
-            </div>
-            <div class="verify-bar">
-              <button class="btn pri" id="aiVerify">조건 재검증 (AI)</button>
-              <button class="btn hidden" id="aiVStop">중지</button>
-              <label class="mv" title="이 값보다 월간 검색량(PC+Mobile)이 적으면 부적합으로 처리해요. 0이면 검색량 기준 없이 AI 판단만 써요.">최소 월간 검색량 <input type="number" id="aiMinVol" min="0" step="10"></label>
-              <button class="btn" id="aiVReset">검증 기록 지우기</button>
-              <span style="flex:1"></span>
-              <button class="btn" id="aiMixBtn" title="AI 판정이 엇갈린 키워드를 적합/부적합/보류로 직접 정해요">엇갈림 정리</button>
-              <button class="btn danger-btn" id="aiSelBad">부적합 선택</button>
-              <button class="btn" id="aiRejSel" title="체크한 키워드를 결과에서 빼고 이 탭의 제외 목록에 넣어요. 다음 생성부터 다시 나오지 않아요.">체크한 키워드 제외</button>
-              <button class="btn" id="aiDel2">체크한 키워드 삭제</button>
-              <span class="muted" id="aiVMsg" style="flex-basis:100%">체크한 키워드만, 체크가 없으면 전체를 이 탭의 주제·예시·요청 사항과 월간 검색량으로 다시 판정해요. 여러 번 눌러 판정이 계속 같으면 "일관 적합"이 돼요.</span>
-              <div style="flex-basis:100%">${progHTML('aiVProg')}</div>
             </div>
             <div class="tbl-wrap" style="max-height:680px"><table class="rel" id="aiTbl"></table></div>
             <details class="rej" id="aiRejBox"><summary id="aiRejSum"></summary><div id="aiRej"></div></details>
