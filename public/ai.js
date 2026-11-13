@@ -916,9 +916,9 @@
     $('#exCount').textContent = c?.srcNone ? '사용 안 함' : total ? `사용 중 ${onN}개 목록 · 중복 제외 ${total.toLocaleString('ko-KR')}개` : '';
     const fd = (t) => (t ? new Date(t).toLocaleDateString('ko-KR') : '');
     $('#aiSources').innerHTML = AI.sources.length
-      ? `<label class="src-master"><input type="checkbox" id="srcUse" ${c?.srcNone ? '' : 'checked'}> <b>이 탭에서 기존 키워드로 중복 검사</b> <span class="muted">${c?.srcNone ? '(꺼짐: 생성 결과끼리만 중복을 걸러요)' : ''}</span></label>
+      ? `<label class="src-master"><input type="checkbox" id="srcUse" ${c?.srcNone ? '' : 'checked'}> <b>기존 키워드 목록</b> <span class="muted">${c?.srcNone ? '(꺼짐: 생성 결과끼리만 중복을 걸러요)' : ''}</span></label>
         <div class="src-list ${c?.srcNone ? 'off' : ''}">
-        ${AI.sources.map((s) => `<div class="src-row"><label><input type="checkbox" data-src="${esc(s.id)}" ${(c?.srcOff || []).includes(String(s.id)) ? '' : 'checked'} ${c?.srcNone ? 'disabled' : ''}> <span class="sn2">${esc(s.name)}</span></label><span class="muted" style="white-space:nowrap">${s.keywords.length.toLocaleString('ko-KR')}개${s.addedAt ? ' · ' + fd(s.addedAt) : ''} <a href="#" class="ext" data-rm="${esc(s.id)}">삭제</a></span></div>`).join('')}
+        ${AI.sources.map((s) => `<div class="src-row"><label><input type="checkbox" data-src="${esc(s.id)}" ${(c?.srcOff || []).includes(String(s.id)) ? '' : 'checked'} ${c?.srcNone ? 'disabled' : ''}> <span class="sn2" data-rn2="${esc(s.id)}" title="더블클릭해서 이름 바꾸기">${esc(s.name)}</span></label><span class="muted src-acts">${s.keywords.length.toLocaleString('ko-KR')}개${s.addedAt ? ' · ' + fd(s.addedAt) : ''} <a href="#" class="ext" data-rn="${esc(s.id)}">이름 변경</a><a href="#" class="ext" data-dl="${esc(s.id)}" data-fmt="txt" title="한 줄에 키워드 하나">TXT</a><a href="#" class="ext" data-dl="${esc(s.id)}" data-fmt="xlsx">엑셀</a><a href="#" class="ext" data-rm="${esc(s.id)}">삭제</a></span></div>`).join('')}
         </div>
         ${AI.sources.length > 1 && !c?.srcNone ? '<div style="display:flex;gap:10px;margin-top:6px;font-size:12px"><a href="#" class="ext" id="srcAll">모두 켜기</a><a href="#" class="ext" id="srcNoneAll">모두 끄기</a></div>' : ''}
         <div class="muted" style="font-size:11px;margin-top:6px">목록은 분석기 폴더에 저장돼 모든 탭이 같이 써요. 켜고 끄기는 탭마다 따로 기억해요.${srcFile ? `<br>${esc(srcFile)}` : ''}</div>`
@@ -933,7 +933,34 @@
     }));
     if ($('#srcAll')) $('#srcAll').onclick = (e) => { e.preventDefault(); c.srcOff = []; srcChanged(); };
     if ($('#srcNoneAll')) $('#srcNoneAll').onclick = (e) => { e.preventDefault(); c.srcOff = AI.sources.map((s) => String(s.id)); srcChanged(); };
-    $$('[data-rm]', box).forEach((a) => (a.onclick = async (e) => {
+    // 이름 바꾸기: 파일에 저장돼 모든 탭 · 중복 검사 화면에 같이 반영
+    const rename = async (id) => {
+      const s = AI.sources.find((x) => String(x.id) === id);
+      if (!s) return;
+      const v = await uiPrompt('기존 키워드 목록 이름', { value: s.name, max: 80 });
+      if (!v || v === s.name) return;
+      const old = s.name;
+      s.name = v.slice(0, 80);
+      if (await saveSources() === false) { s.name = old; return; }
+      drawSources();
+      toast('이름을 바꿨어요', 'ok');
+    };
+    $('[data-rn]', box).forEach((a) => (a.onclick = (e) => { e.preventDefault(); rename(a.dataset.rn); }));
+    $('[data-rn2]', box).forEach((el) => (el.ondblclick = (e) => { e.preventDefault(); rename(el.dataset.rn2); }));
+    // 내려받기: TXT(한 줄에 하나) · 엑셀
+    $('[data-dl]', box).forEach((a) => (a.onclick = (e) => {
+      e.preventDefault();
+      const s = AI.sources.find((x) => String(x.id) === a.dataset.dl);
+      if (!s) return;
+      const base = String(s.name).replace(/\.(txt|csv|xlsx?|xlsm|tsv)$/i, '').replace(/[\\/:*?"<>|]/g, '').trim() || '기존 키워드';
+      const blob = a.dataset.fmt === 'xlsx'
+        ? window.XlsxLite.writeXlsx([{ name: '기존 키워드', rows: [['키워드'], ...s.keywords.map((k) => [k])], widths: [40] }])
+        : new Blob(['\ufeff' + s.keywords.join('\r\n')], { type: 'text/plain;charset=utf-8' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob); link.download = base + (a.dataset.fmt === 'xlsx' ? '.xlsx' : '.txt');
+      document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(link.href), 3000);
+    }));
+    $('[data-rm]', box).forEach((a) => (a.onclick = async (e) => {
       e.preventDefault();
       const s = AI.sources.find((x) => String(x.id) === a.dataset.rm);
       if (!await uiConfirm(`'${s?.name}' 목록(${s?.keywords.length}개)을 파일에서 삭제할까요? 모든 탭에서 사라져요.\n잠깐 안 쓰려면 삭제 대신 체크를 끄세요.`)) return;
