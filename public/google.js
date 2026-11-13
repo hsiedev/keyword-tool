@@ -33,8 +33,9 @@
   </main>`;
   document.getElementById('main').after(v);
   const $g = (s) => v.querySelector(s);
+  let navLock = 0; // 탭을 누른 직후엔 스크롤 중 표시가 바뀌지 않게
   $g('#gForm').onsubmit = (e) => { e.preventDefault(); const k = $g('#gQ').value.trim(); if (k) run(k); };
-  $g('#gNav').addEventListener('click', (e) => { const a = e.target.closest('a'); if (!a) return; e.preventDefault(); document.querySelector(a.getAttribute('href'))?.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+  $g('#gNav').addEventListener('click', (e) => { const a = e.target.closest('a'); if (!a) return; e.preventDefault(); navLock = Date.now() + 1200; $g('#gNav').querySelectorAll('a').forEach((x) => x.classList.toggle('on', x === a)); document.querySelector(a.getAttribute('href'))?.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
 
   function placeForm() {
     const has = !!S.kw;
@@ -84,6 +85,7 @@
   const loading = '<div class="muted g-load">불러오는 중…</div>';
   const errBox = (msg) => `<div class="g-err">${esc(msg)}</div>`;
   const spy = new IntersectionObserver((ents) => {
+    if (Date.now() < navLock) return;
     for (const e of ents) if (e.isIntersecting) $g('#gNav').querySelectorAll('a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id));
   }, { rootMargin: '-120px 0px -60% 0px' });
   function drawAll() {
@@ -312,7 +314,10 @@
   }
 
   // ---------------------------------------------------------------- 보이기 (layout.js가 모드에 따라 부름)
+  let shown = false; // 구글 화면을 실제로 띄운 적이 있을 때만 네이버 화면을 되돌림 (시작할 때 네이버 분석 탭 줄을 숨기지 않게)
   function show(on) {
+    if (!on && !shown) { v.classList.add('hidden'); return; }
+    shown = on;
     v.classList.toggle('hidden', !on);
     const main = document.getElementById('main');
     if (on) {
