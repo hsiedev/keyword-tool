@@ -320,7 +320,7 @@
               <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="aiSendExisting"> 기존 키워드도 AI에 보내 처음부터 피하게 하기 (②에서 켜 둔 목록, 최대 2,000개)</label>
               <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px" title="생성이 끝나면 새로 들어온 키워드를 바로 이 탭의 주제·예시·요청 사항과 최소 월간 검색량으로 한 번 판정해요 (AI를 한 번 더 써요)"><input type="checkbox" id="aiAutoVerify"> 생성하면서 조건 재검증까지 하기 (진행은 막대 하나로)</label>
               <div class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap" title="예시 키워드(없으면 주제)를 네이버 키워드 도구에 넣어 연관 키워드와 실제 월간 검색량을 받고, 그 목록을 AI에게 보여줘서 거기서 더 넓히게 해요"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="aiSeed"> 네이버 키워드 도구 연관 키워드로 시작하기 (AI가 그 결과를 바탕으로 확장)</label>
-                <span id="aiSeedOpt" style="display:flex;gap:4px;align-items:center">· 연관 키워드도 결과에 <select id="aiSeedAdd" class="hsel" style="height:26px"><option value="0">넣지 않기</option><option value="20">20개</option><option value="30">30개</option><option value="50">50개</option><option value="100">100개</option></select> (키워드 도구 관련도 순)</span></div>
+                <span id="aiSeedOpt" style="display:flex;gap:4px;align-items:center">· 연관 키워드도 결과에 <select id="aiSeedAdd" class="hsel" style="height:26px"><option value="0">넣지 않기</option><option value="20">20개</option><option value="30">30개</option><option value="50">50개</option><option value="100">100개</option></select> (주제 단어가 들어간 것, 관련도 순)</span></div>
               <div style="display:flex;gap:8px;margin-top:12px">
                 <button class="btn pri" id="aiGen">키워드 생성</button>
                 <button class="btn" id="aiMore">이어서 더 생성</button>
@@ -698,7 +698,7 @@
     stop.onclick = () => { stopped = true; ctrl.abort(); holder.reader?.cancel().catch(() => {}); };
     try {
       // 1) 네이버 키워드 도구: 예시 키워드(없으면 주제)로 연관 키워드 + 실제 검색량
-      let seeds = [], seedAdd = { added: 0, keys: [] }, seedFail = '', seedHints = [];
+      let seeds = [], seedAdd = { added: 0, keys: [] }, seedFail = '', seedHints = [], seedMatch = [];
       if (useSeed) {
         P.stage(0, 8);
         P.phase('네이버 키워드 도구에서 연관 키워드 가져오는 중', 30);
@@ -707,13 +707,14 @@
           if (sj.error) throw new Error(sj.error);
           seeds = sj.list || []; // 키워드 도구 순서(관련도 순)
           seedHints = sj.hints || [];
+          seedMatch = (sj.match || seedHints).map(norm).filter(Boolean);
         } catch (e) { if (stopped || e.name === 'AbortError') throw e; seedFail = e.message; }
         // 연관 키워드 일부를 결과에도 넣음 (검색량은 이미 있음): 글자 수·제외 목록·기존 키워드·예시와 겹치면 뺌
         const nAdd = Number($('#aiSeedAdd').value) || 0;
         if (seeds.length && nAdd) {
           const rejI = buildIndex((AI.cur.rejected || []).map((r) => r.keyword));
           const exN0 = new Set(examples.map(norm));
-          const pick = seeds.filter((x) => { const L = charLen(x.keyword); return L >= form.minLen && L <= form.maxLen && (!(form.minVol > 0) || x.total >= form.minVol) && !isRejected(x.keyword, rejI) && !IDX.exact.has(norm(x.keyword)) && !exN0.has(norm(x.keyword)); }).slice(0, nAdd);
+          const pick = seeds.filter((x) => { const L = charLen(x.keyword); return L >= form.minLen && L <= form.maxLen && (!(form.minVol > 0) || x.total >= form.minVol) && (!seedMatch.length || seedMatch.some((m) => norm(x.keyword).includes(m))) && !isRejected(x.keyword, rejI) && !IDX.exact.has(norm(x.keyword)) && !exN0.has(norm(x.keyword)); }).slice(0, nAdd);
           seedAdd = addItems(pick.map((x) => ({ keyword: x.keyword, intent: '', reason: '네이버 키워드 도구', source: '키워드도구', vol: { pc: x.pc, mo: x.mo, total: x.total, comp: x.comp, pcLow: x.pcLow, moLow: x.moLow } })));
           draw();
         }

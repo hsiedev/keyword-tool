@@ -1295,7 +1295,8 @@ const server = http.createServer(async (req, res) => {
           // 1차 힌트: 예시 키워드(최대 5개) + 주제 붙여 쓴 것
           const hints = [...new Set([...examples, ns(topic)].filter(ok))].slice(0, 5);
           // 2차 힌트(결과가 적을 때): 주제의 핵심 단어 (3글자 이상, '가입'·'고민' 같은 두 글자 일반어는 뺌)
-          const cores = [...new Set(topic.split(/[\s,/]+/).map(ns).filter((w) => w.length >= 3 && ok(w)))].filter((w) => !hints.includes(w)).sort((x, y) => y.length - x.length).slice(0, 3);
+          const words = [...new Set(topic.split(/[\s,/]+/).map(ns).filter((w) => w.length >= 3 && ok(w)))].sort((x, y) => y.length - x.length);
+          const cores = words.filter((w) => !hints.includes(w)).slice(0, 3);
           if (!hints.length && !cores.length) return send(res, 400, { error: '키워드 도구에 넣을 키워드가 없어요' });
           const m = new Map(); // 키워드 도구가 준 순서(관련도 순)를 그대로 유지
           let err = '';
@@ -1310,7 +1311,7 @@ const server = http.createServer(async (req, res) => {
           const used = [...hints];
           if (m.size < 30 && cores.length) { await take(cores); used.push(...cores); }
           if (!m.size && err) return send(res, 502, { error: '키워드 도구 조회 실패: ' + err });
-          return send(res, 200, { hints: used, list: [...m.values()].map((r) => ({ keyword: r.keyword, pc: r.pc, mo: r.mo, total: r.total, comp: r.comp, pcLow: r.pcLow, moLow: r.moLow })) });
+          return send(res, 200, { hints: used, match: [...new Set([...hints, ...words])], list: [...m.values()].map((r) => ({ keyword: r.keyword, pc: r.pc, mo: r.mo, total: r.total, comp: r.comp, pcLow: r.pcLow, moLow: r.moLow })) });
         }
         if (u.pathname === '/api/ai/cli-status') {
           const out = {};
