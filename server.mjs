@@ -852,7 +852,7 @@ function generateRequest({ topic = '', examples = [], count = 50, extra = '', av
     lenRule,
     `- intent는 ${INTENTS.join(', ')} 중 하나`,
     '- reason은 왜 유망한지 15자 이내',
-    sd.length ? `\n네이버 키워드 도구 연관 키워드 ${sd.length}개 (실제 월간 검색량, 많은 순. 형식: 키워드(검색량)):\n${sd.map((x) => `${String(x.keyword).replace(/\s+/g, '')}(${Number(x.total) || 0})`).join(', ')}\n→ 이 목록에서 실제로 많이 검색되는 표현·수식어·조합 패턴을 파악해서, 주제에 맞으면서 이 목록에 없는 새 키워드로 넓혀라. 목록에 있는 키워드를 그대로 다시 내지 말 것. 검색량이 큰 표현을 바탕으로 한 조합을 우선하고, 주제와 무관한 연관 키워드는 무시할 것.` : '',
+    sd.length ? `\n네이버 키워드 도구 연관 키워드 ${sd.length}개 (키워드 도구가 준 관련도 순, 괄호는 실제 월간 검색량):\n${sd.map((x) => `${String(x.keyword).replace(/\s+/g, '')}(${Number(x.total) || 0})`).join(', ')}\n→ 이 목록에서 실제로 많이 검색되는 표현·수식어·조합 패턴을 파악해서, 주제에 맞으면서 이 목록에 없는 새 키워드로 넓혀라. 목록에 있는 키워드를 그대로 다시 내지 말 것. 검색량이 큰 표현을 바탕으로 한 조합을 우선하고, 주제와 무관한 연관 키워드는 무시할 것.` : '',
     avoid.length ? `\n제외 목록 (이미 확보한 키워드):\n${avoid.slice(-600).join(', ')}` : '',
     ex.length ? `\n기존에 이미 운영 중인 키워드 ${ex.length}개 (이것들과 같거나, 대소문자·어순·조사만 다르거나, 의미가 사실상 같은 키워드는 절대 제안하지 말 것. 이 목록에 없는 새로운 각도로 넓힐 것):\n${ex.join(', ')}` : '',
     rej.length ? `\n부적합 판정을 받은 키워드 (다시 제안하지 말고, 같은 이유로 부적합할 만한 비슷한 유형도 피할 것. 특히 검색량 부족이면 더 널리 검색되는 표현을 쓸 것):\n${rej.map((r) => `${r.keyword} (${String(r.reason || '').slice(0, 30)})`).join('\n')}` : '',
@@ -1288,19 +1288,29 @@ const server = http.createServer(async (req, res) => {
           // AI 키워드 생성기: 네이버 키워드 도구(연관 키워드 + 검색량)로 시작
           if (!hasAd()) return send(res, 400, { error: '검색광고 API 키가 없어 키워드 도구를 쓸 수 없어요 (설정 > API 설정)' });
           const b = await readBody(req);
-          const hints = [...new Set((Array.isArray(b.hints) ? b.hints : []).map((h) => String(h).replace(/\s+/g, '')).filter((h) => h && h.length <= 30))].slice(0, 5);
-          if (!hints.length) return send(res, 400, { error: '키워드 도구에 넣을 키워드가 없어요' });
-          let rows = [], err = '';
-          try { rows = await keywordTool(hints); } catch (e) { err = e.message; }
-          if (!rows.length && hints.length > 1) {
-            // 힌트 중 하나가 잘못되면 전체가 실패하므로 하나씩 다시
-            const m = new Map();
-            for (const h of hints) { try { for (const r of await keywordTool([h])) m.set(normKw(r.keyword), r); } catch (e) { err = e.message; } }
-            rows = [...m.values()];
-          }
-          if (!rows.length && err) return send(res, 502, { error: '키워드 도구 조회 실패: ' + err });
-          rows.sort((x, y) => y.total - x.total);
-          return send(res, 200, { hints, list: rows.map((r) => ({ keyword: r.keyword, pc: r.pc, mo: r.mo, total: r.total, comp: r.comp, pcLow: r.pcLow, moLow: r.moLow })) });
+          const ns = (x) => String(x || '').replace(/\s+/g, '');
+          const ok = (h) => h && h.length <= 30;
+          const examples = (Array.isArray(b.examples) ? b.examples : []).map(ns).filter(ok);
+          const topic = String(b.topic || '');
+          // 1차 힌트: 예시 키워드(최대 5개) + 주제 붙여 쓴 것
+          const hints = [...new Set([...examples, ns(topic)].filter(ok))].slice(0, 5);
+          // 2차 힌트(결과가 적을 때): 주제의 핵심 단어 (3글자 이상, '가입'·'고민' 같은 두 글자 일반어는 뺌)
+          const cores = [...new Set(topic.split(/[\s,/]+/).map(ns).filter((w) => w.length >= 3 && ok(w)))].filter((w) => !hints.includes(w)).sort((x, y) => y.length - x.length).slice(0, 3);
+          if (!hints.length && !cores.length) return send(res, 400, { error: '키워드 도구에 넣을 키워드가 없어요' });
+          const m = new Map(); // 키워드 도구가 준 순서(관련도 순)를 그대로 유지
+          let err = '';
+          const take = async (hs) => {
+            if (!hs.length) return;
+            let rows = [];
+            try { rows = await keywordTool(hs); } catch (e) { err = e.message; }
+            if (!rows.length && hs.length > 1) for (const h of hs) { try { rows.push(...await keywordTool([h])); } catch (e) { err = e.message; } } // 힌트 하나가 잘못되면 전체가 실패하므로 하나씩
+            for (const r of rows) if (!m.has(normKw(r.keyword))) m.set(normKw(r.keyword), r);
+          };
+          await take(hints);
+          const used = [...hints];
+          if (m.size < 30 && cores.length) { await take(cores); used.push(...cores); }
+          if (!m.size && err) return send(res, 502, { error: '키워드 도구 조회 실패: ' + err });
+          return send(res, 200, { hints: used, list: [...m.values()].map((r) => ({ keyword: r.keyword, pc: r.pc, mo: r.mo, total: r.total, comp: r.comp, pcLow: r.pcLow, moLow: r.moLow })) });
         }
         if (u.pathname === '/api/ai/cli-status') {
           const out = {};

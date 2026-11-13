@@ -320,7 +320,7 @@
               <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="aiSendExisting"> 기존 키워드도 AI에 보내 처음부터 피하게 하기 (②에서 켜 둔 목록, 최대 2,000개)</label>
               <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px" title="생성이 끝나면 새로 들어온 키워드를 바로 이 탭의 주제·예시·요청 사항과 최소 월간 검색량으로 한 번 판정해요 (AI를 한 번 더 써요)"><input type="checkbox" id="aiAutoVerify"> 생성하면서 조건 재검증까지 하기 (진행은 막대 하나로)</label>
               <div class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap" title="예시 키워드(없으면 주제)를 네이버 키워드 도구에 넣어 연관 키워드와 실제 월간 검색량을 받고, 그 목록을 AI에게 보여줘서 거기서 더 넓히게 해요"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="aiSeed"> 네이버 키워드 도구 연관 키워드로 시작하기 (AI가 그 결과를 바탕으로 확장)</label>
-                <span id="aiSeedOpt" style="display:flex;gap:4px;align-items:center">· 연관 키워드도 결과에 <select id="aiSeedAdd" class="hsel" style="height:26px"><option value="0">넣지 않기</option><option value="20">20개</option><option value="30">30개</option><option value="50">50개</option><option value="100">100개</option></select> (검색량 많은 순)</span></div>
+                <span id="aiSeedOpt" style="display:flex;gap:4px;align-items:center">· 연관 키워드도 결과에 <select id="aiSeedAdd" class="hsel" style="height:26px"><option value="0">넣지 않기</option><option value="20">20개</option><option value="30">30개</option><option value="50">50개</option><option value="100">100개</option></select> (키워드 도구 관련도 순)</span></div>
               <div style="display:flex;gap:8px;margin-top:12px">
                 <button class="btn pri" id="aiGen">키워드 생성</button>
                 <button class="btn" id="aiMore">이어서 더 생성</button>
@@ -702,11 +702,11 @@
       if (useSeed) {
         P.stage(0, 8);
         P.phase('네이버 키워드 도구에서 연관 키워드 가져오는 중', 30);
-        seedHints = examples.length ? examples.slice(0, 5) : [...new Set([form.topic.replace(/\s+/g, ''), ...form.topic.split(/[\s,]+/).filter((w) => w.length >= 2).sort((x, y) => y.length - x.length).slice(0, 2)])].filter(Boolean).slice(0, 5);
         try {
-          const sj = await (await fetch('/api/ai/seed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hints: seedHints }), signal: ctrl.signal })).json();
+          const sj = await (await fetch('/api/ai/seed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic: form.topic, examples }), signal: ctrl.signal })).json();
           if (sj.error) throw new Error(sj.error);
-          seeds = sj.list || [];
+          seeds = sj.list || []; // 키워드 도구 순서(관련도 순)
+          seedHints = sj.hints || [];
         } catch (e) { if (stopped || e.name === 'AbortError') throw e; seedFail = e.message; }
         // 연관 키워드 일부를 결과에도 넣음 (검색량은 이미 있음): 글자 수·제외 목록·기존 키워드·예시와 겹치면 뺌
         const nAdd = Number($('#aiSeedAdd').value) || 0;
@@ -751,7 +751,7 @@
         vr = await verify({ items: AI.items.filter((it) => fresh.has(it.keyword)), P, stop });
       }
       P.finish(vr?.stopped ? '중지했어요' : `완료 · ${seedAdd.added ? `키워드 도구 ${seedAdd.added}개 + ` : ''}AI ${j.items.length}개 받음${AI.hasAd && r.keys.length && !volFail ? ' · 검색량 포함' : ''}${vr && !vr.error ? ` · 재검증 적합 ${vr.pass} · 부적합 ${vr.fail}` : ''}`, vr?.stopped ? 'stop' : undefined);
-      const seedTxt = useSeed ? (seedFail ? `키워드 도구 실패(${seedFail}) → AI만으로 생성 · ` : `키워드 도구 연관 ${seeds.length.toLocaleString('ko-KR')}개(${seedHints.join(', ')}) 중 상위 ${Math.min(200, seeds.length)}개를 AI에 보여줌${seedAdd.added ? `, ${seedAdd.added}개 결과에 추가` : ''} · `) : '';
+      const seedTxt = useSeed ? (seedFail ? `키워드 도구 실패(${seedFail}) → AI만으로 생성 · ` : `키워드 도구 연관 ${seeds.length.toLocaleString('ko-KR')}개(${seedHints.join(', ')}) 중 관련도 상위 ${Math.min(200, seeds.length)}개를 AI에 보여줌${seedAdd.added ? `, ${seedAdd.added}개 결과에 추가` : ''} · `) : '';
       msg(`${seedTxt}AI ${j.items.length}개 받음 → ${r0.added}개 추가${outLen ? `, 글자 수 범위 밖 ${outLen}개 제외` : ''}${rejN ? `, 제외 목록과 같은 ${rejN}개 제외` : ''}${sameN ? `, 기존 키워드와 동일한 ${sameN}개 제외` : ''}${dupEx ? `, 예시·결과와 겹친 ${dupEx}개 제외` : ''}${existing.length ? ` · 기존 키워드 ${existing.length.toLocaleString('ko-KR')}개를 AI에 알려줌` : ''}${j.fallback ? ` (선택한 모델이 바빠서 ${j.model}(으)로 대신 생성)` : ''}${volFail ? ` · 검색량 조회 실패: ${volFail}` : ''}${!AI.hasAd ? ' · 검색량은 검색광고 API 키를 넣으면 자동으로 붙어요' : ''}${vr ? (vr.error ? ` · 조건 재검증 실패: ${vr.error}` : vr.stopped ? ' · 조건 재검증은 중지했어요' : ` · 조건 재검증: 적합 ${vr.pass} · 부적합 ${vr.fail}`) : ''}`);
     } catch (e) {
       const aborted = stopped || e.name === 'AbortError';
