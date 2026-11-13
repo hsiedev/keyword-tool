@@ -1307,7 +1307,7 @@ const server = http.createServer(async (req, res) => {
           try { return send(res, 200, { ok: true, ...openConsole(b.provider, b.action, config) }); }
           catch (e) { return send(res, 200, { ok: false, error: e.message }); }
         }
-        if (u.pathname === '/api/ai/models') { const p = PROVIDERS[u.searchParams.get('provider')] ? u.searchParams.get('provider') : provider(); return send(res, 200, { provider: p, models: await providerModels(p), current: PROVIDERS[p].model() }); }
+        if (u.pathname === '/api/ai/models') { const p = PROVIDERS[u.searchParams.get('provider')] ? u.searchParams.get('provider') : provider(); return send(res, 200, { provider: p, models: await providerModels(p), raw: p === 'agy' ? cliModels.raw : undefined, current: PROVIDERS[p].model() }); }
         const b = req.method === 'POST' ? await readBody(req) : {};
         if (u.pathname === '/api/ai/generate') return send(res, 200, await aiGenerate(b));
         const streamFn = { '/api/ai/generate-stream': aiGenerateStream, '/api/ai/verify-stream': aiVerifyStream, '/api/bulk-stream': bulkStream, '/api/copy/generate-stream': copyGenerateStream, '/api/copy/verify-stream': copyVerifyStream }[u.pathname];
