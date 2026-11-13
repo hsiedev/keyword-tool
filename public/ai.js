@@ -318,11 +318,11 @@
                 <div class="gscale"><span>2자</span><span>30자</span></div>
               </div>
               <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="aiSendExisting"> 기존 키워드도 AI에 보내 처음부터 피하게 하기 (②에서 켜 둔 목록, 최대 2,000개)</label>
+              <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px" title="생성이 끝나면 새로 들어온 키워드를 바로 이 탭의 주제·예시·요청 사항과 최소 월간 검색량으로 한 번 판정해요 (AI를 한 번 더 써요)"><input type="checkbox" id="aiAutoVerify"> 생성하면서 조건 재검증까지 하기 (진행은 막대 하나로)</label>
               <div style="display:flex;gap:8px;margin-top:12px">
                 <button class="btn pri" id="aiGen">키워드 생성</button>
                 <button class="btn" id="aiMore">이어서 더 생성</button>
                 <button class="btn hidden" id="aiStop">중지</button>
-                <label class="muted" style="display:flex;gap:5px;align-items:center" title="생성이 끝나면 새로 들어온 키워드를 바로 이 탭의 조건으로 한 번 판정해요 (AI를 한 번 더 써요)"><input type="checkbox" id="aiAutoVerify"> 생성하면서 조건 재검증까지</label>
                 <span class="muted" id="aiMsg" style="align-self:center"></span>
               </div>
               ${progHTML('aiProg')}
