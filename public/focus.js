@@ -27,7 +27,7 @@
     if (!t) return;
     if (!visible(t)) return stop();
     const rows = rowsOf(t);
-    if (!rows.length) { shade.style.background = ''; pill.textContent = '집중 피킹 · 표시할 키워드가 없어요 · Esc 끝내기'; return; }
+    if (!rows.length) { shade.style.background = ''; if (pill.textContent !== '집중 피킹 · 표시할 키워드가 없어요 · Esc 끝내기') pill.textContent = '집중 피킹 · 표시할 키워드가 없어요 · Esc 끝내기'; return; }
     FP.idx = Math.max(0, Math.min(FP.idx, rows.length - 1));
     rows.forEach((r, i) => r.classList.toggle('fp-on', i === FP.idx));
     const tr = rows[FP.idx];
@@ -39,7 +39,8 @@
     const top = Math.round(rc.top), bot = Math.round(rc.bottom), fade = 90;
     shade.style.background = `linear-gradient(to bottom, ${c(a)} 0px, ${c(a)} ${Math.max(0, top - fade)}px, ${c(0)} ${top - 2}px, ${c(0)} ${bot + 2}px, ${c(a)} ${Math.min(H, bot + fade)}px, ${c(a)} ${H}px)`;
     const cb = cbOf(tr);
-    pill.innerHTML = `<b>집중 피킹</b> ${FP.idx + 1} / ${rows.length}${cb ? ` · ${cb.checked ? '<span class="fp-ck">체크됨</span>' : '체크 안 됨'}` : ''} <span class="fp-keys">↑↓ 이동${cb ? ' · Space 체크' : ''} · Esc 끝내기</span>`;
+    const html = `<b>집중 피킹</b> ${FP.idx + 1} / ${rows.length}${cb ? ` · ${cb.checked ? '<span class="fp-ck">체크됨</span>' : '체크 안 됨'}` : ''} <span class="fp-keys">↑↓ 이동${cb ? ' · Space 체크' : ''} · Esc 끝내기</span>`;
+    if (pill.innerHTML !== html) pill.innerHTML = html; // 바뀔 때만 (DOM 감시가 다시 부르지 않게)
   }
   const schedule = () => { if (FP.table && !FP.raf) FP.raf = requestAnimationFrame(place); };
 
@@ -63,6 +64,7 @@
     FP.idx = best;
     document.body.classList.add('fp-mode');
     t.classList.add('fp-table');
+    wrapOf(t)?.classList.add('fp-cur');
     shade.hidden = pill.hidden = false;
     if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
     rows[FP.idx]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -72,6 +74,7 @@
   function stop() {
     if (FP.table) FP.table.querySelectorAll('tr.fp-on').forEach((r) => r.classList.remove('fp-on'));
     FP.table?.classList.remove('fp-table');
+    document.querySelectorAll('.tbl-wrap.fp-cur').forEach((w) => w.classList.remove('fp-cur'));
     FP.table = null;
     document.body.classList.remove('fp-mode');
     if (shade) { shade.hidden = pill.hidden = true; shade.style.background = ''; }
@@ -118,7 +121,7 @@
     const el = e.target;
     const typing = el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) && !(el.tagName === 'INPUT' && el.type === 'checkbox');
     if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
-    if (document.querySelector('.modal-bg:not(.hidden), .ui-dlg, [role="dialog"]:not([hidden])')?.offsetParent) return; // 확인창이 떠 있으면 건드리지 않음
+    if ([...document.querySelectorAll('.modal-bg, .cfm-bg, .rv-bg')].some((m) => !m.classList.contains('hidden') && m.offsetParent !== null)) return; // 설정·확인창이 떠 있으면 건드리지 않음
     if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
     else if (e.key === 'Home') { e.preventDefault(); move(0, 0); }
