@@ -361,7 +361,7 @@
               <button class="btn danger-btn" id="aiSelBad">부적합 선택</button>
               <button class="btn" id="aiRejSel" title="체크한 키워드를 결과에서 빼고 이 탭의 제외 목록에 넣어요. 다음 생성부터 다시 나오지 않아요.">체크한 키워드 제외</button>
               <button class="btn" id="aiDel2">체크한 키워드 삭제</button>
-              <span style="flex:1"></span>
+              <span style="flex-basis:100%;height:0"></span><span style="flex:1"></span>
               <button class="btn" id="aiVol">검색량 붙이기</button>
               <button class="btn" id="aiSem">의미 중복 검사</button>
               <button class="btn" id="aiDel">선택 삭제</button>
