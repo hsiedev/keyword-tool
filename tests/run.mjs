@@ -185,6 +185,7 @@ const realFetch = globalThis.fetch;
 const GEMINI_SSE = (o) => {
   const body = JSON.parse(o.body || '{}');
   const prompt = body.contents?.[0]?.parts?.[0]?.text || '';
+  globalThis.__lastPrompt = prompt;
   let items;
   if (prompt.includes('[판정 기준]')) items = [{ id: 'k1', pass: true, reason: '규격과 근거 모두 맞음', risks: [] }];
   else if (prompt.includes('[다시 쓰기]')) items = [{ id: 'k1', angle: '질문형', title: '테스트 짧게', desc: '다시 쓴 설명 문구는 스무 자를 넘겨야 해요', why: '짧게' }];
@@ -199,6 +200,17 @@ globalThis.fetch = async (u, o = {}) => {
   if (s.includes('suggestqueries.google.com')) return new Response(JSON.stringify(['q', ['운전자보험 가격', '운전자보험비교']]));
   if (s.includes('search.naver.com/search.naver') && s.includes('pltest')) return new Response(PL_HTML);
   if (s.includes('generativelanguage.googleapis.com')) return new Response(GEMINI_SSE(o));
+  if (s.includes('api.searchad.naver.com/keywordstool')) {
+    // 가짜 키워드 도구: 긴 힌트는 자기 자신만, '운전자보험'은 관련도 순 연관 키워드
+    const h = decodeURIComponent(new URL(s).searchParams.get('hintKeywords') || '').split(',');
+    const row = (k, pc, mo) => ({ relKeyword: k, monthlyPcQcCnt: pc, monthlyMobileQcCnt: mo, compIdx: '높음' });
+    const list = [];
+    for (const x of h) {
+      if (x === '운전자보험') list.push(row('운전자보험', 9210, 28900), row('운전자보험비교', 500, 2220), row('원데이자동차보험', 1820, 23700), row('운전자보험가입시기', '< 10', 30));
+      else list.push(row(x, '< 10', '< 10'));
+    }
+    return new Response(JSON.stringify({ keywordList: list }));
+  }
   if (s.includes('search.naver.com/search.naver')) return new Response('<html>"apiURL":"https://s.search.naver.com/p/qra/1/search.naver?query=x\\u0026a=1"</html>');
   if (s.includes('s.search.naver.com/p/qra')) return new Response(JSON.stringify({ result: { contents: [{ query: '운전자보험 필요성', badge: { text: '많이 찾는' } }] } }));
   throw new Error('테스트 중 바깥 인터넷 요청 차단: ' + s);
@@ -288,6 +300,17 @@ await test('구글 모드 서버: 플래너 CSV 가져오기 · 키워드 찾기
   eq(await (await get('/api/google/youtube?keyword=x')).json(), { missing: true });
   eq((await get('/api/google/suggest')).status, 400);
   eq((await post('/api/google/planner', { clear: true }, { Origin: 'https://evil.example' })).status, 403);
+});
+await test('AI 생성기 + 키워드 도구: 힌트(예시·주제·핵심 단어) → 관련도 순 연관 키워드 → AI 요청문에 실제 검색량과 함께 전달', async () => {
+  const H = { Origin: 'http://localhost:' + PORT };
+  eq((await post('/api/config', { adApiKey: 'k', adSecret: 's', adCustomerId: '1' }, H)).status, 200);
+  const j = await (await post('/api/ai/seed', { topic: '운전자보험 가입 고민', examples: [] }, H)).json();
+  eq(j.hints, ['운전자보험가입고민', '운전자보험']); // 결과가 적어 핵심 단어(3글자 이상)로 한 번 더, '가입'·'고민'은 안 씀
+  eq(j.list.map((x) => x.keyword), ['운전자보험가입고민', '운전자보험', '운전자보험비교', '원데이자동차보험', '운전자보험가입시기']); // 검색량 순이 아니라 키워드 도구 순서
+  eq([j.list[1].total, j.match], [38110, ['운전자보험가입고민', '운전자보험']]);
+  eq((await post('/api/ai/seed', { topic: '', examples: [] }, H)).status, 400);
+  await sse('/api/ai/generate-stream', { topic: '운전자보험', count: 10, seeds: [{ keyword: '운전자보험', total: 38110 }, { keyword: '운전자보험비교', total: 2720 }] });
+  ok(globalThis.__lastPrompt.includes('네이버 키워드 도구 연관 키워드 2개') && globalThis.__lastPrompt.includes('운전자보험비교(2720)'), '요청문에 연관 키워드·검색량');
 });
 // ---------------------------------------------------------------- 결과
 console.log('\n키워드 분석기 자동 테스트\n' + results.join('\n'));
