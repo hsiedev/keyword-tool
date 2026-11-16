@@ -14,7 +14,7 @@
   Object.defineProperty(AI, 'items', { get: () => AI.cur.items, set: (v) => (AI.cur.items = v) });
 
   // ---------------------------------------------------------------- 저장 (브라우저 localStorage)
-  const DEFAULT_FORM = { topic: '', examples: '', count: '50', extra: '', minLen: 2, maxLen: 30, minVol: 50 };
+  const DEFAULT_FORM = { topic: '', examples: '', count: '50', extra: '', refMode: 'ref', minLen: 2, maxLen: 30, minVol: 50 };
   const newDraft = () => ({ id: 's' + Date.now() + Math.floor(Math.random() * 1000), name: '새 탭', custom: false, pinned: false, createdAt: Date.now(), updatedAt: Date.now(), form: { ...DEFAULT_FORM, minVol: RULES().verify?.defaultMinVol ?? DEFAULT_FORM.minVol }, items: [], rejected: [], draft: true });
   function load() {
     try { AI.sessions = JSON.parse(localStorage.getItem('aiSessions') || '[]'); } catch { AI.sessions = []; }
@@ -28,6 +28,8 @@
       s.rejected.forEach((r) => (r.keyword = String(r.keyword).replace(/\s+/g, '')));
       // 예전 기본값(10)은 '<10 / <10' 키워드까지 통과시켜서 새 기본값으로 올림
       if (s.form && (s.form.minVol === undefined || s.form.minVol === 10)) s.form.minVol = DEFAULT_FORM.minVol;
+      // 주제 + 요청 사항 → 브리프 한 칸으로 합침
+      if (s.form && String(s.form.extra || '').trim()) { s.form.topic = [s.form.topic, s.form.extra].map((x) => String(x || '').trim()).filter(Boolean).join('\n'); s.form.extra = ''; }
     }
     AI.sources = []; // 기존 키워드는 loadSources()가 폴더 파일에서 읽음
     // 예전 버전(탭 없음) 데이터 옮기기
@@ -56,7 +58,7 @@
       if (!warned) { warned = true; alert('브라우저 저장 공간이 가득 찼어요. 왼쪽에서 오래된 탭을 우클릭해서 삭제해 주세요.'); }
     }
   }
-  const autoName = (s) => (s.form.topic || '').trim().slice(0, 30) || splitList(s.form.examples)[0] || (s.form.extra || '').trim().replace(/\s+/g, ' ').slice(0, 24) || '새 탭';
+  const autoName = (s) => (s.form.topic || '').trim().split('\n')[0].slice(0, 30) || splitList(s.form.examples)[0] || (s.form.extra || '').trim().replace(/\s+/g, ' ').slice(0, 24) || '새 탭';
   // 새 탭은 어느 칸이든 내용을 적으면 바로 기록에 올라가요
   const hasContent = (c) => c.items.length || ['topic', 'examples', 'extra'].some((k) => String(c.form[k] || '').trim());
   function save() {
@@ -298,13 +300,14 @@
       <main class="ai-main">
         <div class="sec"><h2>AI 키워드 생성기 <span class="muted" style="font-size:13px;font-weight:500" id="aiModel"></span></h2>
           <div class="grid g2">
-            <div class="card"><h3>① 주제와 예시 키워드 <span class="muted" id="aiTabName"></span></h3>
-              <label class="muted">주제</label>
-              <input id="aiTopic" class="inp" placeholder="예: 운전자보험 신규 가입 유도">
-              <label class="muted" style="display:block;margin-top:10px">예시 키워드 (키워드만, 쉼표나 줄바꿈으로 구분)</label>
-              <textarea id="aiExamples" class="inp" rows="3" placeholder="운전자보험, 운전자보험추천, 운전자보험필요성"></textarea>
-              <label class="muted" style="display:block;margin-top:10px">요청 사항 (선택, 자유롭게 대화하듯)</label>
-              <textarea id="aiExtra" class="inp" rows="4" placeholder="예: 30~40대 직장인이 출퇴근길에 찾을 만한 키워드 위주로 해줘. 가입 직전 단계 표현이면 좋고, 특정 보험사 이름은 넣지 마."></textarea>
+            <div class="card"><h3>① 브리프 <span class="muted" id="aiTabName"></span></h3>
+              <label class="muted">무엇을, 누구에게, 왜 찾는지, 빼고 싶은 것까지 자유롭게 써 주세요. AI가 읽고 탐색 계획을 세운 뒤 네이버 실제 검색 데이터에서 찾아요.</label>
+              <textarea id="aiTopic" class="inp" rows="5" placeholder="예: 카카오페이 카드 발급 이벤트 검색광고 키워드. 2030 직장인이 카드 발급 직전에 찾을 만한 표현 위주로. 혜택·발급 절차·실물카드 관련은 좋고, 다른 카드사 이름은 빼 줘."></textarea>
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px">
+                <label class="muted">참고 키워드 (선택, 쉼표나 줄바꿈으로 구분)</label>
+                <select id="aiRefMode" class="hsel" title="참고만 하기: 방향만 참고하고 전혀 다른 단어로도 찾아요 · 이 결로 확장하기: 참고 키워드와 같은 결로 넓혀요"><option value="ref">참고만 하기</option><option value="expand">이 결로 확장하기</option></select>
+              </div>
+              <textarea id="aiExamples" class="inp" rows="2" placeholder="예: 카카오페이카드발급, 카카오페이신용카드 (잘 되던 키워드 등)"></textarea>
               <div style="display:flex;gap:10px;margin-top:10px;align-items:end;flex-wrap:wrap">
                 <div><label class="muted">개수</label><br><select id="aiCount" class="inp" style="width:110px">${[30, 50, 80, 100, 150].map((n) => `<option>${n}</option>`).join('')}</select></div>
               </div>
@@ -319,8 +322,7 @@
               </div>
               <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="aiSendExisting"> 기존 키워드도 AI에 보내 처음부터 피하게 하기 (②에서 켜 둔 목록, 최대 2,000개)</label>
               <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px" title="생성이 끝나면 새로 들어온 키워드를 바로 이 탭의 주제·예시·요청 사항과 최소 월간 검색량으로 한 번 판정해요 (AI를 한 번 더 써요)"><input type="checkbox" id="aiAutoVerify"> 생성하면서 조건 재검증까지 하기 (진행은 막대 하나로)</label>
-              <div class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap" title="예시 키워드(없으면 주제)를 네이버 키워드 도구에 넣어 연관 키워드와 실제 월간 검색량을 받고, 그 목록을 AI에게 보여줘서 거기서 더 넓히게 해요"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="aiSeed"> 네이버 키워드 도구 연관 키워드로 시작하기 (AI가 그 결과를 바탕으로 확장)</label>
-                <span id="aiSeedOpt" style="display:flex;gap:4px;align-items:center">· 연관 키워드도 결과에 <select id="aiSeedAdd" class="hsel" style="height:26px"><option value="0">넣지 않기</option><option value="20">20개</option><option value="30">30개</option><option value="50">50개</option><option value="100">100개</option></select> (주제 단어가 들어간 것, 관련도 순)</span></div>
+              <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px" title="AI가 브리프에서 뽑은 씨앗 단어마다 네이버 키워드 도구·자동완성·관련 검색어를 조회해 실제 검색 데이터를 모으고, AI가 그 안에서 고르고 빈 각도를 채워요"><input type="checkbox" id="aiSeed"> 네이버 실제 검색 데이터로 서칭하기 (키워드 도구 · 자동완성 · 관련 검색어)</label>
               <div style="display:flex;gap:8px;margin-top:12px">
                 <button class="btn pri" id="aiGen">키워드 생성</button>
                 <button class="btn" id="aiMore">이어서 더 생성</button>
@@ -328,6 +330,7 @@
                 <span class="muted" id="aiMsg" style="align-self:center"></span>
               </div>
               ${progHTML('aiProg')}
+              <details class="ai-plan hidden" id="aiPlan" open><summary>AI 탐색 계획</summary><div id="aiPlanBody"></div></details>
             </div>
             <div class="card"><h3>② 기존 키워드 (중복 검사용) <span class="muted" id="exCount"></span></h3>
               <div class="drop" id="aiDrop">엑셀(xlsx), CSV, 메모장(txt) 파일을 끌어다 놓거나 <label class="ext" style="cursor:pointer">파일 선택<input type="file" id="aiFile" accept=".xlsx,.xlsm,.csv,.txt,.tsv,.xls" multiple hidden></label><div class="muted" style="margin-top:4px">파일은 이 PC 안에서만 읽어요</div></div>
@@ -390,7 +393,7 @@
     let typeT = null;
     const saveSoon = () => { clearTimeout(typeT); typeT = setTimeout(save, 500); };
     const saveNow = () => { clearTimeout(typeT); save(); };
-    ['aiTopic', 'aiExamples', 'aiCount', 'aiExtra', 'aiMinVol'].forEach((id) => { $('#' + id).addEventListener('input', saveSoon); $('#' + id).onchange = saveNow; });
+    ['aiTopic', 'aiExamples', 'aiCount', 'aiRefMode', 'aiMinVol'].forEach((id) => { $('#' + id).addEventListener('input', saveSoon); $('#' + id).onchange = saveNow; });
     addEventListener('pagehide', saveNow);
     addEventListener('beforeunload', saveNow);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveNow(); });
@@ -449,11 +452,7 @@
     };
     // 키워드 도구로 시작: 기본 켜짐, 결과에 넣을 연관 키워드 수 기본 30개 (마지막 선택 기억)
     $('#aiSeed').checked = localStorage.getItem('aiSeed') !== '0';
-    $('#aiSeedAdd').value = localStorage.getItem('aiSeedAdd') || '30';
-    const seedUi = () => ($('#aiSeedOpt').style.opacity = $('#aiSeed').checked ? '1' : '.45');
-    $('#aiSeed').onchange = (e) => { localStorage.setItem('aiSeed', e.target.checked ? '1' : '0'); seedUi(); };
-    $('#aiSeedAdd').onchange = (e) => localStorage.setItem('aiSeedAdd', e.target.value);
-    seedUi();
+    $('#aiSeed').onchange = (e) => localStorage.setItem('aiSeed', e.target.checked ? '1' : '0');
     // 생성하면서 조건 재검증까지: 기본 켜짐, 마지막 선택을 기억
     $('#aiAutoVerify').checked = localStorage.getItem('aiAutoVerify') !== '0';
     $('#aiAutoVerify').onchange = (e) => localStorage.setItem('aiAutoVerify', e.target.checked ? '1' : '0');
@@ -499,14 +498,14 @@
     $('#aiTopic').value = f.topic;
     $('#aiExamples').value = f.examples;
     $('#aiCount').value = String(f.count);
-    $('#aiExtra').value = f.extra;
+    $('#aiRefMode').value = f.refMode === 'expand' ? 'expand' : 'ref';
     $('#aiLenMin').value = f.minLen;
     $('#aiLenMax').value = f.maxLen;
     $('#aiMinVol').value = f.minVol;
     lenUI();
   }
   function readForm() {
-    return { topic: $('#aiTopic').value, examples: $('#aiExamples').value, count: $('#aiCount').value, extra: $('#aiExtra').value, minLen: +$('#aiLenMin').value, maxLen: +$('#aiLenMax').value, minVol: Math.max(0, Math.round(+$('#aiMinVol').value || 0)) };
+    return { topic: $('#aiTopic').value, examples: $('#aiExamples').value, count: $('#aiCount').value, extra: '', refMode: $('#aiRefMode').value, minLen: +$('#aiLenMin').value, maxLen: +$('#aiLenMax').value, minVol: Math.max(0, Math.round(+$('#aiMinVol').value || 0)) };
   }
 
   // ---------------------------------------------------------------- 탭 (왼쪽 사이드바)
@@ -514,6 +513,7 @@
     AI.cur = s;
     AI.filter = '전체'; AI.vfilter = '전체'; AI.sort = { key: '', dir: 1 }; AI.fb?.reset();
     fillForm(s.form);
+    drawPlan();
     $('#aiMsg').textContent = '';
     $('#aiProg').classList.add('hidden');
     $('#aiVProg').classList.add('hidden');
@@ -676,15 +676,28 @@
     throw new Error('서버 연결이 끊겼어요');
   }
 
+  const postJson = async (url, body, signal) => { const j = await (await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal })).json(); if (j.error) throw new Error(j.error); return j; };
+  function drawPlan() {
+    const p = AI.cur?.plan, box = $('#aiPlan');
+    if (!box) return;
+    box.classList.toggle('hidden', !p);
+    if (!p) return;
+    $('#aiPlanBody').innerHTML = `<div><b>검색 의도</b> ${esc(p.intent || '-')}</div>${p.audience ? `<div><b>타깃</b> ${esc(p.audience)}</div>` : ''}
+      <div><b>각도</b> ${(p.angles || []).map((x) => `<span class="chip">${esc(x)}</span>`).join(' ')}</div>
+      <div><b>씨앗 단어</b> ${(p.seeds || []).map(esc).join(', ')}</div>${(p.avoid || []).length ? `<div><b>피할 것</b> ${p.avoid.map(esc).join(', ')}</div>` : ''}
+      ${p.data ? `<div class="muted">실제 검색 데이터: 키워드 도구 ${p.data.kt.toLocaleString('ko-KR')}개 · 자동완성·관련 검색어 ${p.data.sug.toLocaleString('ko-KR')}개를 모아 AI에 보여줌</div>` : ''}`;
+  }
+  // 생성: ① AI가 브리프 해석(탐색 계획·씨앗 단어) → ② 분석기가 씨앗으로 네이버 실제 검색 데이터 서칭 → ③ AI가 그 안에서 고르고 빈 각도 채움 → 검색량 → 재검증
   async function generate(more) {
     const form = readForm();
-    const examples = splitList(form.examples);
-    if (!form.topic.trim() && !examples.length) return msg('주제나 예시 키워드를 넣어주세요', true);
+    const refs = splitList(form.examples);
+    const refMode = form.refMode === 'expand' ? 'expand' : 'ref';
+    if (!form.topic.trim() && !refs.length) return msg('브리프를 넣어주세요', true);
     if (!more && AI.items.length && !await uiConfirm('이 탭의 결과를 지우고 새로 생성할까요? (이어서 받으려면 "이어서 더 생성", 다른 주제면 왼쪽 "+ 새 탭")')) return;
     if (!more) { rejectItems(AI.items); AI.items = []; }
-    const avoid = [...examples, ...AI.items.map((it) => it.keyword)];
+    const avoid = [...refs, ...AI.items.map((it) => it.keyword)];
     const rejected = (AI.cur.rejected || []).slice(-150);
-    const existing = $('#aiSendExisting').checked ? pickExisting(form.topic, examples, 2000) : [];
+    const existing = $('#aiSendExisting').checked ? pickExisting(form.topic, refs, 2000) : [];
     const b1 = $('#aiGen'), b2 = $('#aiMore'), stop = $('#aiStop');
     b1.disabled = b2.disabled = true;
     stop.classList.remove('hidden');
@@ -692,40 +705,35 @@
     AI.busy = '키워드 생성';
     save();
     const auto = $('#aiAutoVerify').checked;
-    const useSeed = $('#aiSeed').checked && AI.hasAd;
+    const useData = $('#aiSeed').checked;
     const P = progress($('#aiProg'), Number(form.count), '키워드 작성 중');
     const ctrl = new AbortController();
     const holder = {};
     let stopped = false;
     stop.onclick = () => { stopped = true; ctrl.abort(); holder.reader?.cancel().catch(() => {}); };
+    const isAbort = (e) => stopped || e.name === 'AbortError';
     try {
-      // 1) 네이버 키워드 도구: 예시 키워드(없으면 주제)로 연관 키워드 + 실제 검색량
-      let seeds = [], seedAdd = { added: 0, keys: [] }, seedFail = '', seedHints = [], seedMatch = [];
-      if (useSeed) {
-        P.stage(0, 8);
-        P.phase('네이버 키워드 도구에서 연관 키워드 가져오는 중', 30);
-        try {
-          const sj = await (await fetch('/api/ai/seed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic: form.topic, examples }), signal: ctrl.signal })).json();
-          if (sj.error) throw new Error(sj.error);
-          seeds = sj.list || []; // 키워드 도구 순서(관련도 순)
-          seedHints = sj.hints || [];
-          seedMatch = (sj.match || seedHints).map(norm).filter(Boolean);
-        } catch (e) { if (stopped || e.name === 'AbortError') throw e; seedFail = e.message; }
-        // 연관 키워드 일부를 결과에도 넣음 (검색량은 이미 있음): 글자 수·제외 목록·기존 키워드·예시와 겹치면 뺌
-        const nAdd = Number($('#aiSeedAdd').value) || 0;
-        if (seeds.length && nAdd) {
-          const rejI = buildIndex((AI.cur.rejected || []).map((r) => r.keyword));
-          const exN0 = new Set(examples.map(norm));
-          const pick = seeds.filter((x) => { const L = charLen(x.keyword); return L >= form.minLen && L <= form.maxLen && (!(form.minVol > 0) || x.total >= form.minVol) && (!seedMatch.length || seedMatch.some((m) => norm(x.keyword).includes(m))) && !isRejected(x.keyword, rejI) && !IDX.exact.has(norm(x.keyword)) && !exN0.has(norm(x.keyword)); }).slice(0, nAdd);
-          seedAdd = addItems(pick.map((x) => ({ keyword: x.keyword, intent: '', reason: '네이버 키워드 도구', source: '키워드도구', vol: { pc: x.pc, mo: x.mo, total: x.total, comp: x.comp, pcLow: x.pcLow, moLow: x.moLow } })));
-          draw();
-        }
+      // ① 브리프 해석 ("이어서 더 생성"은 이미 세운 계획을 다시 씀)
+      let plan = more && AI.cur.plan ? AI.cur.plan : null, planFail = '';
+      if (!plan) {
+        P.stage(0, 10, 1, '브리프 해석');
+        P.phase('AI가 브리프를 읽고 탐색 계획을 세우는 중', 30);
+        try { plan = await postJson('/api/ai/plan', { brief: form.topic, refs, refMode }, ctrl.signal); AI.cur.plan = plan; save(); drawPlan(); }
+        catch (e) { if (isAbort(e)) throw e; planFail = e.message; }
       }
-      // 2) AI 생성 (키워드 도구 결과를 보여주고 거기서 넓힘)
-      P.stage(useSeed ? 8 : 0, auto ? 60 : 100, Number(form.count), '키워드 작성 중');
-      const seedN = new Set(seeds.map((x) => norm(x.keyword)));
-      const j = await streamPost('/api/ai/generate-stream', { topic: form.topic, examples, count: Number(form.count), extra: form.extra, avoid, existing, rejected, minLen: form.minLen, maxLen: form.maxLen, seeds: seeds.slice(0, 200).map((x) => ({ keyword: x.keyword, total: x.total })) }, (ev) => P.event(ev), ctrl.signal, holder);
-      const exN = new Set(examples.map(norm));
+      // ② 실제 검색 데이터 서칭
+      let data = null, dataFail = '';
+      if (useData) {
+        P.stage(10, 22, 1, '서칭');
+        P.phase('씨앗 단어로 네이버 실제 검색 데이터 모으는 중 (키워드 도구 · 자동완성 · 관련 검색어)', 30);
+        const words = plan?.seeds?.length ? plan.seeds : [...new Set([...form.topic.split(/[\s,./]+/).filter((w) => w.length >= 2), ...refs])].slice(0, 15);
+        try { data = await postJson('/api/ai/research', { seeds: words, refs }, ctrl.signal); if (plan) { plan.data = { kt: data.list.length, sug: data.suggest.length }; drawPlan(); } }
+        catch (e) { if (isAbort(e)) throw e; dataFail = e.message; }
+      }
+      // ③ 발굴
+      P.stage(useData ? 22 : 10, auto ? 60 : 100, Number(form.count), '키워드 작성 중');
+      const j = await streamPost('/api/ai/generate-stream', { topic: form.topic, examples: refs, refMode, plan: plan ? { intent: plan.intent, audience: plan.audience, angles: plan.angles, avoid: plan.avoid } : null, count: Number(form.count), avoid, existing, rejected, minLen: form.minLen, maxLen: form.maxLen, seeds: (data?.list || []).slice(0, 300).map((x) => ({ keyword: x.keyword, total: x.total })), suggest: (data?.suggest || []).slice(0, 200).map((x) => x.keyword) }, (ev) => P.event(ev), ctrl.signal, holder);
+      const exN = new Set(refs.map(norm));
       const inLen = j.items.filter((x) => { const L = charLen(x.keyword); return L >= form.minLen && L <= form.maxLen; });
       const outLen = j.items.length - inLen.length;
       const rejIdx = buildIndex((AI.cur.rejected || []).map((r) => r.keyword));
@@ -735,29 +743,32 @@
       const notSame = notRej.filter((x) => !IDX.exact.has(norm(x.keyword)));
       const sameN = notRej.length - notSame.length;
       const got = notSame.filter((x) => !exN.has(norm(x.keyword)));
-      const r0 = addItems(got.map((x) => ({ ...x, source: 'AI' })));
-      const dupEx = notSame.length - got.length + r0.dropped;
-      // 검색량 조회는 AI가 만든 것만, 재검증은 키워드 도구에서 넣은 것까지
-      const aiKeys = r0.keys;
-      const r = { added: r0.added + seedAdd.added, keys: [...seedAdd.keys, ...r0.keys] };
+      // 실제 검색 데이터에 있던 키워드는 출처를 표시하고 검색량을 바로 붙임
+      const dmap = new Map((data?.list || []).map((x) => [norm(x.keyword), x]));
+      const smap = new Set((data?.suggest || []).map((x) => norm(x.keyword)));
+      const r = addItems(got.map((x) => { const dd = dmap.get(norm(x.keyword)); return dd ? { ...x, source: '검색데이터', vol: { pc: dd.pc, mo: dd.mo, total: dd.total, comp: dd.comp, pcLow: dd.pcLow, moLow: dd.moLow } } : { ...x, source: smap.has(norm(x.keyword)) ? '자동완성' : 'AI' }; }));
+      const dupEx = notSame.length - got.length + r.dropped;
+      const fresh = new Set(r.keys);
+      const nData = AI.items.filter((it) => fresh.has(it.keyword) && it.source === '검색데이터').length;
+      const nSug = AI.items.filter((it) => fresh.has(it.keyword) && it.source === '자동완성').length;
       if (!auto) stop.classList.add('hidden');
-      // 생성 직후 검색량 자동 조회 (검색광고 API 키가 있을 때)
+      // 검색량: 아직 없는 것만
       let volFail = '';
-      if (auto) P.stage(60, 72, r.keys.length, '검색량 조회');
-      if (AI.hasAd && aiKeys.length && !stopped) volFail = await attachVolumes(aiKeys, P);
-      // 이어서 조건 재검증 (새로 들어온 키워드만)
+      const needVol = AI.items.filter((it) => fresh.has(it.keyword) && !it.vol).map((it) => it.keyword);
+      if (auto) P.stage(60, 72, needVol.length, '검색량 조회');
+      if (AI.hasAd && needVol.length && !stopped) volFail = await attachVolumes(needVol, P);
+      // 조건 재검증 (새로 들어온 키워드만)
       let vr = null;
       if (auto && r.keys.length && !stopped) {
-        const fresh = new Set(r.keys);
         P.stage(72, 100, r.keys.length, '조건 재검증');
         AI.busy = '조건 재검증';
         vr = await verify({ items: AI.items.filter((it) => fresh.has(it.keyword)), P, stop });
       }
-      P.finish(vr?.stopped ? '중지했어요' : `완료 · ${seedAdd.added ? `키워드 도구 ${seedAdd.added}개 + ` : ''}AI ${j.items.length}개 받음${AI.hasAd && r.keys.length && !volFail ? ' · 검색량 포함' : ''}${vr && !vr.error ? ` · 재검증 적합 ${vr.pass} · 부적합 ${vr.fail}` : ''}`, vr?.stopped ? 'stop' : undefined);
-      const seedTxt = useSeed ? (seedFail ? `키워드 도구 실패(${seedFail}) → AI만으로 생성 · ` : `키워드 도구 연관 ${seeds.length.toLocaleString('ko-KR')}개(${seedHints.join(', ')}) 중 관련도 상위 ${Math.min(200, seeds.length)}개를 AI에 보여줌${seedAdd.added ? `, ${seedAdd.added}개 결과에 추가` : ''} · `) : '';
-      msg(`${seedTxt}AI ${j.items.length}개 받음 → ${r0.added}개 추가${outLen ? `, 글자 수 범위 밖 ${outLen}개 제외` : ''}${rejN ? `, 제외 목록과 같은 ${rejN}개 제외` : ''}${sameN ? `, 기존 키워드와 동일한 ${sameN}개 제외` : ''}${dupEx ? `, 예시·결과와 겹친 ${dupEx}개 제외` : ''}${existing.length ? ` · 기존 키워드 ${existing.length.toLocaleString('ko-KR')}개를 AI에 알려줌` : ''}${j.fallback ? ` (선택한 모델이 바빠서 ${j.model}(으)로 대신 생성)` : ''}${volFail ? ` · 검색량 조회 실패: ${volFail}` : ''}${!AI.hasAd ? ' · 검색량은 검색광고 API 키를 넣으면 자동으로 붙어요' : ''}${vr ? (vr.error ? ` · 조건 재검증 실패: ${vr.error}` : vr.stopped ? ' · 조건 재검증은 중지했어요' : ` · 조건 재검증: 적합 ${vr.pass} · 부적합 ${vr.fail}`) : ''}`);
+      P.finish(vr?.stopped ? '중지했어요' : `완료 · ${r.added}개 추가 (실제 검색 데이터 ${nData + nSug} · AI 새 표현 ${r.added - nData - nSug})${vr && !vr.error ? ` · 재검증 적합 ${vr.pass} · 부적합 ${vr.fail}` : ''}`, vr?.stopped ? 'stop' : undefined);
+      const head = [planFail ? `브리프 해석 실패(${planFail}) → 브리프 단어로 진행` : '', useData ? (dataFail ? `서칭 실패(${dataFail}) → AI만으로 생성` : data ? `씨앗 ${data.seeds.length}개로 실제 검색 데이터 ${(data.list.length + data.suggest.length).toLocaleString('ko-KR')}개를 모아 AI에 보여줌` : '') : ''].filter(Boolean).join(' · ');
+      msg(`${head ? head + ' · ' : ''}AI ${j.items.length}개 받음 → ${r.added}개 추가 (실제 검색 데이터에 있던 것 ${nData + nSug}개)${outLen ? `, 글자 수 범위 밖 ${outLen}개 제외` : ''}${rejN ? `, 제외 목록과 같은 ${rejN}개 제외` : ''}${sameN ? `, 기존 키워드와 동일한 ${sameN}개 제외` : ''}${dupEx ? `, 참고 키워드·결과와 겹친 ${dupEx}개 제외` : ''}${existing.length ? ` · 기존 키워드 ${existing.length.toLocaleString('ko-KR')}개를 AI에 알려줌` : ''}${j.fallback ? ` (선택한 모델이 바빠서 ${j.model}(으)로 대신 생성)` : ''}${volFail ? ` · 검색량 조회 실패: ${volFail}` : ''}${!AI.hasAd ? ' · 검색량은 검색광고 API 키를 넣으면 자동으로 붙어요' : ''}${vr ? (vr.error ? ` · 조건 재검증 실패: ${vr.error}` : vr.stopped ? ' · 조건 재검증은 중지했어요' : ` · 조건 재검증: 적합 ${vr.pass} · 부적합 ${vr.fail}`) : ''}`);
     } catch (e) {
-      const aborted = stopped || e.name === 'AbortError';
+      const aborted = isAbort(e);
       P.finish(aborted ? '중지했어요' : '실패', aborted ? 'stop' : 'fail');
       if (!aborted) msg(e.message, true);
     } finally { AI.busy = ''; b1.disabled = b2.disabled = false; stop.classList.add('hidden'); save(); }
@@ -819,7 +830,7 @@
     const targets = inGen ? opts.items : sel.length ? sel : AI.items.filter((it) => !it.decision);
     if (!targets.length) return vmsg('직접 판정한 키워드만 남았어요. 다시 판정하려면 체크해서 누르세요.', true);
     const form = readForm();
-    const conditions = { topic: form.topic, examples: splitList(form.examples), extra: form.extra, judged: MixedReview.judged(AI.items) };
+    const conditions = { topic: form.topic, examples: form.refMode === 'expand' ? splitList(form.examples) : [], extra: '', brief: true, judged: MixedReview.judged(AI.items) };
     if (!conditions.topic.trim() && !conditions.examples.length && !conditions.extra.trim()) { vmsg('이 탭에 주제·예시·요청 사항이 없어서 판정 기준이 없어요', true); return { error: '판정 기준 없음' }; }
     const btn = $('#aiVerify'), stop = opts.stop || $('#aiVStop');
     btn.disabled = true;
@@ -1159,7 +1170,7 @@
     $('#aiTbl').innerHTML = `<thead><tr><th class="l" style="width:30px"><input type="checkbox" id="aiAll" title="표에 보이는 키워드 전체 체크 / 다시 누르면 전체 해제"></th>${COLS.map(([k, n, c]) => `<th data-k="${k}" class="${c || ''} ${key === k ? 'sorted' : ''}">${n}<span class="ar">${key === k ? (dir < 0 ? '▼' : '▲') : '↕'}</span></th>`).join('')}<th></th></tr></thead>
       <tbody>${rows.map((it) => `<tr>
         <td class="l"><input type="checkbox" data-sel="${esc(it.keyword)}" ${it._sel ? 'checked' : ''}></td>
-        <td class="l kwc"><a href="#" data-go="${esc(it.keyword)}">${esc(it.keyword)}</a>${it.source === '직접' ? ' <span class="muted">(직접)</span>' : it.source === '키워드도구' ? ' <span class="muted" title="네이버 키워드 도구 연관 키워드">(키워드도구)</span>' : ''}</td>
+        <td class="l kwc"><a href="#" data-go="${esc(it.keyword)}">${esc(it.keyword)}</a>${it.source && it.source !== 'AI' ? ` <span class="muted" title="${it.source === '검색데이터' ? '네이버 키워드 도구에 실제로 있는 키워드' : it.source === '자동완성' ? '네이버·구글 자동완성/관련 검색어에 실제로 나온 키워드' : ''}">(${esc(it.source)})</span>` : ''}</td>
         <td class="l"><span class="st" data-s="${esc(it.status)}">${esc(it.status)}</span>${it.kind ? `<div class="muted" style="font-size:11px">${esc(it.kind)}</div>` : ''}</td>
         <td class="l" style="min-width:150px">${verifyCell(it, form)}</td>
         <td class="l">${esc(it.adGroup || '')}</td>

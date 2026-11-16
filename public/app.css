@@ -503,3 +503,10 @@ html.dark .pf-ro{color:#86efac;background:#052e16;border-color:#14532d}
 .pf-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px}
 .pf-sum .card{padding:12px 14px}
 .pf-sum b{font-size:18px}
+
+/* AI 탐색 계획 (ai.js) */
+.ai-plan{margin-top:10px;border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;background:var(--muted);font-size:13px}
+.ai-plan summary{cursor:pointer;font-weight:600}
+.ai-plan #aiPlanBody{display:flex;flex-direction:column;gap:5px;margin-top:8px;line-height:1.6}
+.ai-plan b{display:inline-block;min-width:66px;color:var(--muted-fg);font-weight:500}
+.ai-plan .chip{display:inline-block;padding:1px 8px;border-radius:999px;background:var(--card);border:1px solid var(--border);margin:1px 2px;font-size:12px}
