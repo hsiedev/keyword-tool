@@ -35,7 +35,7 @@
     const rc = tr.getBoundingClientRect();
     const H = innerHeight;
     // 위 막: 아래쪽 끝이 줄 위쪽에, 아래 막: 위쪽 끝이 줄 아래쪽에 오게 (막 높이는 화면 높이 + 그라데이션 여유)
-    shade.firstChild.style.transform = `translate3d(0,${Math.round(rc.top - H - 90)}px,0)`;
+    shade.firstChild.style.transform = `translate3d(0,${Math.round(rc.top - H - 70)}px,0)`;
     shade.lastChild.style.transform = `translate3d(0,${Math.round(rc.bottom)}px,0)`;
     const cb = cbOf(tr);
     const html = `<b>집중 피킹</b> ${FP.idx + 1} / ${rows.length}${cb ? ` · ${cb.checked ? '<span class="fp-ck">체크됨</span>' : '체크 안 됨'}` : ''} <span class="fp-keys">↑↓ 이동${cb ? ' · Space 체크' : ''} · Esc 끝내기</span>`;
@@ -47,24 +47,23 @@
     const rows = rowsOf(FP.table);
     if (!rows.length) return;
     FP.idx = abs != null ? abs : Math.max(0, Math.min(rows.length - 1, FP.idx + d));
-    keepVisible(rows[FP.idx], abs != null);
+    keepVisible(rows[FP.idx]);
     place();
   }
 
-  // 줄이 보기 편한 영역을 벗어날 때만 조금씩 스크롤 (매번 가운데로 끌어오지 않음 → 떨림 없음)
-  function keepVisible(tr, jump) {
+  // 보고 있는 줄을 항상 화면 가운데에 고정: 표(안쪽 스크롤)와 화면을 즉시 움직여서 줄은 제자리, 내용만 지나감
+  // (표 처음·끝처럼 더 못 움직이는 곳에서만 줄이 가운데를 벗어남)
+  function keepVisible(tr) {
     const wrap = tr.closest('.tbl-wrap');
     const head = FP.table.tHead?.getBoundingClientRect().height || 0;
     if (wrap && wrap.scrollHeight > wrap.clientHeight + 2) {
       const w = wrap.getBoundingClientRect(), rc = tr.getBoundingClientRect();
-      const lo = w.top + head + (w.height - head) * 0.25, hi = w.bottom - (w.height - head) * 0.25;
-      if (jump || rc.top < lo) wrap.scrollTop += rc.top - lo;
-      else if (rc.bottom > hi) wrap.scrollTop += rc.bottom - hi;
+      const mid = w.top + head + (w.height - head) / 2;
+      wrap.scrollTop += (rc.top + rc.height / 2) - mid; // 표 안에서 가운데로
     }
-    const rc = tr.getBoundingClientRect(), H = innerHeight;
-    const lo = H * 0.25, hi = H * 0.75;
-    if (rc.top < lo) scrollBy(0, rc.top - lo);
-    else if (rc.bottom > hi) scrollBy(0, rc.bottom - hi);
+    const rc = tr.getBoundingClientRect();
+    const d = (rc.top + rc.height / 2) - innerHeight / 2;
+    if (Math.abs(d) > 1) scrollTo({ top: scrollY + d, behavior: 'instant' }); // 화면 가운데로
   }
   function start(t) {
     ensureUi();
