@@ -4,7 +4,7 @@
 // - 보고 있는 줄 위아래를 검정 그라데이션으로 살짝 어둡게 해서 그 줄만 눈에 들어오게
 (function () {
   // 대상 표: 키워드 분석(연관), AI 키워드 생성기, 대량 분석, 키워드 중복 검사, 구글 모드 키워드 표
-  const TABLES = '#relTbl, #aiTbl, #bTblWrap > table, #dTblWrap > table, #gView table.g-tbl, #pfTbl';
+  const TABLES = '#relTbl, #aiTbl, #bTblWrap > table, #dTblWrap > table, #gView table.g-tbl, #pfTbl, #pdTbl';
   const FP = { table: null, idx: -1, raf: 0 };
   let shade, pill;
 

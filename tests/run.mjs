@@ -210,7 +210,12 @@ globalThis.fetch = async (u, o = {}) => {
   if (s.includes('api.searchad.naver.com/ncc/campaigns')) return new Response(JSON.stringify([{ nccCampaignId: 'cmp-1', name: '운전자보험_PL', campaignTp: 'WEB_SITE', status: 'ELIGIBLE', userLock: false }]));
   if (s.includes('api.searchad.naver.com/ncc/adgroups')) return new Response(JSON.stringify([{ nccAdgroupId: 'grp-1', name: '비교', status: 'ELIGIBLE' }]));
   if (s.includes('api.searchad.naver.com/ncc/keywords')) return new Response(JSON.stringify([{ nccKeywordId: 'nkw-1', keyword: '운전자보험비교', status: 'ELIGIBLE', useGroupBidAmt: true }, { nccKeywordId: 'nkw-2', keyword: '운전자보험추천', userLock: true, useGroupBidAmt: false, bidAmt: 3000 }]));
-  if (s.includes('api.searchad.naver.com/stats')) return new Response(JSON.stringify({ data: [{ id: 'nkw-1', impCnt: 1000, clkCnt: 40, salesAmt: 120000, ctr: 4, cpc: 3000, avgRnk: 2.1, ccnt: 3, convAmt: 0 }] }));
+  if (s.includes('api.searchad.naver.com/stats')) {
+    // 하루(since=until)면 '그날', 기간이면 '평소' 값
+    const tr = JSON.parse(new URL(s).searchParams.get('timeRange') || '{}');
+    if (tr.since && tr.since === tr.until) return new Response(JSON.stringify({ data: [{ id: 'nkw-1', impCnt: 400, clkCnt: 20, salesAmt: 60000, avgRnk: 1.5, ccnt: 1 }, { id: 'nkw-2', impCnt: 50, clkCnt: 2, salesAmt: 6000, avgRnk: 3, ccnt: 0 }] }));
+    return new Response(JSON.stringify({ data: [{ id: 'nkw-1', impCnt: 1000, clkCnt: 40, salesAmt: 120000, ctr: 4, cpc: 3000, avgRnk: 2.1, ccnt: 3, convAmt: 0 }] }));
+  }
   if (s.includes('api.searchad.naver.com/keywordstool')) {
     // 가짜 키워드 도구: 긴 힌트는 자기 자신만, '운전자보험'은 관련도 순 연관 키워드
     const h = decodeURIComponent(new URL(s).searchParams.get('hintKeywords') || '').split(',');
@@ -363,6 +368,17 @@ await test('브리프 생성: 씨앗마다 키워드 도구 조회 후 번갈아
   ok(!p.includes('예시 키워드와 같은 결'), '예시 쏠림 규칙 없음');
   await sse('/api/ai/generate-stream', { topic: '카드 발급', pos: ['캐시백'], neg: ['해지', '고객센터'], count: 10 });
   ok(globalThis.__lastPrompt.includes('[포함할 것 · Positive]') && globalThis.__lastPrompt.includes('- 캐시백') && globalThis.__lastPrompt.includes('[제외할 것 · Negative]') && globalThis.__lastPrompt.includes('- 고객센터'), 'Positive/Negative 블록');
+});
+await test('급등 원인 진단: 그날 vs 평소 하루 평균, 순위 상승·새로 노출 분류, 네이버에는 GET만', async () => {
+  const H = { Origin: 'http://localhost:' + PORT };
+  globalThis.__adCalls = [];
+  const j = await (await post('/api/ads/diagnose', { campaigns: ['cmp-1'], date: '2026-11-10', baseDays: 7 }, H)).json();
+  eq([j.base.since, j.base.until], ['2026-11-03', '2026-11-09']);
+  const k1 = j.top.find((r) => r.keyword === '운전자보험비교'), k2 = j.top.find((r) => r.keyword === '운전자보험추천');
+  eq([k1.imp, Math.round(k1.bImp), k1.causes[0], k2.causes[0]], [400, 143, '순위 상승', '새로 노출']);
+  ok(j.share['순위 상승'] > 0 && j.share['새로 노출'] === 50, JSON.stringify(j.share));
+  ok(globalThis.__adCalls.every((x) => x.startsWith('GET ')), globalThis.__adCalls.join(', '));
+  eq((await post('/api/ads/diagnose', { campaigns: ['cmp-1'], date: 'x' }, H)).status, 502);
 });
 // ---------------------------------------------------------------- 결과
 console.log('\n키워드 분석기 자동 테스트\n' + results.join('\n'));

@@ -6,7 +6,8 @@
   const $ = (s, r = document) => r.querySelector(s);
   const e2 = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const n0 = (v) => Math.round(+v || 0).toLocaleString('ko-KR');
-  const P = { cmps: null, pick: new Set(JSON.parse(localStorage.getItem('perfPick') || '[]')), preset: localStorage.getItem('perfPreset') || '7', since: '', until: '', data: null, err: '', busy: false, sort: { key: 'cost', dir: -1 }, q: '', onlyClk: false, sel: new Set() };
+  const P = { cmps: null, pick: new Set(JSON.parse(localStorage.getItem('perfPick') || '[]')), preset: localStorage.getItem('perfPreset') || '7', since: '', until: '', data: null, err: '', busy: false, sort: { key: 'cost', dir: -1 }, q: '', onlyClk: false, sel: new Set(),
+    mode: localStorage.getItem('perfMode') === 'diag' ? 'diag' : 'kw', dDate: '', dBase: '7', diag: null, dBusy: false, dErr: '' };
 
   const ymd = (d) => new Date(d.getTime() + 9 * 3600e3).toISOString().slice(0, 10); // 한국 날짜
   function range() {
@@ -74,18 +75,23 @@
     const sum = rows.reduce((s, r) => { s.imp += r.imp; s.clk += r.clk; s.cost += r.cost; s.conv += r.conv; s.convAmt += r.convAmt; return s; }, { imp: 0, clk: 0, cost: 0, conv: 0, convAmt: 0 });
     box.innerHTML = `
       <div class="sec"><h2>광고 성과 <span class="pf-ro" title="이 화면과 분석기 서버는 광고 계정을 읽기만 해요. 켜기·끄기·입찰가·예산 변경 호출은 서버에서 막혀 있어요.">읽기 전용</span>
-        <span class="muted" style="font-size:13px;font-weight:500">내 검색광고 계정의 키워드별 성과 · 광고 계정은 바꾸지 않아요</span></h2>
+        <span class="seg pf-mode" style="margin-left:8px"><button data-pm="kw" class="${P.mode === 'kw' ? 'on' : ''}">키워드 성과</button><button data-pm="diag" class="${P.mode === 'diag' ? 'on' : ''}">급등 원인 진단</button></span>
+        <span class="muted" style="font-size:13px;font-weight:500">${P.mode === 'kw' ? '내 검색광고 계정의 키워드별 성과' : '노출·클릭이 갑자기 오른 날의 원인을 키워드별로'} · 광고 계정은 바꾸지 않아요</span></h2>
       <div class="card">
         <div class="pf-row"><span class="flabel">캠페인</span><div class="pf-cmps">${cmps == null ? '<span class="muted">불러오는 중...</span>' : cmps.length ? cmps.map((c) => `<label class="pf-cmp"><input type="checkbox" data-cmp="${e2(c.id)}" ${P.pick.has(c.id) ? 'checked' : ''}> ${e2(c.name)} <small class="muted">${e2(c.type === 'WEB_SITE' ? '파워링크' : c.type === 'BRAND_SEARCH' ? '브랜드검색' : c.type || '')} · ${e2(c.state)}</small></label>`).join('') : '<span class="muted">캠페인이 없어요</span>'}</div></div>
-        <div class="pf-row"><span class="flabel">기간</span>
+        ${P.mode === 'kw' ? `<div class="pf-row"><span class="flabel">기간</span>
           <select id="pfPreset" class="hsel">${[['1', '어제'], ['7', '최근 7일'], ['14', '최근 14일'], ['30', '최근 30일'], ['lastmonth', '지난달'], ['custom', '직접 입력']].map(([k, n]) => `<option value="${k}" ${P.preset === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
           ${P.preset === 'custom' ? `<input type="date" id="pfSince" value="${e2(P.since)}"> ~ <input type="date" id="pfUntil" value="${e2(P.until)}">` : `<span class="muted">${since} ~ ${until} (오늘은 빼고)</span>`}
           <span style="flex:1"></span>
           <button class="btn pri" id="pfRun" ${P.busy ? 'disabled' : ''}>${P.busy ? '불러오는 중...' : '성과 불러오기'}</button>
-        </div>
-        ${P.err ? `<div style="color:#b91c1c;margin-top:8px">${e2(P.err)}</div>` : ''}
+        </div>` : `<div class="pf-row"><span class="flabel">오른 날</span><input type="date" id="pdDate" value="${e2(P.dDate || ymd(new Date(Date.now() - 86400e3)))}">
+          <span class="flabel" style="margin-left:10px">비교 기준</span><select id="pdBase" class="hsel">${[['7', '직전 7일 하루 평균'], ['14', '직전 14일 하루 평균'], ['28', '직전 28일 하루 평균']].map(([k, n]) => `<option value="${k}" ${P.dBase === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
+          <span style="flex:1"></span>
+          <button class="btn pri" id="pdRun" ${P.dBusy ? 'disabled' : ''}>${P.dBusy ? '진단 중... (키워드가 많으면 1분 정도)' : '원인 진단하기'}</button>
+        </div>`}
+        ${(P.mode === 'kw' ? P.err : P.dErr) ? `<div style="color:#b91c1c;margin-top:8px">${e2(P.mode === 'kw' ? P.err : P.dErr)}</div>` : ''}
       </div></div>
-      ${P.data ? `<div class="sec"><h2>키워드 ${n0(rows.length)}개 <span class="muted" style="font-size:13px;font-weight:500">${e2(P.data.since)} ~ ${e2(P.data.until)} · ${e2(P.data.campaigns.join(', '))} · 광고그룹 ${n0(P.data.groups)}개</span></h2>
+      ${P.mode === 'diag' ? diagHTML() : P.data ? `<div class="sec"><h2>키워드 ${n0(rows.length)}개 <span class="muted" style="font-size:13px;font-weight:500">${e2(P.data.since)} ~ ${e2(P.data.until)} · ${e2(P.data.campaigns.join(', '))} · 광고그룹 ${n0(P.data.groups)}개</span></h2>
         <div class="pf-sum">${[['노출', n0(sum.imp)], ['클릭', n0(sum.clk)], ['CTR', sum.imp ? (sum.clk / sum.imp * 100).toFixed(2) + '%' : '-'], ['평균 CPC', sum.clk ? n0(sum.cost / sum.clk) + '원' : '-'], ['비용 (VAT 포함)', n0(sum.cost) + '원'], ['전환', n0(sum.conv)], ['전환매출', n0(sum.convAmt) + '원']].map(([k, v]) => `<div class="card"><div class="muted">${k}</div><b>${v}</b></div>`).join('')}</div>
         <div class="card">
           <div class="toolbar">
@@ -114,6 +120,8 @@
 
   function wire(rows) {
     box().querySelectorAll('[data-cmp]').forEach((c) => (c.onchange = () => { c.checked ? P.pick.add(c.dataset.cmp) : P.pick.delete(c.dataset.cmp); localStorage.setItem('perfPick', JSON.stringify([...P.pick])); }));
+    box().querySelectorAll('[data-pm]').forEach((b) => (b.onclick = () => { P.mode = b.dataset.pm; localStorage.setItem('perfMode', P.mode); draw(); }));
+    if (P.mode === 'diag') return wireDiag();
     $('#pfPreset').onchange = (e) => { P.preset = e.target.value; localStorage.setItem('perfPreset', P.preset); if (P.preset === 'custom' && !P.since) { const [a, b] = (() => { const s = P.preset; P.preset = '7'; const r = range(); P.preset = s; return r; })(); P.since = a; P.until = b; } draw(); };
     if ($('#pfSince')) { $('#pfSince').onchange = (e) => (P.since = e.target.value); $('#pfUntil').onchange = (e) => (P.until = e.target.value); }
     $('#pfRun').onclick = run;
@@ -149,6 +157,71 @@
     };
   }
   const box = () => $('#pfBody');
+
+  // ---------------------------------------------------------------- 급등 원인 진단
+  const pct = (a, b) => (b > 0 ? Math.round(((a - b) / b) * 100) : a > 0 ? null : 0);
+  const pctTxt = (a, b) => { const p = pct(a, b); return p == null ? '<b class="pd-up">새로 발생</b>' : `<b class="${p > 0 ? 'pd-up' : p < 0 ? 'pd-dn' : ''}">${p > 0 ? '+' : ''}${p}%</b>`; };
+  const CAUSE = {
+    '수요 증가': ['pd-c1', '그날 그 키워드를 검색한 사람이 평소보다 많았어요 (데이터랩 일별 지수 1.3배 이상)'],
+    '순위 상승': ['pd-c2', '평균 노출 순위가 0.5 이상 좋아졌어요 → 입찰가·품질지수 변화나 경쟁 광고가 빠졌을 가능성'],
+    '새로 노출': ['pd-c3', '평소에는 거의 노출이 없던 키워드예요 → 켜기·예산·노출 설정 변경이나 확장 검색 확인'],
+    '새로 등록': ['pd-c3', '비교 기간 안에 새로 등록된 키워드예요'],
+    '그날 전후 수정': ['pd-c4', '키워드나 광고그룹이 그날이나 전날 수정됐어요 (입찰가·상태·설정) → 변경 이력에서 내용 확인'],
+    '클릭률 상승': ['pd-c5', '노출보다 클릭이 더 크게 늘었어요 → 소재·확장 소재 변경, 순위 상승, 검색 의도 변화'],
+    '불명확': ['pd-c0', '데이터로는 원인이 안 보여요 → 검색어 보고서(실제 검색어)·변경 이력·외부 이슈 확인'],
+  };
+  const chip = (c) => `<span class="pd-chip ${(CAUSE[c] || CAUSE['불명확'])[0]}" title="${e2((CAUSE[c] || CAUSE['불명확'])[1])}">${e2(c)}</span>`;
+  function diagHTML() {
+    const d = P.diag;
+    if (!d) return `<div class="sec"><div class="card muted" style="line-height:1.8">캠페인과 노출·클릭이 오른 날짜를 고르고 <b>원인 진단하기</b>를 누르세요. 그날과 평소(직전 7·14·28일 하루 평균)를 키워드별로 비교해서, 늘어난 노출이 <b>수요 증가 / 순위 상승 / 새로 노출 / 그날 전후 수정 / 클릭률 상승</b> 중 어디서 왔는지 나눠 보여줘요.<br>광고시스템의 변경 이력·검색어 보고서는 API로 못 가져와서, 의심 가는 곳은 직접 확인하도록 표시해요.</div></div>`;
+    const totalUp = Object.values(d.share).reduce((a, b) => a + b, 0) || 1;
+    const shares = Object.entries(d.share).sort((a, b) => b[1] - a[1]);
+    const devRow = (k, n) => { const a = d.dev?.day?.[k], b = d.dev?.base?.[k]; return a ? `<tr><td class="l">${n}</td><td>${n0(a.imp)}</td><td>${b ? n0(b.imp / d.base.days) : '-'}</td><td>${b ? pctTxt(a.imp, b.imp / d.base.days) : '-'}</td><td>${n0(a.clk)}</td><td>${b ? n0(b.clk / d.base.days) : '-'}</td></tr>` : ''; };
+    const devKeys = Object.keys(d.dev?.day || {});
+    return `<div class="sec"><h2>${e2(d.date)} 진단 <span class="muted" style="font-size:13px;font-weight:500">평소 = ${e2(d.base.since)} ~ ${e2(d.base.until)} (${d.base.days}일) 하루 평균 · 키워드 ${n0(d.keywords)}개 중 늘어난 상위 ${d.top.length}개 분석</span></h2>
+      <div class="pf-sum">${[['노출', d.day.imp, d.avg.imp], ['클릭', d.day.clk, d.avg.clk], ['비용 (VAT 포함)', d.day.cost, d.avg.cost], ['전환', d.day.conv, d.avg.conv]].map(([k, a, b]) => `<div class="card"><div class="muted">${k}</div><b>${n0(a)}</b> <span class="muted">평소 ${n0(b)}</span><div>${pctTxt(a, b)}</div></div>`).join('')}
+        <div class="card"><div class="muted">평균 노출 순위</div><b>${d.day.rank ? d.day.rank.toFixed(1) : '-'}</b> <span class="muted">평소 ${d.avg.rank ? d.avg.rank.toFixed(1) : '-'}</span></div></div>
+      <div class="grid g2" style="gap:12px;margin-bottom:12px">
+        <div class="card"><h3>늘어난 노출은 어디서 왔나</h3>
+          ${shares.length ? shares.map(([c, v]) => `<div class="pd-bar"><span style="min-width:110px">${chip(c)}</span><div class="pd-track"><div style="width:${Math.round((v / totalUp) * 100)}%"></div></div><span class="muted">${Math.round((v / totalUp) * 100)}% · +${n0(v)}</span></div>`).join('') : '<div class="muted">늘어난 키워드가 없어요</div>'}
+          <div class="muted" style="font-size:12px;margin-top:6px">키워드마다 첫 번째 원인 기준으로 늘어난 노출을 나눴어요. 원인 칩에 마우스를 올리면 설명이 나와요.${d.demandErr ? ' · ' + e2(d.demandErr) : ''}</div></div>
+        <div class="card"><h3>같이 확인할 것</h3>
+          ${d.edited.length ? `<div style="margin-bottom:6px"><b style="color:#b45309">그날 전후 수정된 캠페인·광고그룹</b>${d.edited.map((x) => `<div class="muted">${e2(x.level)} · ${e2(x.name)} · ${e2(new Date(x.editTm).toLocaleString('ko-KR'))}</div>`).join('')}</div>` : '<div class="muted" style="margin-bottom:6px">그날 전후 수정된 캠페인·광고그룹은 없어요</div>'}
+          ${devKeys.length ? `<table class="mini"><tr><th class="l">기기</th><th>노출</th><th>평소</th><th>변화</th><th>클릭</th><th>평소</th></tr>${devKeys.map((k) => devRow(k, /p/i.test(k) && !/m/i.test(k) ? 'PC' : /m/i.test(k) ? '모바일' : k)).join('')}</table>` : `<div class="muted" style="font-size:12px">PC/모바일 나누기는 ${d.dev?.error ? '못 받았어요 (' + e2(d.dev.error) + ')' : '네이버가 최근 7일 안의 날짜만 줘요'}</div>`}
+          <div class="muted" style="font-size:12px;margin-top:8px;line-height:1.6">API로 못 보는 것: 광고시스템 <b>변경 이력</b>(누가 무엇을 바꿨는지), <b>검색어 보고서</b>(확장 검색으로 잡힌 실제 검색어), 경쟁사 이벤트·뉴스 같은 외부 이슈</div></div>
+      </div>
+      <div class="card"><div class="tbl-wrap" style="max-height:640px"><table class="rel" id="pdTbl" style="min-width:1100px">
+        <thead><tr><th class="l">키워드</th><th class="l">원인</th><th>노출 그날</th><th>평소</th><th>변화</th><th>클릭 그날</th><th>평소</th><th>순위 그날</th><th>평소</th><th>검색 수요</th><th class="l">광고그룹</th><th class="l">최근 수정</th></tr></thead>
+        <tbody>${d.top.map((r) => `<tr>
+          <td class="l kwc"><a href="?keyword=${encodeURIComponent(r.keyword)}" data-run="${e2(r.keyword)}">${e2(r.keyword)}</a></td>
+          <td class="l">${r.causes.map(chip).join(' ')}</td>
+          <td><b>${n0(r.imp)}</b></td><td class="muted">${n0(r.bImp)}</td><td>${pctTxt(r.imp, r.bImp)}</td>
+          <td>${n0(r.clk)}</td><td class="muted">${n0(r.bClk)}</td>
+          <td>${r.rank ? r.rank.toFixed(1) : '-'}</td><td class="muted">${r.bRank ? r.bRank.toFixed(1) : '-'}</td>
+          <td>${r.demand == null ? '<span class="muted">-</span>' : `<b class="${r.demand >= 1.3 ? 'pd-up' : ''}">×${r.demand}</b>`}</td>
+          <td class="l muted">${e2(r.group)}</td><td class="l muted">${r.editTm ? e2(new Date(r.editTm).toLocaleDateString('ko-KR')) : ''}</td>
+        </tr>`).join('') || '<tr><td colspan="12" class="l muted" style="padding:20px">평소보다 늘어난 키워드가 없어요</td></tr>'}</tbody></table></div>
+        <div class="muted" style="margin-top:8px;line-height:1.7">검색 수요 = 데이터랩 일별 지수, 그날 ÷ 평소 평균 (×1.5면 평소의 1.5배 검색). 순위는 숫자가 작을수록 위예요. 키워드를 누르면 키워드 분석으로 넘어가요.</div></div></div>`;
+  }
+  async function runDiag() {
+    if (P.dBusy) return;
+    if (!P.pick.size) return window.toast?.('캠페인을 하나 이상 골라 주세요', 'warn');
+    P.dDate = $('#pdDate')?.value || P.dDate; P.dBase = $('#pdBase')?.value || P.dBase;
+    if (!P.dDate) return window.toast?.('날짜를 골라 주세요', 'warn');
+    P.dBusy = true; P.dErr = ''; draw();
+    try {
+      const j = await (await fetch('/api/ads/diagnose', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaigns: [...P.pick], date: P.dDate, baseDays: +P.dBase }) })).json();
+      if (j.error) throw new Error(j.error);
+      P.diag = j;
+    } catch (e) { P.dErr = e.message; }
+    P.dBusy = false; draw();
+  }
+  function wireDiag() {
+    $('#pdDate').onchange = (e) => (P.dDate = e.target.value);
+    $('#pdBase').onchange = (e) => (P.dBase = e.target.value);
+    $('#pdRun').onclick = runDiag;
+    box().querySelectorAll('#pdTbl [data-run]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); window.__LAYOUT?.go('analyze'); window.run?.(a.dataset.run); }));
+  }
 
   function showPerf(on) {
     if (on) { $('#aiView')?.classList.add('hidden'); window.__hideDup?.(); window.__hideBulk?.(); window.__hideCopy?.(); window.__hideMock?.(); }
