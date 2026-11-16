@@ -199,6 +199,12 @@ globalThis.fetch = async (u, o = {}) => {
   if (s.includes('ac.search.naver.com')) return new Response(JSON.stringify({ items: [[['운전자보험비교', '0'], ['운전자 보험', '0'], ['운전자보험이란', '0']]] }));
   if (s.includes('suggestqueries.google.com')) return new Response(JSON.stringify(['q', ['운전자보험 가격', '운전자보험비교']]));
   if (s.includes('search.naver.com/search.naver') && s.includes('pltest')) return new Response(PL_HTML);
+  if (s.includes(':batchEmbedContents')) {
+    // 가짜 임베딩: '자동차'가 들어가면 같은 방향, 아니면 다른 방향
+    const req = JSON.parse(o.body).requests;
+    globalThis.__embSent = (globalThis.__embSent || 0) + req.length;
+    return new Response(JSON.stringify({ embeddings: req.map((q) => ({ values: q.content.parts[0].text.includes('자동차') ? [1, 0.05, 0] : [0, 1, 0] })) }));
+  }
   if (s.includes('generativelanguage.googleapis.com')) return new Response(GEMINI_SSE(o));
   if (s.includes('api.searchad.naver.com')) globalThis.__adCalls = [...(globalThis.__adCalls || []), (o.method || 'GET') + ' ' + new URL(s).pathname];
   if (s.includes('api.searchad.naver.com/ncc/campaigns')) return new Response(JSON.stringify([{ nccCampaignId: 'cmp-1', name: '운전자보험_PL', campaignTp: 'WEB_SITE', status: 'ELIGIBLE', userLock: false }]));
@@ -333,6 +339,17 @@ await test('광고 성과(읽기 전용): 캠페인 → 그룹 → 키워드 →
   eq((await post('/api/ads/perf', { campaigns: ['cmp-1'], since: 'x', until: '2026-11-07' }, H)).status, 502);
   eq((await post('/api/ads/perf', { campaigns: ['cmp-1'], since: '2026-11-01', until: '2026-11-07' }, { Origin: 'https://evil.example' })).status, 403);
   const cf = path.join(TMP, 'cache.json'); ok(!fs.existsSync(cf) || !fs.readFileSync(cf, 'utf8').includes('nkw-1'), '성과 자료는 파일에 안 남음');
+});
+await test('의미 중복 후보(임베딩): 글자가 달라도 뜻이 가까운 기존 키워드를 찾고, 겹치는 글자가 없는 건 안 보내고, 한 번 받은 건 저장해 다시 안 보냄', async () => {
+  const H = { Origin: 'http://localhost:' + PORT };
+  globalThis.__embSent = 0;
+  const body = { candidates: ['자동차보험싼곳'], existing: ['자동차보험저렴한곳', '자동차보험가격', '치아보험'] };
+  const j = await (await post('/api/ai/embed-near', body, H)).json();
+  eq([j.pool, j.near['자동차보험싼곳'].map((x) => x[0])], [2, ['자동차보험저렴한곳', '자동차보험가격']]);
+  eq(globalThis.__embSent, 3); // 치아보험은 겹치는 3글자가 없어서 안 보냄
+  await post('/api/ai/embed-near', body, H);
+  eq(globalThis.__embSent, 3); // 두 번째는 저장된 벡터 사용
+  ok(fs.existsSync(path.join(TMP, 'data', 'emb-cache.json')), '임시 폴더에 저장');
 });
 // ---------------------------------------------------------------- 결과
 console.log('\n키워드 분석기 자동 테스트\n' + results.join('\n'));
