@@ -861,7 +861,7 @@ function generateRequest({ topic = '', examples = [], count = 50, extra = '', av
   const sug = (Array.isArray(suggest) ? suggest : []).map((x) => String(x?.keyword ?? x ?? '').replace(/\s+/g, '')).filter(Boolean).slice(0, 200);
   const pl = plan && typeof plan === 'object' ? plan : null;
   // 네이버 키워드 도구 연관 키워드 (실제 검색량): AI가 이걸 바탕으로 넓힘
-  const sd = (Array.isArray(seeds) ? seeds : []).filter((x) => x && x.keyword).slice(0, 200);
+  const sd = (Array.isArray(seeds) ? seeds : []).filter((x) => x && x.keyword).slice(0, 300);
   const ex = (Array.isArray(existing) ? existing : []).map((k) => String(k).replace(/\s+/g, '')).filter(Boolean).slice(0, 2000);
   const rej = (Array.isArray(rejected) ? rejected : []).filter((r) => r && r.keyword).slice(-150);
   const n = Math.max(10, Math.min(150, Number(count) || 50));
@@ -889,7 +889,7 @@ function generateRequest({ topic = '', examples = [], count = 50, extra = '', av
     `- intent는 ${INTENTS.join(', ')} 중 하나`,
     '- reason은 왜 유망한지 15자 이내',
     sug.length ? `\n[실제 검색 데이터 ① 네이버·구글 자동완성과 관련 검색어] (사람들이 실제로 입력하는 표현, 검색량 미확인):\n${sug.join(', ')}` : '',
-    sd.length ? `\n[실제 검색 데이터 ② 네이버 키워드 도구 연관 키워드 ${sd.length}개] (괄호는 실제 월간 검색량):\n${sd.map((x) => `${String(x.keyword).replace(/\s+/g, '')}(${Number(x.total) || 0})`).join(', ')}\n→ 이 목록에서 실제로 많이 검색되는 표현·수식어·조합 패턴을 파악해서, 주제에 맞으면서 이 목록에 없는 새 키워드로 넓혀라. 목록에 있는 키워드를 그대로 다시 내지 말 것. 괄호 속 검색량을 보면 짧고 흔한 표현일수록 많이 검색된다. 실제 사람들이 검색창에 칠 만한 짧은 조합(2~3개 단어)을 우선하고, 검색량이 거의 없을 너무 길거나 꾸민 표현(예: ~꿀팁정리, ~총정리비교)은 피할 것. 주제와 무관한 연관 키워드는 무시할 것.` : '',
+    sd.length ? `\n[실제 검색 데이터 ② 네이버 키워드 도구 연관 키워드 ${sd.length}개] (괄호는 실제 월간 검색량):\n${sd.map((x) => `${String(x.keyword).replace(/\s+/g, '')}(${Number(x.total) || 0})`).join(', ')}\n→ 브리프에 맞는 것은 그대로 골라도 된다. 괄호 속 검색량을 보면 짧고 흔한 표현일수록 많이 검색되니, 새로 만들 때도 실제 사람들이 검색창에 칠 만한 짧은 조합(2~3개 단어)을 우선하고 너무 길거나 꾸민 표현(예: ~꿀팁정리, ~총정리비교)은 피할 것. 브리프와 무관한 연관 키워드는 무시할 것.` : '',
     avoid.length ? `\n제외 목록 (이미 확보한 키워드):\n${avoid.slice(-600).join(', ')}` : '',
     ex.length ? `\n기존에 이미 운영 중인 키워드 ${ex.length}개 (이것들과 같거나, 대소문자·어순·조사만 다르거나, 의미가 사실상 같은 키워드는 절대 제안하지 말 것. 이 목록에 없는 새로운 각도로 넓힐 것):\n${ex.join(', ')}` : '',
     rej.length ? `\n부적합 판정을 받은 키워드 (다시 제안하지 말고, 같은 이유로 부적합할 만한 비슷한 유형도 피할 것. 특히 검색량 부족이면 더 널리 검색되는 표현을 쓸 것):\n${rej.map((r) => `${r.keyword} (${String(r.reason || '').slice(0, 30)})`).join('\n')}` : '',
@@ -1040,8 +1040,8 @@ function verifyRequest({ conditions = {}, keywords = [], minVol = 0 }) {
   const c = conditions;
   const prompt = [
     '너는 검색 키워드 검수자다. 아래 조건을 기준으로 각 키워드가 적합한지 엄격하게 판정해줘.',
-    `주제: ${c.topic || '(없음)'}`,
-    `예시 키워드: ${(c.examples || []).join(', ') || '(없음)'}`,
+    c.brief ? `브리프 (사용자가 쓴 의뢰: 목적·타깃·조건):\n"""\n${String(c.topic || '').slice(0, 3000)}\n"""` : `주제: ${c.topic || '(없음)'}`,
+    c.brief && !(c.examples || []).length ? '' : `${c.brief ? '참고 키워드 (이 결이어야 함)' : '예시 키워드'}: ${(c.examples || []).join(', ') || '(없음)'}`,
     `요청 사항 (사용자가 자유롭게 쓴 지시): ${c.extra ? `\n"""\n${String(c.extra).slice(0, 2000)}\n"""` : '(없음)'}`,
     '',
     '판정 기준 (하나라도 어기면 부적합):',
@@ -1156,6 +1156,56 @@ async function embedNear({ candidates = [], existing = [], min = 0.82, top = 5 }
     if (best.length) near[c] = best.slice(0, top);
   }
   return { near, pending, pool: E.length, note, model: EMB_MODEL };
+}
+
+// 브리프 해석: 목적·타깃·각도를 정하고, 실제 검색 데이터를 모을 씨앗 단어를 뽑음 (AI 한 번)
+async function aiPlan({ brief = '', refs = [], refMode = 'ref' }) {
+  const b = String(brief || '').trim().slice(0, 3000);
+  const rf = (Array.isArray(refs) ? refs : []).map(String).filter(Boolean).slice(0, 30);
+  if (!b && !rf.length) throw new Error('브리프를 넣어주세요');
+  const prompt = [
+    '아래 의뢰(브리프)를 읽고 네이버 검색 키워드를 찾기 위한 탐색 계획을 세워줘.',
+    `[브리프]\n"""\n${b || '(없음)'}\n"""`,
+    rf.length ? `[참고 키워드] ${rf.join(', ')} (${refMode === 'expand' ? '이 결로 넓히길 원함' : '방향 참고용일 뿐, 여기에 갇히지 말 것'})` : '',
+    '',
+    '항목:',
+    '- intent: 사람들이 어떤 상황에서 무엇을 알고 싶어 검색하는지 한두 문장',
+    '- audience: 타깃 한 줄',
+    '- angles: 키워드를 발굴할 각도 6~10개 (예: 비용·가격, 자격·조건, 비교, 후기, 문제 해결, 상황별, 대상별 등 브리프에 맞게)',
+    '- seeds: 네이버 키워드 도구·자동완성에 넣어 실제 검색어를 모을 씨앗 단어 15~20개. 띄어쓰기 없이, 2~12자의 짧은 핵심어 위주. 참고 키워드에 없는 단어도 각도별로 고르게 포함. 상품명·업종명·문제 상황·대상어 등',
+    '- avoid: 브리프상 피해야 할 단어나 유형 (없으면 빈 배열)',
+    '출력: {"items":[{"intent":"...","audience":"...","angles":[...],"seeds":[...],"avoid":[...]}]} 형태로 항목 하나만.',
+  ].filter(Boolean).join('\n');
+  const schema = { type: 'ARRAY', items: { type: 'OBJECT', properties: { intent: { type: 'STRING' }, audience: { type: 'STRING' }, angles: { type: 'ARRAY', items: { type: 'STRING' } }, seeds: { type: 'ARRAY', items: { type: 'STRING' } }, avoid: { type: 'ARRAY', items: { type: 'STRING' } } }, required: ['intent', 'angles', 'seeds'] } };
+  const { data, model } = await llmJson(prompt, schema, { temperature: 0.4, system: '너는 한국 네이버 검색광고 키워드 리서처다. 설명 없이 JSON만 출력한다.' });
+  const p = (Array.isArray(data) ? data[0] : data) || {};
+  const arr = (x, n, len = 60) => (Array.isArray(x) ? x : []).map((v) => String(v || '').trim().slice(0, len)).filter(Boolean).slice(0, n);
+  const seeds = [...new Set(arr(p.seeds, 25, 30).map((x) => x.replace(/\s+/g, '')).filter((x) => x.length >= 2))];
+  return { intent: String(p.intent || '').slice(0, 400), audience: String(p.audience || '').slice(0, 200), angles: arr(p.angles, 12), seeds, avoid: arr(p.avoid, 12, 30), model };
+}
+// 씨앗 단어로 실제 검색 데이터 모으기: 네이버 키워드 도구(5개씩) + 자동완성·관련 검색어(앞쪽 씨앗 8개)
+async function research({ seeds = [], refs = [] }) {
+  const ns = (x) => String(x || '').replace(/\s+/g, '');
+  const sd = [...new Set([...(Array.isArray(seeds) ? seeds : []), ...(Array.isArray(refs) ? refs : []).slice(0, 5)].map(ns).filter((x) => x.length >= 2 && x.length <= 30))].slice(0, 25);
+  if (!sd.length) throw new Error('씨앗 단어가 없어요');
+  const errors = [];
+  // 키워드 도구: 씨앗마다 따로 조회해서(한 번에 5개 넣으면 앞쪽 씨앗에 쏠림) 각각 관련도 상위 40개씩
+  const kt = new Map();
+  if (hasAd()) {
+    const per = new Map();
+    for (const h of sd) { try { per.set(h, await keywordTool([h])); } catch (e) { errors.push(`키워드 도구(${h}): ${e.message}`); } await sleep(120); }
+    // 씨앗들을 번갈아 가며 합쳐서 한 씨앗이 목록을 다 차지하지 않게
+    for (let i = 0; i < 40; i++) for (const h of sd) { const r = per.get(h)?.[i]; if (r && !kt.has(normKw(r.keyword))) kt.set(normKw(r.keyword), { ...r, from: h }); }
+  } else errors.push('검색광고 API 키가 없어 키워드 도구는 건너뜀');
+  // 자동완성·관련 검색어
+  const sug = new Map();
+  for (const h of sd.slice(0, 8)) {
+    try { const j = await suggest(h, false); for (const x of j.all || []) { const k = ns(x.keyword); if (k && !sug.has(normKw(k))) sug.set(normKw(k), { keyword: k, from: h, src: x.src }); } }
+    catch (e) { errors.push(`자동완성(${h}): ${e.message}`); }
+  }
+  const list = [...kt.values()].map((r) => ({ keyword: r.keyword, pc: r.pc, mo: r.mo, total: r.total, comp: r.comp, pcLow: r.pcLow, moLow: r.moLow, from: r.from }));
+  const suggestOnly = [...sug.values()].filter((x) => !kt.has(normKw(x.keyword)));
+  return { seeds: sd, list, suggest: suggestOnly, errors };
 }
 
 // 광고그룹 묶기: 같은 광고 문구·랜딩으로 대응할 수 있는 키워드끼리 AI가 묶음 (지금 고른 AI 한 번 호출)
@@ -1559,6 +1609,8 @@ const server = http.createServer(async (req, res) => {
           catch (e) { if (!ac.signal.aborted) emit('error', { message: e.message }); }
           return res.end();
         }
+        if (u.pathname === '/api/ai/plan') return send(res, 200, await aiPlan(b));
+        if (u.pathname === '/api/ai/research') return send(res, 200, await research(b));
         if (u.pathname === '/api/ai/group') return send(res, 200, await aiGroup(b));
         if (u.pathname === '/api/ai/embed-near') return send(res, 200, await embedNear(b));
         if (u.pathname === '/api/ai/semantic') return send(res, 200, { results: await aiSemantic(b) });
