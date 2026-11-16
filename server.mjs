@@ -1393,6 +1393,106 @@ async function adsPerf(b = {}) {
   return { since, until, campaigns: pick.map((c) => c.name), groups: groups.length, rows: out };
 }
 
+// ---------------------------------------------------------------- 급등 원인 진단 (읽기 전용)
+// 그날 vs 평소(직전 N일 하루 평균)를 키워드별로 비교하고, 원인을 나눔:
+//  새로 노출(평소 0) · 수요 증가(데이터랩 그날 지수가 평소의 1.3배 이상) · 순위 상승(평균 순위 0.5 이상 좋아짐)
+//  · 그날 전후 수정(키워드·그룹·캠페인 editTm) · 클릭률 상승
+const kstDay = (t) => (t ? new Date(new Date(t).getTime() + 9 * 3600e3).toISOString().slice(0, 10) : '');
+const addDay = (d, n) => new Date(Date.parse(d + 'T00:00:00Z') + n * 86400e3).toISOString().slice(0, 10);
+async function adsStats(ids, since, until, fields, extra = {}) {
+  const out = new Map();
+  for (let i = 0; i < ids.length; i += 100) {
+    const part = ids.slice(i, i + 100);
+    const j = await adsMem(`st2:${since}:${until}:${JSON.stringify(extra)}:${part.join(',')}`, () => adRequest('GET', '/stats', { query: { ids: part.join(','), fields: JSON.stringify(fields), timeRange: JSON.stringify({ since, until }), timeIncrement: 'allDays', ...extra } }));
+    for (const d of j?.data || []) out.set(d.id, d);
+    await sleep(120);
+  }
+  return out;
+}
+async function adsDiagnose(b = {}) {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(b.date)) ? String(b.date) : null;
+  if (!date) throw new Error('날짜를 골라 주세요');
+  const N = Math.max(3, Math.min(28, Number(b.baseDays) || 7));
+  const bs = addDay(date, -N), be = addDay(date, -1);
+  const cmps = await adsCampaigns();
+  const want = new Set((Array.isArray(b.campaigns) ? b.campaigns : []).map(String));
+  const pick = cmps.filter((c) => want.has(c.id));
+  if (!pick.length) throw new Error('캠페인을 골라 주세요');
+  const rawC = (await adsMem('cmp', () => adRequest('GET', '/ncc/campaigns'))) || [];
+  const groups = [], kws = [];
+  for (const c of pick) {
+    const gs = await adsMem('grp:' + c.id, () => adRequest('GET', '/ncc/adgroups', { query: { nccCampaignId: c.id } }));
+    for (const g of gs || []) groups.push({ id: g.nccAdgroupId, name: g.name, cmp: c.name, editTm: g.editTm, regTm: g.regTm });
+  }
+  if (groups.length > 300) throw new Error(`광고그룹이 ${groups.length}개라 너무 많아요. 캠페인을 나눠서 골라 주세요`);
+  for (const g of groups) {
+    const ks = await adsMem('kw:' + g.id, () => adRequest('GET', '/ncc/keywords', { query: { nccAdgroupId: g.id } }));
+    for (const k of ks || []) kws.push({ id: k.nccKeywordId, keyword: k.keyword, group: g.name, campaign: g.cmp, editTm: k.editTm, regTm: k.regTm, gEdit: g.editTm });
+    if (kws.length > 8000) throw new Error('키워드가 8,000개를 넘어요. 캠페인을 나눠서 골라 주세요');
+  }
+  const F = ['impCnt', 'clkCnt', 'salesAmt', 'avgRnk', 'ccnt'];
+  const ids = kws.map((k) => k.id);
+  const [dS, bS] = [await adsStats(ids, date, date, F), await adsStats(ids, bs, be, F)];
+  // 캠페인 합계 + PC/모바일 나누기 (나누기는 네이버가 최근 7일 안만 줌 → 안 되면 빈 값)
+  const cids = pick.map((c) => c.id);
+  const [cD, cB] = [await adsStats(cids, date, date, F), await adsStats(cids, bs, be, F)];
+  const dev = {};
+  try {
+    const [pd, pb] = [await adsStats(cids, date, date, ['impCnt', 'clkCnt'], { breakdown: 'pcMblTp' }), N <= 7 ? await adsStats(cids, bs, be, ['impCnt', 'clkCnt'], { breakdown: 'pcMblTp' }) : new Map()];
+    const sumBD = (m) => { const o = {}; for (const d of m.values()) for (const x of d.breakdowns || d.breakdown || []) { const k = x.name || x.key || x.pcMblTp || '?'; o[k] = o[k] || { imp: 0, clk: 0 }; o[k].imp += +x.impCnt || 0; o[k].clk += +x.clkCnt || 0; } return o; };
+    dev.day = sumBD(pd); dev.base = sumBD(pb);
+  } catch (e) { dev.error = e.message; }
+  const tot = (m) => { const o = { imp: 0, clk: 0, cost: 0, conv: 0, rankW: 0 }; for (const d of m.values()) { o.imp += +d.impCnt || 0; o.clk += +d.clkCnt || 0; o.cost += +d.salesAmt || 0; o.conv += +d.ccnt || 0; o.rankW += (+d.avgRnk || 0) * (+d.impCnt || 0); } o.rank = o.imp ? o.rankW / o.imp : 0; return o; };
+  const day = tot(cD), base0 = tot(cB);
+  const base = { imp: base0.imp / N, clk: base0.clk / N, cost: base0.cost / N, conv: base0.conv / N, rank: base0.rank };
+  // 키워드별 비교
+  const rows = kws.map((k) => {
+    const d = dS.get(k.id) || {}, bb = bS.get(k.id) || {};
+    const imp = +d.impCnt || 0, clk = +d.clkCnt || 0, bImp = (+bb.impCnt || 0) / N, bClk = (+bb.clkCnt || 0) / N;
+    return { ...k, imp, clk, cost: +d.salesAmt || 0, rank: +d.avgRnk || 0, bImp, bClk, bRank: +bb.avgRnk || 0, dImp: imp - bImp, dClk: clk - bClk };
+  });
+  const top = rows.filter((r) => r.dImp > 0 || r.dClk > 0).sort((x, y) => y.dImp - x.dImp || y.dClk - x.dClk).slice(0, 60);
+  // 수요: 데이터랩 일별 지수 (그날 / 평소 평균), 같은 요청 안의 5개씩
+  let demandErr = '';
+  if (hasOpen() && top.length) {
+    const uniq = [...new Set(top.map((r) => r.keyword.replace(/\s+/g, '')))].slice(0, 60);
+    for (let i = 0; i < uniq.length; i += 5) {
+      const part = uniq.slice(i, i + 5);
+      try {
+        const res = await datalab(part, bs, date, 'date');
+        part.forEach((kw, j) => {
+          const data = res[j]?.data || [];
+          const m = new Map(data.map((x) => [x.period, x.ratio]));
+          const dv = m.get(date) || 0;
+          let sum = 0; for (let t = 0; t < N; t++) sum += m.get(addDay(bs, t)) || 0;
+          const avg = sum / N;
+          for (const r of top) if (r.keyword.replace(/\s+/g, '') === kw) r.demand = avg > 0 ? +(dv / avg).toFixed(2) : dv > 0 ? 9 : null;
+        });
+      } catch (e) { demandErr = e.message; }
+    }
+  } else if (!hasOpen()) demandErr = '검색어 트렌드(데이터랩) 키가 없어 수요 변화는 못 봐요';
+  const near = (t) => { const d = kstDay(t); return d && d >= addDay(date, -1) && d <= date; };
+  for (const r of top) {
+    const c = [];
+    if (r.bImp < 0.5 && r.imp > 0) c.push(kstDay(r.regTm) >= bs ? '새로 등록' : '새로 노출');
+    if (r.demand != null && r.demand >= 1.3) c.push('수요 증가');
+    if (r.bRank && r.rank && r.bRank - r.rank >= 0.5) c.push('순위 상승');
+    if (near(r.editTm) || near(r.gEdit)) c.push('그날 전후 수정');
+    const ctrD = r.imp ? r.clk / r.imp : 0, ctrB = r.bImp ? r.bClk / r.bImp : 0;
+    if (r.clk >= 5 && ctrB > 0 && ctrD >= ctrB * 1.3) c.push('클릭률 상승');
+    r.causes = c.length ? c : ['불명확'];
+    delete r.gEdit;
+  }
+  // 원인별로 늘어난 노출 나누기 (키워드마다 첫 번째 원인 기준)
+  const share = {};
+  for (const r of top) { const k = r.causes[0]; share[k] = (share[k] || 0) + Math.max(0, r.dImp); }
+  const edited = [
+    ...rawC.filter((c) => want.has(String(c.nccCampaignId)) && near(c.editTm)).map((c) => ({ level: '캠페인', name: c.name, editTm: c.editTm })),
+    ...groups.filter((g) => near(g.editTm)).map((g) => ({ level: '광고그룹', name: g.name, editTm: g.editTm })),
+  ];
+  return { date, base: { since: bs, until: be, days: N }, day, avg: base, dev, top, share, edited, demandErr, keywords: kws.length };
+}
+
 // ---------------------------------------------------------------- HTTP 서버
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
 
@@ -1461,12 +1561,13 @@ const server = http.createServer(async (req, res) => {
       setTimeout(() => process.exit(99), 300); // start.bat이 코드 99를 받으면 다시 실행
       return;
     }
-    if (u.pathname === '/api/ads/campaigns' || u.pathname === '/api/ads/perf') {
+    if (u.pathname === '/api/ads/campaigns' || u.pathname === '/api/ads/perf' || u.pathname === '/api/ads/diagnose') {
       // 광고 성과 (읽기 전용): 캠페인 목록 / 캠페인의 키워드별 성과
       if (!hasAd()) return send(res, 400, { error: '검색광고 API 키가 없어요 (설정 > API 설정)' });
       try {
         if (u.pathname === '/api/ads/campaigns') return send(res, 200, { campaigns: await adsCampaigns() });
         const b = req.method === 'POST' ? await readBody(req) : {};
+        if (u.pathname === '/api/ads/diagnose') return send(res, 200, await adsDiagnose(b));
         return send(res, 200, await adsPerf(b));
       } catch (e) { return send(res, e.blocked ? 403 : 502, { error: e.message }); }
     }
