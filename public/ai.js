@@ -575,10 +575,11 @@
     // 초기화: 작성하던 게 있으면 탭으로 저장하고 빈 새 탭
     window.__RESET_ai = () => {
       if (guardBusy()) return null;
-      const c = AI.cur, wasDraft = !!c?.draft, had = c && hasContent(c);
-      save();
+      const c = AI.cur;
+      save(); // 입력 칸 내용을 탭에 반영 (작성 중이면 기록으로 올라감)
+      const f = c?.form || {}, had = !!c && (hasContent(c) || [f.topic, f.examples, f.pos, f.neg].some((x) => String(x || '').trim()));
       openTab(newDraft()); scrollTo(0, 0);
-      return wasDraft && had ? `작성하던 내용을 '${c.name}' 탭으로 저장하고 초기화했어요` : '초기화했어요 (지난 탭은 왼쪽 기록에 있어요)';
+      return had ? `작성하던 내용은 '${c.name}' 탭에 저장해 두고 초기화했어요 (왼쪽 기록)` : '초기화했어요';
     };
     $$('.sit', side).forEach((el) => {
       const s = el.dataset.sid === AI.cur?.id ? AI.cur : AI.sessions.find((x) => x.id === el.dataset.sid);
