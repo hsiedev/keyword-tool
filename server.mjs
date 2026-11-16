@@ -797,12 +797,26 @@ function parseItems(text) {
 }
 
 // 로그인형 CLI 호출: 진행 중에는 경과 시간만 알려주고, 끝나면 JSON을 읽음 (생각 과정은 표시 안 됨)
-async function cliStream(p, { system, prompt }, emit, signal, { total = 0, model: modelOver } = {}) {
+// 스키마 → 예시 JSON (로그인형 AI는 스키마를 강제할 수 없어서 필드 이름을 글로 알려줌)
+function schemaExample(sc) {
+  if (!sc || typeof sc !== 'object') return '...';
+  const t = String(sc.type || '').toUpperCase();
+  if (t === 'ARRAY') return [schemaExample(sc.items)];
+  if (t === 'OBJECT') { const o = {}; for (const [k, v] of Object.entries(sc.properties || {})) o[k] = schemaExample(v); return o; }
+  if (sc.enum) return sc.enum.join('|');
+  if (t === 'BOOLEAN') return true;
+  if (t === 'NUMBER' || t === 'INTEGER') return 0;
+  return '...';
+}
+async function cliStream(p, { system, prompt, schema }, emit, signal, { total = 0, model: modelOver } = {}) {
   needKey(p);
   const P = PROVIDERS[p];
   const model = modelOver || P.model();
   const tag = `${P.name}${model ? ' · ' + model : ''}`;
-  const full = [system, '', prompt, '', '출력 형식: {"items": [...]} 형태의 JSON 객체 하나만 출력한다. 인사말, 설명, 코드블록 없이 JSON만 출력한다. 파일을 만들거나 고치거나 명령을 실행하지 말고 답만 출력한다.'].join('\n');
+  const ex = schema ? schemaExample(schema) : null;
+  const itemEx = Array.isArray(ex) ? ex[0] : ex;
+  const fmt = itemEx && typeof itemEx === 'object' ? `\n각 항목은 반드시 이 필드 이름 그대로 쓴다: ${JSON.stringify(itemEx)}` : '';
+  const full = [system, '', prompt, '', '출력 형식: {"items": [...]} 형태의 JSON 객체 하나만 출력한다.' + fmt + '\n인사말, 설명, 코드블록 없이 JSON만 출력한다. 파일을 만들거나 고치거나 명령을 실행하지 말고 답만 출력한다.'].join('\n');
   emit('start', { total });
   const t0 = Date.now();
   emit('status', { text: `${tag} 실행 중 (로그인 계정 사용)`, model: tag, phase: 'thinking' });
@@ -829,13 +843,13 @@ async function llmStream({ system, prompt, schema, temperature }, emit, signal, 
     };
     return geminiStream(baseBody, emit, signal, opts);
   }
-  return cliStream(p, { system, prompt }, emit, signal, opts);
+  return cliStream(p, { system, prompt, schema }, emit, signal, opts);
 }
 async function llmJson(prompt, schema, { temperature = 0.9, system } = {}) {
   const p = provider();
   needKey(p);
   if (p === 'gemini') return gemini(prompt, schema, { temperature, system });
-  const { arr, model } = await cliStream(p, { system: system || '설명 없이 JSON만 출력한다.', prompt }, () => {}, undefined, {});
+  const { arr, model } = await cliStream(p, { system: system || '설명 없이 JSON만 출력한다.', prompt, schema }, () => {}, undefined, {});
   return { data: arr, model, tried: [] };
 }
 async function providerModels(p) {
@@ -876,6 +890,7 @@ function generateRequest({ topic = '', examples = [], count = 50, extra = '', av
     .map((l) => (/^[-•\d]/.test(l) ? l : '- ' + l));
   const prompt = [
     `[브리프] (사용자가 쓴 의뢰 내용. 목적·타깃·조건·제외할 것을 파악해 반드시 따를 것. 단, 아래 규칙과 충돌하면 규칙 우선)\n"""\n${brief.slice(0, 3000) || '(없음)'}\n"""`,
+    pl && (pl.web || []).length ? `\n[웹 조사로 확인한 사실]\n${pl.web.slice(0, 10).map((x) => '- ' + String(x).slice(0, 200)).join('\n')}` : '',
     pl ? `\n[탐색 계획] (브리프를 해석한 결과)\n- 검색 의도: ${String(pl.intent || '').slice(0, 300)}\n- 타깃: ${String(pl.audience || '').slice(0, 200)}\n- 다룰 각도: ${(pl.angles || []).slice(0, 12).join(' / ')}${(pl.avoid || []).length ? `\n- 피할 것: ${pl.avoid.slice(0, 12).join(', ')}` : ''}` : '',
     examples.length ? (refMode === 'expand'
       ? `\n[참고 키워드] 이 키워드들과 같은 결로 넓혀라: ${examples.join(', ')}`
@@ -1165,8 +1180,46 @@ async function embedNear({ candidates = [], existing = [], min = 0.82, top = 5 }
   return { near, pending, pool: E.length, note, model: EMB_MODEL };
 }
 
+// 웹 리서치 (선택): 웹 검색이 되는 로그인형 AI(Claude·GPT)가 브리프 주제를 먼저 조사 → 탐색 계획의 재료
+// 고르는 순서: 지금 고른 AI가 Claude/GPT면 그것, 아니면 설치된 Claude → GPT
+function webProvider() {
+  const cur = provider();
+  if ((cur === 'claude' || cur === 'codex') && cliPath(cur, config)) return cur;
+  return ['claude', 'codex'].find((p) => cliPath(p, config)) || null;
+}
+async function aiWebResearch({ brief = '', refs = [] }, signal) {
+  const p = webProvider();
+  if (!p) throw new Error('웹 검색이 되는 로그인형 AI(Claude 또는 GPT)가 설치돼 있지 않아요 (설정 > API 설정 > AI 모델)');
+  const b = String(brief || '').trim().slice(0, 3000);
+  if (!b) throw new Error('브리프를 넣어주세요');
+  const rf = (Array.isArray(refs) ? refs : []).map(String).filter(Boolean).slice(0, 20);
+  const prompt = [
+    '너는 한국 네이버 검색광고 키워드 리서처다. 아래 의뢰(브리프)의 주제를 웹 검색으로 직접 조사해줘.',
+    `[브리프]\n"""\n${b}\n"""`,
+    rf.length ? `[참고 키워드] ${rf.join(', ')}` : '',
+    '',
+    '조사할 것: 공식 페이지·이벤트 조건, 상품·서비스의 실제 이름과 기능, 사람들이 후기·커뮤니티·질문에서 쓰는 표현, 자주 묻는 문제·고민, 경쟁 광고·랜딩의 문구. 한국어 자료 위주로 3~8번 검색하고 필요하면 페이지를 열어 읽는다.',
+    '파일을 만들거나 고치거나 명령을 실행하지 말 것.',
+    '',
+    '조사가 끝나면 아래 JSON 하나만 출력한다 (설명·코드블록 없이):',
+    '{"items":[{"findings":["키워드 발굴에 쓸 만한 사실 5~10개, 각각 한 문장"],"terms":["실제로 쓰이는 표현·용어·상품명·문제 상황 15~30개, 띄어쓰기 없이, 2~12자"],"sources":["참고한 URL 최대 8개"]}]}',
+  ].filter(Boolean).join('\n');
+  const t0 = Date.now();
+  const text = await runCli(p, prompt, { model: PROVIDERS[p].model(), signal, config, timeoutMs: 300000, web: true });
+  let arr;
+  try { arr = parseItems(text); } catch { throw new Error(`${PROVIDERS[p].name} 웹 조사 결과를 읽지 못했어요: ${String(text).replace(/\s+/g, ' ').slice(0, 160)}`); }
+  const o = (Array.isArray(arr) ? arr[0] : arr) || {};
+  const list = (x, n, len) => (Array.isArray(x) ? x : []).map((v) => String(v || '').trim().slice(0, len)).filter(Boolean).slice(0, n);
+  return {
+    findings: list(o.findings, 12, 200),
+    terms: [...new Set(list(o.terms, 40, 30).map((x) => x.replace(/\s+/g, '')).filter((x) => x.length >= 2))],
+    sources: list(o.sources, 8, 300).filter((u) => /^https?:\/\//.test(u)),
+    by: PROVIDERS[p].name, ms: Date.now() - t0,
+  };
+}
+
 // 브리프 해석: 목적·타깃·각도를 정하고, 실제 검색 데이터를 모을 씨앗 단어를 뽑음 (AI 한 번)
-async function aiPlan({ brief = '', refs = [], refMode = 'ref' }) {
+async function aiPlan({ brief = '', refs = [], refMode = 'ref', web = null }) {
   const b = String(brief || '').trim().slice(0, 3000);
   const rf = (Array.isArray(refs) ? refs : []).map(String).filter(Boolean).slice(0, 30);
   if (!b && !rf.length) throw new Error('브리프를 넣어주세요');
@@ -1174,6 +1227,7 @@ async function aiPlan({ brief = '', refs = [], refMode = 'ref' }) {
     '아래 의뢰(브리프)를 읽고 네이버 검색 키워드를 찾기 위한 탐색 계획을 세워줘.',
     `[브리프]\n"""\n${b || '(없음)'}\n"""`,
     rf.length ? `[참고 키워드] ${rf.join(', ')} (${refMode === 'expand' ? '이 결로 넓히길 원함' : '방향 참고용일 뿐, 여기에 갇히지 말 것'})` : '',
+    web && ((web.findings || []).length || (web.terms || []).length) ? `[웹 조사 결과] (AI가 웹 검색으로 미리 조사한 내용. 각도와 씨앗 단어를 정할 때 적극 반영할 것)\n${(web.findings || []).slice(0, 12).map((x) => '- ' + String(x).slice(0, 200)).join('\n')}\n실제로 쓰이는 표현: ${(web.terms || []).slice(0, 40).join(', ')}` : '',
     '',
     '항목:',
     '- intent: 사람들이 어떤 상황에서 무엇을 알고 싶어 검색하는지 한두 문장',
@@ -1622,6 +1676,8 @@ const server = http.createServer(async (req, res) => {
           catch (e) { if (!ac.signal.aborted) emit('error', { message: e.message }); }
           return res.end();
         }
+        if (u.pathname === '/api/ai/web-research') return send(res, 200, await aiWebResearch(b));
+        if (u.pathname === '/api/ai/web-info') { const p = webProvider(); return send(res, 200, { provider: p, name: p ? PROVIDERS[p].name : null }); }
         if (u.pathname === '/api/ai/plan') return send(res, 200, await aiPlan(b));
         if (u.pathname === '/api/ai/research') return send(res, 200, await research(b));
         if (u.pathname === '/api/ai/group') return send(res, 200, await aiGroup(b));

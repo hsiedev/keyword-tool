@@ -133,13 +133,16 @@ function friendly(p, code, out, err) {
 }
 
 // prompt를 보내고 답 텍스트를 받음
-export async function runCli(p, prompt, { model = '', signal, config = {}, timeoutMs } = {}) {
+export async function runCli(p, prompt, { model = '', signal, config = {}, timeoutMs, web = false } = {}) {
   const file = cliPath(p, config);
   if (!file) throw new Error(`${CLI[p].name}: ${CLI[p].tool}가 설치되지 않았어요. 설정 > API 설정 > AI 모델에서 [설치]를 눌러주세요.`);
   fs.mkdirSync(WORK, { recursive: true });
   if (p === 'claude') {
     // 프롬프트는 표준 입력으로 (길이 제한 없음). 파일·명령 도구는 막음
-    const args = ['-p', '--output-format', 'json', '--disallowedTools', 'Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task'];
+    // web: 웹 검색·페이지 읽기만 허용 (--allowedTools는 -p 앞에 둬야 프롬프트를 먹지 않음)
+    const args = web
+      ? ['--allowedTools', 'WebSearch,WebFetch', '-p', '--output-format', 'json', '--disallowedTools', 'Bash,Edit,Write,MultiEdit,NotebookEdit,Task']
+      : ['-p', '--output-format', 'json', '--disallowedTools', 'Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task'];
     if (model) args.push('--model', model);
     const r = await run(file, args, { input: prompt, signal, timeoutMs });
     let j = null;
@@ -151,6 +154,7 @@ export async function runCli(p, prompt, { model = '', signal, config = {}, timeo
   if (p === 'codex') {
     const outFile = path.join(WORK, `codex-${process.pid}-${Date.now()}.txt`);
     const args = ['exec', '--skip-git-repo-check', '--sandbox', 'read-only', '--color', 'never', '-o', outFile];
+    if (web) args.push('-c', 'web_search=live'); // 실시간 웹 검색 (exec에서는 --search 대신 이 설정)
     if (model) args.push('-m', model);
     args.push('-'); // 프롬프트는 표준 입력으로
     try {
