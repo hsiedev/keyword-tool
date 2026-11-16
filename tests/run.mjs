@@ -351,6 +351,17 @@ await test('의미 중복 후보(임베딩): 글자가 달라도 뜻이 가까�
   eq(globalThis.__embSent, 3); // 두 번째는 저장된 벡터 사용
   ok(fs.existsSync(path.join(TMP, 'data', 'emb-cache.json')), '임시 폴더에 저장');
 });
+await test('브리프 생성: 씨앗마다 키워드 도구 조회 후 번갈아 합침 · 요청문에 브리프·탐색 계획·실제 데이터(검색량)·발굴 순서', async () => {
+  const H = { Origin: 'http://localhost:' + PORT };
+  eq((await post('/api/config', { adApiKey: 'k', adSecret: 's', adCustomerId: '1', geminiKey: 'test-key', aiProvider: 'gemini' }, H)).status, 200);
+  const d = await (await post('/api/ai/research', { seeds: ['운전자보험', '카카오페이카드'] }, H)).json();
+  eq(d.list.slice(0, 2).map((x) => x.keyword), ['운전자보험', '카카오페이카드']); // 씨앗 하나가 목록을 다 차지하지 않음
+  ok(d.list.some((x) => x.keyword === '운전자보험비교' && x.from === '운전자보험'), '씨앗 표시');
+  await sse('/api/ai/generate-stream', { topic: '운전자보험 가입 직전 30대\n보험사 이름은 빼 줘', examples: ['운전자보험추천'], refMode: 'ref', plan: { intent: '가입 직전 비교', audience: '30대', angles: ['가격', '보장'], avoid: ['보험사 이름'] }, count: 10, seeds: [{ keyword: '운전자보험비교', total: 2720 }], suggest: [{ keyword: '운전자보험필요성', total: 400 }] });
+  const p = globalThis.__lastPrompt;
+  for (const t of ['[브리프]', '보험사 이름은 빼 줘', '[탐색 계획]', '다룰 각도: 가격 / 보장', '방향만 참고', '운전자보험비교(2720)', '운전자보험필요성(400)', '발굴 순서']) ok(p.includes(t), '요청문에 ' + t);
+  ok(!p.includes('예시 키워드와 같은 결'), '예시 쏠림 규칙 없음');
+});
 // ---------------------------------------------------------------- 결과
 console.log('\n키워드 분석기 자동 테스트\n' + results.join('\n'));
 console.log(`\n통과 ${pass} · 실패 ${fail}`);
