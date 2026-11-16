@@ -585,5 +585,5 @@ label:has(>input.sw){gap:8px}
 @media (prefers-reduced-motion:reduce){input.sw,input.sw::before{transition:none}}
 /* 기존 키워드 목록 줄: 모두 켜기/끄기를 같은 줄 오른쪽에 */
 .src-master{justify-content:space-between;cursor:default}
-.src-master .src-all{display:flex;gap:10px;font-size:12px;flex:none}.act-bar .act-ic{width:36px;padding:0;display:inline-flex;align-items:center;justify-content:center}
+.src-master .src-all{display:flex;gap:10px;font-size:12px;flex:none}.act-bar .act-ic{width:40px;padding:0;display:inline-flex;align-items:center;justify-content:center;align-self:stretch}
 body.fp-mode .act-bar .act-ic{background:#16a34a;border-color:#16a34a;color:#fff}
