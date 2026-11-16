@@ -330,6 +330,7 @@
     }
   }
   addEventListener('themechange', () => { if (!v.classList.contains('hidden')) { drawTrendChart(); drawKpChart(); } });
-  window.__G = { show, run, hist, get kw() { return S.kw; } };
+  function reset() { S.kw = ''; const r = $g('#gRes'); if (r) r.innerHTML = ''; placeForm(); scrollTo(0, 0); }
+  window.__G = { show, run, hist, reset, get kw() { return S.kw; } };
   placeForm();
 })();

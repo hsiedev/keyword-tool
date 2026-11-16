@@ -587,3 +587,10 @@ label:has(>input.sw){gap:8px}
 .src-master{justify-content:space-between;cursor:default}
 .src-master .src-all{display:flex;gap:10px;font-size:12px;flex:none}.act-bar .act-ic{width:40px;padding:0;display:inline-flex;align-items:center;justify-content:center;align-self:stretch}
 body.fp-mode .act-bar .act-ic{background:#16a34a;border-color:#16a34a;color:#fff}
+
+/* 초기화 버튼 (layout.js) */
+.icon-btn.reset-btn{width:auto;padding:0 10px;gap:5px;display:inline-flex;align-items:center;font-size:13px;color:var(--muted-fg)}
+.icon-btn.reset-btn:hover{color:var(--foreground)}
+.reset-btn.spin1 svg{animation:rsSpin .5s ease}
+@keyframes rsSpin{from{transform:rotate(0)}to{transform:rotate(-360deg)}}
+@media (max-width:760px){.reset-btn span{display:none}}

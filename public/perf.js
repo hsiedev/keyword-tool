@@ -223,6 +223,11 @@
     box().querySelectorAll('#pdTbl [data-run]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); window.__LAYOUT?.go('analyze'); window.run?.(a.dataset.run); }));
   }
 
+  window.__RESET_perf = () => {
+    P.data = null; P.diag = null; P.err = ''; P.dErr = ''; P.sel.clear(); P.q = ''; P.onlyClk = false;
+    draw(); scrollTo(0, 0);
+    return '초기화했어요 (캠페인 선택은 그대로)';
+  };
   function showPerf(on) {
     if (on) { $('#aiView')?.classList.add('hidden'); window.__hideDup?.(); window.__hideBulk?.(); window.__hideCopy?.(); window.__hideMock?.(); }
     $('#perfView').classList.toggle('hidden', !on);

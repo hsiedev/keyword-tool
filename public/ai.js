@@ -572,6 +572,14 @@
       <div class="side-h">기록</div>
       ${recent.map(item).join('') || '<div class="muted" style="padding:6px 10px;font-size:12px">키워드를 생성하면 주제별로 여기 쌓여요</div>'}`;
     $('#sideNew').onclick = () => { if (guardBusy()) return; openTab(newDraft()); $('#aiTopic').focus(); };
+    // 초기화: 작성하던 게 있으면 탭으로 저장하고 빈 새 탭
+    window.__RESET_ai = () => {
+      if (guardBusy()) return null;
+      const c = AI.cur, wasDraft = !!c?.draft, had = c && hasContent(c);
+      save();
+      openTab(newDraft()); scrollTo(0, 0);
+      return wasDraft && had ? `작성하던 내용을 '${c.name}' 탭으로 저장하고 초기화했어요` : '초기화했어요 (지난 탭은 왼쪽 기록에 있어요)';
+    };
     $$('.sit', side).forEach((el) => {
       const s = el.dataset.sid === AI.cur?.id ? AI.cur : AI.sessions.find((x) => x.id === el.dataset.sid);
       el.onclick = () => { if (s === AI.cur || guardBusy()) return; openTab(s); };

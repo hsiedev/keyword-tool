@@ -81,6 +81,14 @@
     drawAll();
   }
   function newTab() { if (C.busy) return; H.cur = newDoc(); C.sel = new Set(); drawAll(); $('#cpKw')?.focus(); }
+  window.__RESET_copy = () => {
+    if (C.busy) return null;
+    const d = H.cur, wasDraft = !!d?.draft;
+    save(true);
+    const saved = wasDraft && d && !d.draft;
+    newTab(); scrollTo(0, 0);
+    return saved ? `작성하던 내용을 '${d.name}' 탭으로 저장하고 초기화했어요` : '초기화했어요 (지난 카피는 왼쪽 기록에 있어요)';
+  };
 
   // ---------------------------------------------------------------- 사이드바
   function drawSide() {

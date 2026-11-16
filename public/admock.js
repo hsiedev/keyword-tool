@@ -933,6 +933,13 @@
   }
 
   // ---------------------------------------------------------------- 보이기 · 숨기기
+  window.__RESET_mock = () => {
+    if (!H.cur) return '초기화했어요';
+    const name = H.cur.name;
+    H.cur = null; M.group = null; M.sel = new Set(); localStorage.removeItem('mockCur');
+    draw(); scrollTo(0, 0);
+    return `'${name}' 캠페인은 저장된 채로 닫고 초기화했어요 (왼쪽 캠페인 목록에 있어요)`;
+  };
   function showMock(on) {
     if (on) { $('#aiView')?.classList.add('hidden'); window.__hideDup?.(); window.__hideBulk?.(); window.__hideCopy?.(); }
     $('#mockView').classList.toggle('hidden', !on);

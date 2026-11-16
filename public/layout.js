@@ -95,6 +95,23 @@
   tb.type = 'button'; tb.className = 'icon-btn'; tb.id = 'themeBtn';
   tb.onclick = () => window.setTheme(document.documentElement.classList.contains('dark') ? 'light' : 'dark');
   acts.prepend(tb);
+  // 초기화: 지금 보고 있는 메뉴를 처음 상태로 (작성 중인 게 있으면 그 메뉴의 탭/기록으로 저장한 뒤)
+  const rb = document.createElement('button');
+  rb.type = 'button'; rb.className = 'icon-btn reset-btn'; rb.id = 'resetBtn';
+  rb.title = '초기화 · 지금 화면을 처음 상태로 (작성하던 건 탭으로 저장)';
+  rb.setAttribute('aria-label', '초기화');
+  rb.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg><span>초기화</span>';
+  rb.onclick = async () => {
+    const v = current();
+    let msg = null;
+    if (isG()) { window.__G?.reset?.(); msg = '초기화했어요'; }
+    else if (v === 'analyze') { if (typeof window.resetAnalyze === 'function') { window.resetAnalyze(); msg = '초기화했어요 (분석한 키워드는 왼쪽 최근 검색에 있어요)'; } }
+    else if (v === 'dup') { document.getElementById('dReset')?.click(); return; } // 중복 검사는 따로 저장하는 내역이 없어서 확인창을 거쳐 비움
+    else msg = window['__RESET_' + v]?.();
+    rb.classList.remove('spin1'); void rb.offsetWidth; rb.classList.add('spin1');
+    if (msg) window.toast?.(msg, 'ok');
+  };
+  acts.prepend(rb);
   const sb = document.getElementById('setBtn');
   if (sb) { sb.className = 'icon-btn'; sb.innerHTML = I.set; sb.title = '설정'; }
 

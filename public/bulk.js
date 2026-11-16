@@ -96,6 +96,8 @@
       } catch (e) { return alert('내역을 불러오지 못했어요: ' + e.message); }
     }
     loadInto(s); afterOpen();
+    // 분석 전에 저장해 둔 탭: 넣어 둔 키워드를 입력 칸에 다시
+    if (s.input && !(s.rows || []).length) { B.files = []; B.paste = s.input; $('#bPaste').value = s.input; drawInput(); }
   }
   function newTab() {
     if (isBusy()) return;
@@ -138,6 +140,18 @@
       <div class="side-h">내역</div>
       ${recent.map(item).join('') || '<div class="muted" style="padding:6px 10px;font-size:12px">분석할 때마다 여기 쌓여요</div>'}`;
     $('#bSideNew').onclick = newTab;
+    window.__RESET_bulk = () => {
+      if (isBusy()) return null;
+      const s = H.cur, kws = inputKeywords();
+      let msg = '초기화했어요 (지난 분석은 왼쪽 내역에 있어요)';
+      if (s?.draft && kws.length) {
+        delete s.draft; s.name = '작성 중 · ' + autoName(kws); s.input = kws.join('\n');
+        persist(true);
+        msg = `넣어 둔 키워드 ${kws.length.toLocaleString('ko-KR')}개를 '${s.name}' 탭으로 저장하고 초기화했어요`;
+      }
+      newTab(); scrollTo(0, 0);
+      return msg;
+    };
     $$('.sit', side).forEach((el) => {
       el.onclick = () => openSession(el.dataset.bid);
       el.oncontextmenu = (e) => { e.preventDefault(); const m = list.find((x) => x.id === el.dataset.bid); if (m) showCtx(e, m); };

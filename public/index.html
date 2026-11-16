@@ -609,6 +609,15 @@ $('#modelBtn').onclick = async () => {
 /* ---------------------------------------------------------------- 실행 */
 $('#searchForm').onsubmit = (e) => { e.preventDefault(); const k = $('#q').value.trim(); if (k) run(k); };
 
+function resetAnalyze() {
+  STATE = null;
+  $('#result').innerHTML = ''; $('#banners').innerHTML = '';
+  $('#tabs').classList.add('hidden'); $('#empty').classList.remove('hidden');
+  $('#q').value = '';
+  history.replaceState(null, '', location.pathname);
+  document.title = '키워드 분석기 (로컬)';
+  window.__LAYOUT?.sync?.(); scrollTo(0, 0);
+}
 async function run(kw, push = true) {
   if (window.showAI && !$('#aiView')?.classList.contains('hidden')) showAI(false);
   window.__hideDup?.();
