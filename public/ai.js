@@ -383,6 +383,8 @@
             <div class="tbl-wrap" style="max-height:680px"><table class="rel" id="aiTbl"></table></div>
             <div class="act-bar" id="aiActBar">
               <span class="act-cnt" id="aiActCnt">체크한 키워드 없음</span>
+              <button class="btn act-ic" id="aiFp" type="button" title="집중 피킹 (↑↓ 이동 · Space 체크/해제 · Esc 끝내기)" aria-label="집중 피킹"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M3 9V5a2 2 0 0 1 2-2h4M15 3h4a2 2 0 0 1 2 2v4M21 15v4a2 2 0 0 1-2 2h-4M9 21H5a2 2 0 0 1-2-2v-4"/></svg></button>
+              <span class="act-sep"></span>
               <button class="btn" id="aiMixBtn" title="AI 판정이 엇갈린 키워드를 적합/부적합/보류로 직접 정해요">엇갈림 정리</button>
               <button class="btn act-bad" id="aiSelBad" title="한 번도 적합 판정을 못 받은 키워드를 모두 체크해요">부적합 선택</button>
               <span class="act-sep"></span>
@@ -450,6 +452,7 @@
       vmsg(`${n}개를 삭제했어요.${nBad ? ` 부적합 ${nBad}개는 제외 목록에 저장했어요.` : ''}`);
     };
     $('#aiSelBad').onclick = selectBad;
+    $('#aiFp').onclick = () => { const FP = window.FocusPick; if (!FP) return; if (FP.on) FP.stop(); else FP.start($('#aiTbl')); };
     $('#aiDel2').onclick = () => $('#aiDel').click();
     $('#aiRejSel').onclick = rejectChecked;
     $('#aiMinVol').addEventListener('change', () => save());
