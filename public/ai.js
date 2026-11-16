@@ -1055,7 +1055,7 @@
     const pool = AI.items.filter((it) => it.status === '신규' || it.status === '유사');
     if (!pool.length) return alert('검사할 후보(신규·유사)가 없어요.');
     const btn = $('#aiSem'); btn.disabled = true;
-    // 1) 임베딩(Gemini API 키가 있을 때): 글자가 달라도 뜻이 가까운 기존 키워드를 후보마다 최대 5개 찾음 (유사도 0.85 이상)
+    // 1) 임베딩(Gemini API 키가 있을 때): 글자가 달라도 뜻이 가까운 기존 키워드를 후보마다 최대 5개 찾음 (유사도 0.82 이상)
     let embInfo = '';
     btn.textContent = '뜻이 가까운 기존 키워드 찾는 중...';
     try {
@@ -1063,7 +1063,7 @@
       if (ej.error) throw new Error(ej.error);
       let added = 0;
       for (const it of pool) { const nr = (ej.near?.[it.keyword] || []).map((x) => x[0]); const extra = nr.filter((k) => !(it.sim || []).some((s) => norm(s) === norm(k))); added += extra.length; it.semNear = nr; }
-      embInfo = ` (임베딩으로 뜻이 가까운 기존 키워드 ${added}개를 더 찾음)`;
+      embInfo = ` (임베딩으로 뜻이 가까운 기존 키워드 ${added}개를 더 찾음${ej.pending ? ` · 한도 때문에 ${ej.pending}개는 아직 못 비교, 다시 누르면 이어서` : '}${ej.note ? ` · ${ej.note}` : '})`;
     } catch (e) { embInfo = ` (임베딩 못 씀: ${e.message} → 글자가 비슷한 것만 비교)`; pool.forEach((it) => (it.semNear = [])); }
     const listOf = (it) => [...new Set([...(it.semNear || []), ...(it.sim || [])])];
     const targets = pool.filter((it) => listOf(it).length);

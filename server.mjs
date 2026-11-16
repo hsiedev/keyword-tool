@@ -1076,34 +1076,62 @@ async function aiSemantic({ pairs = [] }) {
 }
 
 // 의미 중복 후보 찾기: Gemini 임베딩으로 후보마다 뜻이 가장 가까운 기존 키워드를 찾음 (최종 판단은 aiSemantic)
-// 글자가 달라도 뜻이 비슷한 것(싼곳/저렴한곳)까지 후보로 잡기 위함. 벡터는 메모리에만 보관
+// 글자가 달라도 뜻이 비슷한 것(싼곳/저렴한곳)까지 후보로 잡기 위함
+// - 무료 등급은 글자 하나하나(텍스트 1개 = 요청 1개)로 분당 100개 · 하루 약 1,000개라서:
+//   ① 한 번 받은 벡터는 data\emb-cache.json에 저장해 다시 보내지 않음 (GitHub 백업 제외)
+//   ② 기존 키워드는 후보와 3글자 이상 겹치는 것만 보냄 ③ 한 번에 새로 보내는 건 최대 190개, 분당 95개로 조절
+const EMB_MODEL = 'gemini-embedding-2', EMB_DIM = 256;
+const EMB_PATH = path.join(path.dirname(SOURCES_PATH), 'emb-cache.json');
 const EMB = new Map();
-const EMB_MODEL = 'gemini-embedding-2';
-async function embedAll(texts) {
+let embLoaded = false, embDirty = false;
+const embSent = []; // 최근 1분 동안 보낸 텍스트 수 기록 [시각, 개수]
+function embLoad() {
+  if (embLoaded) return; embLoaded = true;
+  try { const j = JSON.parse(fs.readFileSync(EMB_PATH, 'utf8')); if (j.model === EMB_MODEL && j.dim === EMB_DIM) for (const [t, b64] of Object.entries(j.v || {})) EMB.set(t, new Float32Array(Buffer.from(b64, 'base64').buffer.slice(0))); } catch {}
+}
+function embSave() {
+  if (!embDirty) return; embDirty = false;
+  const v = {}; for (const [t, f] of EMB) v[t] = Buffer.from(f.buffer).toString('base64');
+  const tmp = EMB_PATH + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify({ model: EMB_MODEL, dim: EMB_DIM, v })); fs.renameSync(tmp, EMB_PATH);
+}
+async function embedAll(texts, maxNew = 190) {
+  embLoad();
   const need = [...new Set(texts)].filter((t) => !EMB.has(t));
-  for (let i = 0; i < need.length; i += 100) {
-    const part = need.slice(i, i + 100);
+  const now = need.slice(0, maxNew);
+  for (let i = 0; i < now.length; i += 95) {
+    const part = now.slice(i, i + 95);
+    // 분당 95개를 넘지 않게 기다림
+    for (;;) { const cut = Date.now() - 61000; while (embSent.length && embSent[0][0] < cut) embSent.shift(); const used = embSent.reduce((x, y) => x + y[1], 0); if (used + part.length <= 95) break; await sleep(Math.max(1000, embSent[0][0] - cut)); }
+    embSent.push([Date.now(), part.length]);
     let res, j;
-    for (let attempt = 0; attempt < 4; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${EMB_MODEL}:batchEmbedContents`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': config.geminiKey },
-        body: JSON.stringify({ requests: part.map((t) => ({ model: 'models/' + EMB_MODEL, content: { parts: [{ text: t }] }, taskType: 'SEMANTIC_SIMILARITY', outputDimensionality: 768 })) }),
+        body: JSON.stringify({ requests: part.map((t) => ({ model: 'models/' + EMB_MODEL, content: { parts: [{ text: t }] }, taskType: 'SEMANTIC_SIMILARITY', outputDimensionality: EMB_DIM })) }),
       });
       j = await res.json().catch(() => ({}));
-      if (res.status === 429 || res.status === 503) { await sleep(3000 * (attempt + 1)); continue; }
+      if (res.status === 503) { await sleep(3000 * (attempt + 1)); continue; }
       break;
     }
+    if (res.status === 429) { embSave(); const e = new Error('Gemini 임베딩 무료 한도에 걸렸어요 (분당 100개 · 하루 약 1,000개). 이미 받은 것은 저장해 뒀으니 잠시 뒤 다시 누르면 이어서 해요.'); e.partial = true; throw e; }
     if (!res.ok) throw new Error(`Gemini 임베딩 오류 ${res.status}: ${String(j.error?.message || '').slice(0, 160)}`);
-    part.forEach((t, k) => { const v = j.embeddings?.[k]?.values; if (v) { let n = 0; for (const x of v) n += x * x; n = Math.sqrt(n) || 1; EMB.set(t, Float32Array.from(v, (x) => x / n)); } });
-    if (EMB.size > 60000) EMB.clear();
+    part.forEach((t, k) => { const v = j.embeddings?.[k]?.values; if (v) { let n = 0; for (const x of v) n += x * x; n = Math.sqrt(n) || 1; EMB.set(t, Float32Array.from(v, (x) => x / n)); embDirty = true; } });
   }
+  embSave();
+  return need.length - now.length; // 이번에 못 보낸 개수
 }
-async function embedNear({ candidates = [], existing = [], min = 0.85, top = 5 }) {
+const grams3 = (s) => { const t = String(s).replace(/\s+/g, ''); const g = new Set(); for (let i = 0; i + 3 <= t.length; i++) g.add(t.slice(i, i + 3)); return g; };
+async function embedNear({ candidates = [], existing = [], min = 0.82, top = 5 }) {
   if (!hasGemini()) throw new Error('Gemini API 키가 없어 임베딩을 쓸 수 없어요');
   const C = [...new Set(candidates.map(String).filter(Boolean))].slice(0, 1500);
-  const E = [...new Set(existing.map(String).filter(Boolean))].slice(0, 6000);
-  if (!C.length || !E.length) return { near: {} };
-  await embedAll([...C, ...E]);
+  const Eall = [...new Set(existing.map(String).filter(Boolean))];
+  // 후보와 3글자 이상 겹치는 기존 키워드만 (무료 한도 절약)
+  const cg = new Set(); for (const c of C) for (const g of grams3(c)) cg.add(g);
+  const E = Eall.filter((e) => { for (const g of grams3(e)) if (cg.has(g)) return true; return false; }).slice(0, 6000);
+  if (!C.length || !E.length) return { near: {}, pending: 0, pool: E.length };
+  let pending = 0, note = '';
+  try { pending = await embedAll([...C, ...E]); } catch (e) { if (!e.partial) throw e; note = e.message; embLoad(); pending = [...C, ...E].filter((t) => !EMB.has(t)).length; }
   const near = {};
   for (const c of C) {
     const v = EMB.get(c); if (!v) continue;
@@ -1117,7 +1145,7 @@ async function embedNear({ candidates = [], existing = [], min = 0.85, top = 5 }
     best.sort((x, y) => y[1] - x[1]);
     if (best.length) near[c] = best.slice(0, top);
   }
-  return { near, model: EMB_MODEL };
+  return { near, pending, pool: E.length, note, model: EMB_MODEL };
 }
 
 // 키워드 여러 개의 검색량 (검색광고 API, 5개씩)
