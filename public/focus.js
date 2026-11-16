@@ -16,6 +16,7 @@
     if (shade) return;
     shade = document.createElement('div');
     shade.id = 'fpShade';
+    shade.innerHTML = '<div class="fp-top"></div><div class="fp-bot"></div>';
     pill = document.createElement('div');
     pill.id = 'fpPill';
     document.body.append(shade, pill);
@@ -27,17 +28,15 @@
     if (!t) return;
     if (!visible(t)) return stop();
     const rows = rowsOf(t);
-    if (!rows.length) { shade.style.background = ''; if (pill.textContent !== '집중 피킹 · 표시할 키워드가 없어요 · Esc 끝내기') pill.textContent = '집중 피킹 · 표시할 키워드가 없어요 · Esc 끝내기'; return; }
+    if (!rows.length) { shade.firstChild.style.transform = shade.lastChild.style.transform = 'translate3d(0,-200vh,0)'; if (pill.textContent !== '집중 피킹 · 표시할 키워드가 없어요 · Esc 끝내기') pill.textContent = '집중 피킹 · 표시할 키워드가 없어요 · Esc 끝내기'; return; }
     FP.idx = Math.max(0, Math.min(FP.idx, rows.length - 1));
     rows.forEach((r, i) => r.classList.toggle('fp-on', i === FP.idx));
     const tr = rows[FP.idx];
     const rc = tr.getBoundingClientRect();
     const H = innerHeight;
-    const dark = document.documentElement.classList.contains('dark') || document.body.classList.contains('dark');
-    const a = dark ? 0.42 : 0.26; // 너무 어둡지 않게
-    const c = (x) => `rgba(0,0,0,${x})`;
-    const top = Math.round(rc.top), bot = Math.round(rc.bottom), fade = 90;
-    shade.style.background = `linear-gradient(to bottom, ${c(a)} 0px, ${c(a)} ${Math.max(0, top - fade)}px, ${c(0)} ${top - 2}px, ${c(0)} ${bot + 2}px, ${c(a)} ${Math.min(H, bot + fade)}px, ${c(a)} ${H}px)`;
+    // 위 막: 아래쪽 끝이 줄 위쪽에, 아래 막: 위쪽 끝이 줄 아래쪽에 오게 (막 높이는 화면 높이 + 그라데이션 여유)
+    shade.firstChild.style.transform = `translate3d(0,${Math.round(rc.top - H - 90)}px,0)`;
+    shade.lastChild.style.transform = `translate3d(0,${Math.round(rc.bottom)}px,0)`;
     const cb = cbOf(tr);
     const html = `<b>집중 피킹</b> ${FP.idx + 1} / ${rows.length}${cb ? ` · ${cb.checked ? '<span class="fp-ck">체크됨</span>' : '체크 안 됨'}` : ''} <span class="fp-keys">↑↓ 이동${cb ? ' · Space 체크' : ''} · Esc 끝내기</span>`;
     if (pill.innerHTML !== html) pill.innerHTML = html; // 바뀔 때만 (DOM 감시가 다시 부르지 않게)
@@ -48,10 +47,25 @@
     const rows = rowsOf(FP.table);
     if (!rows.length) return;
     FP.idx = abs != null ? abs : Math.max(0, Math.min(rows.length - 1, FP.idx + d));
-    rows[FP.idx].scrollIntoView({ block: 'center', behavior: 'smooth' });
+    keepVisible(rows[FP.idx], abs != null);
     place();
   }
 
+  // 줄이 보기 편한 영역을 벗어날 때만 조금씩 스크롤 (매번 가운데로 끌어오지 않음 → 떨림 없음)
+  function keepVisible(tr, jump) {
+    const wrap = tr.closest('.tbl-wrap');
+    const head = FP.table.tHead?.getBoundingClientRect().height || 0;
+    if (wrap && wrap.scrollHeight > wrap.clientHeight + 2) {
+      const w = wrap.getBoundingClientRect(), rc = tr.getBoundingClientRect();
+      const lo = w.top + head + (w.height - head) * 0.25, hi = w.bottom - (w.height - head) * 0.25;
+      if (jump || rc.top < lo) wrap.scrollTop += rc.top - lo;
+      else if (rc.bottom > hi) wrap.scrollTop += rc.bottom - hi;
+    }
+    const rc = tr.getBoundingClientRect(), H = innerHeight;
+    const lo = H * 0.25, hi = H * 0.75;
+    if (rc.top < lo) scrollBy(0, rc.top - lo);
+    else if (rc.bottom > hi) scrollBy(0, rc.bottom - hi);
+  }
   function start(t) {
     ensureUi();
     if (FP.table && FP.table !== t) stop();
@@ -67,7 +81,7 @@
     wrapOf(t)?.classList.add('fp-cur');
     shade.hidden = pill.hidden = false;
     if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
-    rows[FP.idx]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (rows[FP.idx]) keepVisible(rows[FP.idx]);
     place();
     syncButtons();
   }
@@ -77,7 +91,7 @@
     document.querySelectorAll('.tbl-wrap.fp-cur').forEach((w) => w.classList.remove('fp-cur'));
     FP.table = null;
     document.body.classList.remove('fp-mode');
-    if (shade) { shade.hidden = pill.hidden = true; shade.style.background = ''; }
+    if (shade) { shade.hidden = pill.hidden = true; }
     syncButtons();
   }
 
@@ -122,8 +136,13 @@
     const typing = el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) && !(el.tagName === 'INPUT' && el.type === 'checkbox');
     if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
     if ([...document.querySelectorAll('.modal-bg, .cfm-bg, .rv-bg')].some((m) => !m.classList.contains('hidden') && m.offsetParent !== null)) return; // 설정·확인창이 떠 있으면 건드리지 않음
-    if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const now = performance.now();
+      if (e.repeat && now - (FP.last || 0) < 60) return;
+      FP.last = now;
+      move(e.key === 'ArrowDown' ? 1 : -1);
+    }
     else if (e.key === 'Home') { e.preventDefault(); move(0, 0); }
     else if (e.key === 'End') { e.preventDefault(); move(0, rowsOf(FP.table).length - 1); }
     else if (e.key === ' ' || e.code === 'Space') {
