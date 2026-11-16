@@ -325,6 +325,7 @@
               <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="aiSendExisting"> 기존 키워드도 AI에 보내 처음부터 피하게 하기 (②에서 켜 둔 목록, 최대 2,000개)</label>
               <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px" title="생성이 끝나면 새로 들어온 키워드를 바로 이 탭의 주제·예시·요청 사항과 최소 월간 검색량으로 한 번 판정해요 (AI를 한 번 더 써요)"><input type="checkbox" id="aiAutoVerify"> 생성하면서 조건 재검증까지 하기 (진행은 막대 하나로)</label>
               <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px" title="AI가 브리프에서 뽑은 씨앗 단어마다 네이버 키워드 도구·자동완성·관련 검색어를 조회해 실제 검색 데이터를 모으고, AI가 그 안에서 고르고 빈 각도를 채워요"><input type="checkbox" id="aiSeed"> 네이버 실제 검색 데이터로 서칭하기 (키워드 도구 · 자동완성 · 관련 검색어)</label>
+              <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px" title="웹 검색이 되는 로그인형 AI(Claude 또는 GPT)가 브리프 주제를 먼저 조사해요: 공식 페이지·이벤트 조건, 후기·커뮤니티 표현, 경쟁 광고 문구. 그 결과로 씨앗 단어를 정해요. 1~3분 더 걸리고 구독 사용량을 더 써요"><input type="checkbox" id="aiWeb"> AI가 웹을 먼저 조사하기 <span id="aiWebWho"></span> (1~3분 더)</label>
               <div style="display:flex;gap:8px;margin-top:12px">
                 <button class="btn pri" id="aiGen">키워드 생성</button>
                 <button class="btn" id="aiMore">이어서 더 생성</button>
@@ -455,6 +456,9 @@
     // 키워드 도구로 시작: 기본 켜짐, 결과에 넣을 연관 키워드 수 기본 30개 (마지막 선택 기억)
     $('#aiSeed').checked = localStorage.getItem('aiSeed') !== '0';
     $('#aiSeed').onchange = (e) => localStorage.setItem('aiSeed', e.target.checked ? '1' : '0');
+    $('#aiWeb').checked = localStorage.getItem('aiWeb') !== '0';
+    $('#aiWeb').onchange = (e) => localStorage.setItem('aiWeb', e.target.checked ? '1' : '0');
+    fetch('/api/ai/web-info').then((x) => x.json()).then((j) => { $('#aiWebWho').textContent = j.name ? `· ${j.name}` : '· 웹 검색되는 AI 없음 (Claude·GPT 로그인 필요)'; if (!j.name) { $('#aiWeb').checked = false; $('#aiWeb').disabled = true; } }).catch(() => {});
     // 생성하면서 조건 재검증까지: 기본 켜짐, 마지막 선택을 기억
     $('#aiAutoVerify').checked = localStorage.getItem('aiAutoVerify') !== '0';
     $('#aiAutoVerify').onchange = (e) => localStorage.setItem('aiAutoVerify', e.target.checked ? '1' : '0');
@@ -687,6 +691,7 @@
     $('#aiPlanBody').innerHTML = `<div><b>검색 의도</b> ${esc(p.intent || '-')}</div>${p.audience ? `<div><b>타깃</b> ${esc(p.audience)}</div>` : ''}
       <div><b>각도</b> ${(p.angles || []).map((x) => `<span class="chip">${esc(x)}</span>`).join(' ')}</div>
       <div><b>씨앗 단어</b> ${(p.seeds || []).map(esc).join(', ')}</div>${(p.avoid || []).length ? `<div><b>피할 것</b> ${p.avoid.map(esc).join(', ')}</div>` : ''}
+      ${(p.webFindings || []).length ? `<div><b>웹 조사</b> <span class="muted">${esc(p.webBy || '')}</span><ul style="margin:4px 0 0 18px;padding:0">${p.webFindings.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>${(p.webSources || []).length ? `<div class="muted" style="font-size:12px">출처: ${p.webSources.map((u, i) => `<a class="ext" target="_blank" rel="noopener" href="${esc(u)}">${i + 1}</a>`).join(' ')}</div>` : ''}</div>` : ''}
       ${p.data ? `<div class="muted">실제 검색 데이터: 키워드 도구 ${p.data.kt.toLocaleString('ko-KR')}개 · 자동완성·관련 검색어 ${p.data.sug.toLocaleString('ko-KR')}개를 모아 AI에 보여줌</div>` : ''}`;
   }
   // 생성: ① AI가 브리프 해석(탐색 계획·씨앗 단어) → ② 분석기가 씨앗으로 네이버 실제 검색 데이터 서칭 → ③ AI가 그 안에서 고르고 빈 각도 채움 → 검색량 → 재검증
@@ -708,6 +713,7 @@
     save();
     const auto = $('#aiAutoVerify').checked;
     const useData = $('#aiSeed').checked;
+    const useWeb = $('#aiWeb').checked && !$('#aiWeb').disabled;
     const P = progress($('#aiProg'), Number(form.count), '키워드 작성 중');
     const ctrl = new AbortController();
     const holder = {};
@@ -716,25 +722,35 @@
     const isAbort = (e) => stopped || e.name === 'AbortError';
     try {
       // ① 브리프 해석 ("이어서 더 생성"은 이미 세운 계획을 다시 씀)
-      let plan = more && AI.cur.plan ? AI.cur.plan : null, planFail = '';
+      let plan = more && AI.cur.plan ? AI.cur.plan : null, planFail = '', web = null, webFail = '';
+      // ⓪ 웹 조사 (선택)
+      if (!plan && useWeb) {
+        P.stage(0, 16, 1, '웹 조사');
+        P.phase('AI가 웹에서 브리프 주제를 조사하는 중 (1~3분)', 20);
+        try { web = await postJson('/api/ai/web-research', { brief: form.topic, refs }, ctrl.signal); }
+        catch (e) { if (isAbort(e)) throw e; webFail = e.message; }
+      }
       if (!plan) {
-        P.stage(0, 10, 1, '브리프 해석');
+        P.stage(useWeb ? 16 : 0, useWeb ? 22 : 10, 1, '브리프 해석');
         P.phase('AI가 브리프를 읽고 탐색 계획을 세우는 중', 30);
-        try { plan = await postJson('/api/ai/plan', { brief: form.topic, refs, refMode }, ctrl.signal); AI.cur.plan = plan; save(); drawPlan(); }
-        catch (e) { if (isAbort(e)) throw e; planFail = e.message; }
+        try {
+          plan = await postJson('/api/ai/plan', { brief: form.topic, refs, refMode, web: web ? { findings: web.findings, terms: web.terms } : null }, ctrl.signal);
+          if (web) Object.assign(plan, { webFindings: web.findings, webSources: web.sources, webBy: web.by, webTerms: web.terms });
+          AI.cur.plan = plan; save(); drawPlan();
+        } catch (e) { if (isAbort(e)) throw e; planFail = e.message; }
       }
       // ② 실제 검색 데이터 서칭
       let data = null, dataFail = '';
       if (useData) {
-        P.stage(10, 22, 1, '서칭');
+        P.stage(useWeb ? 22 : 10, useWeb ? 32 : 22, 1, '서칭');
         P.phase('씨앗 단어로 네이버 실제 검색 데이터 모으는 중 (키워드 도구 · 자동완성 · 관련 검색어)', 30);
-        const words = plan?.seeds?.length ? plan.seeds : [...new Set([...form.topic.split(/[\s,./]+/).filter((w) => w.length >= 2), ...refs])].slice(0, 15);
+        const words = plan?.seeds?.length ? [...new Set([...plan.seeds, ...(plan.webTerms || []).slice(0, 5)])].slice(0, 25) : [...new Set([...form.topic.split(/[\s,./]+/).filter((w) => w.length >= 2), ...refs])].slice(0, 15);
         try { data = await postJson('/api/ai/research', { seeds: words, refs }, ctrl.signal); if (plan) { plan.data = { kt: data.list.length, sug: data.suggest.length }; drawPlan(); } }
         catch (e) { if (isAbort(e)) throw e; dataFail = e.message; }
       }
       // ③ 발굴
-      P.stage(useData ? 22 : 10, auto ? 60 : 100, Number(form.count), '키워드 작성 중');
-      const j = await streamPost('/api/ai/generate-stream', { topic: form.topic, examples: refs, refMode, plan: plan ? { intent: plan.intent, audience: plan.audience, angles: plan.angles, avoid: plan.avoid } : null, count: Number(form.count), avoid, existing, rejected, minLen: form.minLen, maxLen: form.maxLen, seeds: (data?.list || []).slice(0, 300).map((x) => ({ keyword: x.keyword, total: x.total })), suggest: (data?.suggest || []).slice(0, 200).map((x) => ({ keyword: x.keyword, total: x.total })) }, (ev) => P.event(ev), ctrl.signal, holder);
+      P.stage(useData ? (useWeb ? 32 : 22) : (useWeb ? 22 : 10), auto ? 60 : 100, Number(form.count), '키워드 작성 중');
+      const j = await streamPost('/api/ai/generate-stream', { topic: form.topic, examples: refs, refMode, plan: plan ? { intent: plan.intent, audience: plan.audience, angles: plan.angles, avoid: plan.avoid, web: plan.webFindings || [] } : null, count: Number(form.count), avoid, existing, rejected, minLen: form.minLen, maxLen: form.maxLen, seeds: (data?.list || []).slice(0, 300).map((x) => ({ keyword: x.keyword, total: x.total })), suggest: (data?.suggest || []).slice(0, 200).map((x) => ({ keyword: x.keyword, total: x.total })) }, (ev) => P.event(ev), ctrl.signal, holder);
       const exN = new Set(refs.map(norm));
       const inLen = j.items.filter((x) => { const L = charLen(x.keyword); return L >= form.minLen && L <= form.maxLen; });
       const outLen = j.items.length - inLen.length;
@@ -767,7 +783,7 @@
         vr = await verify({ items: AI.items.filter((it) => fresh.has(it.keyword)), P, stop });
       }
       P.finish(vr?.stopped ? '중지했어요' : `완료 · ${r.added}개 추가 (실제 검색 데이터 ${nData + nSug} · AI 새 표현 ${r.added - nData - nSug})${vr && !vr.error ? ` · 재검증 적합 ${vr.pass} · 부적합 ${vr.fail}` : ''}`, vr?.stopped ? 'stop' : undefined);
-      const head = [planFail ? `브리프 해석 실패(${planFail}) → 브리프 단어로 진행` : '', useData ? (dataFail ? `서칭 실패(${dataFail}) → AI만으로 생성` : data ? `씨앗 ${data.seeds.length}개로 실제 검색 데이터 ${(data.list.length + data.suggest.length).toLocaleString('ko-KR')}개를 모아 AI에 보여줌` : '') : ''].filter(Boolean).join(' · ');
+      const head = [webFail ? `웹 조사 실패(${webFail}) → 웹 없이 진행` : web ? `${web.by}가 웹 조사 (사실 ${web.findings.length}개 · 표현 ${web.terms.length}개)` : '', planFail ? `브리프 해석 실패(${planFail}) → 브리프 단어로 진행` : '', useData ? (dataFail ? `서칭 실패(${dataFail}) → AI만으로 생성` : data ? `씨앗 ${data.seeds.length}개로 실제 검색 데이터 ${(data.list.length + data.suggest.length).toLocaleString('ko-KR')}개를 모아 AI에 보여줌` : '') : ''].filter(Boolean).join(' · ');
       msg(`${head ? head + ' · ' : ''}AI ${j.items.length}개 받음 → ${r.added}개 추가 (실제 검색 데이터에 있던 것 ${nData + nSug}개)${outLen ? `, 글자 수 범위 밖 ${outLen}개 제외` : ''}${rejN ? `, 제외 목록과 같은 ${rejN}개 제외` : ''}${sameN ? `, 기존 키워드와 동일한 ${sameN}개 제외` : ''}${dupEx ? `, 참고 키워드·결과와 겹친 ${dupEx}개 제외` : ''}${existing.length ? ` · 기존 키워드 ${existing.length.toLocaleString('ko-KR')}개를 AI에 알려줌` : ''}${j.fallback ? ` (선택한 모델이 바빠서 ${j.model}(으)로 대신 생성)` : ''}${volFail ? ` · 검색량 조회 실패: ${volFail}` : ''}${!AI.hasAd ? ' · 검색량은 검색광고 API 키를 넣으면 자동으로 붙어요' : ''}${vr ? (vr.error ? ` · 조건 재검증 실패: ${vr.error}` : vr.stopped ? ' · 조건 재검증은 중지했어요' : ` · 조건 재검증: 적합 ${vr.pass} · 부적합 ${vr.fail}`) : ''}`);
     } catch (e) {
       const aborted = isAbort(e);
