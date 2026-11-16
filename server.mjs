@@ -1075,6 +1075,51 @@ async function aiSemantic({ pairs = [] }) {
   return (Array.isArray(arr) ? arr : []).map((x) => ({ candidate: String(x.candidate || ''), duplicateOf: String(x.duplicateOf || ''), reason: String(x.reason || '') }));
 }
 
+// 의미 중복 후보 찾기: Gemini 임베딩으로 후보마다 뜻이 가장 가까운 기존 키워드를 찾음 (최종 판단은 aiSemantic)
+// 글자가 달라도 뜻이 비슷한 것(싼곳/저렴한곳)까지 후보로 잡기 위함. 벡터는 메모리에만 보관
+const EMB = new Map();
+const EMB_MODEL = 'gemini-embedding-2';
+async function embedAll(texts) {
+  const need = [...new Set(texts)].filter((t) => !EMB.has(t));
+  for (let i = 0; i < need.length; i += 100) {
+    const part = need.slice(i, i + 100);
+    let res, j;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${EMB_MODEL}:batchEmbedContents`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': config.geminiKey },
+        body: JSON.stringify({ requests: part.map((t) => ({ model: 'models/' + EMB_MODEL, content: { parts: [{ text: t }] }, taskType: 'SEMANTIC_SIMILARITY', outputDimensionality: 768 })) }),
+      });
+      j = await res.json().catch(() => ({}));
+      if (res.status === 429 || res.status === 503) { await sleep(3000 * (attempt + 1)); continue; }
+      break;
+    }
+    if (!res.ok) throw new Error(`Gemini 임베딩 오류 ${res.status}: ${String(j.error?.message || '').slice(0, 160)}`);
+    part.forEach((t, k) => { const v = j.embeddings?.[k]?.values; if (v) { let n = 0; for (const x of v) n += x * x; n = Math.sqrt(n) || 1; EMB.set(t, Float32Array.from(v, (x) => x / n)); } });
+    if (EMB.size > 60000) EMB.clear();
+  }
+}
+async function embedNear({ candidates = [], existing = [], min = 0.85, top = 5 }) {
+  if (!hasGemini()) throw new Error('Gemini API 키가 없어 임베딩을 쓸 수 없어요');
+  const C = [...new Set(candidates.map(String).filter(Boolean))].slice(0, 1500);
+  const E = [...new Set(existing.map(String).filter(Boolean))].slice(0, 6000);
+  if (!C.length || !E.length) return { near: {} };
+  await embedAll([...C, ...E]);
+  const near = {};
+  for (const c of C) {
+    const v = EMB.get(c); if (!v) continue;
+    const best = [];
+    for (const e of E) {
+      if (e === c) continue;
+      const w = EMB.get(e); if (!w) continue;
+      let d = 0; for (let i = 0; i < v.length; i++) d += v[i] * w[i];
+      if (d >= min) best.push([e, +d.toFixed(3)]);
+    }
+    best.sort((x, y) => y[1] - x[1]);
+    if (best.length) near[c] = best.slice(0, top);
+  }
+  return { near, model: EMB_MODEL };
+}
+
 // 키워드 여러 개의 검색량 (검색광고 API, 5개씩)
 async function volumes(keywords) {
   if (!hasAd()) throw new Error('검색광고 API 키가 없어 검색량을 붙일 수 없어요');
@@ -1440,6 +1485,7 @@ const server = http.createServer(async (req, res) => {
           catch (e) { if (!ac.signal.aborted) emit('error', { message: e.message }); }
           return res.end();
         }
+        if (u.pathname === '/api/ai/embed-near') return send(res, 200, await embedNear(b));
         if (u.pathname === '/api/ai/semantic') return send(res, 200, { results: await aiSemantic(b) });
         if (u.pathname === '/api/ai/verify') return send(res, 200, await aiVerify(b));
         if (u.pathname === '/api/volumes') return send(res, 200, { volumes: await volumes(b.keywords || []) });

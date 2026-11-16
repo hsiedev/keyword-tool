@@ -1051,22 +1051,35 @@
   }
 
   async function semanticCheck() {
-    const targets = AI.items.filter((it) => (it.status === '신규' || it.status === '유사') && it.sim && it.sim.length);
     if (!activeSources().length) return alert('이 탭에서 켜 둔 ② 기존 키워드 목록이 없어요. 목록을 불러오거나 체크를 켜 주세요.');
-    if (!targets.length) return alert('비교할 만큼 비슷한 기존 키워드가 있는 후보가 없어요.');
-    const sent = new Set(targets.flatMap((t) => t.sim));
-    if (!await uiConfirm(`후보 ${targets.length}개와, 각 후보와 글자가 비슷한 기존 키워드 ${sent.size}개만 AI로 보내 의미가 같은지 판단해요. 진행할까요?`)) return;
+    const pool = AI.items.filter((it) => it.status === '신규' || it.status === '유사');
+    if (!pool.length) return alert('검사할 후보(신규·유사)가 없어요.');
     const btn = $('#aiSem'); btn.disabled = true;
+    // 1) 임베딩(Gemini API 키가 있을 때): 글자가 달라도 뜻이 가까운 기존 키워드를 후보마다 최대 5개 찾음 (유사도 0.85 이상)
+    let embInfo = '';
+    btn.textContent = '뜻이 가까운 기존 키워드 찾는 중...';
+    try {
+      const ej = await (await fetch('/api/ai/embed-near', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ candidates: pool.map((t) => t.keyword), existing: existingList() }) })).json();
+      if (ej.error) throw new Error(ej.error);
+      let added = 0;
+      for (const it of pool) { const nr = (ej.near?.[it.keyword] || []).map((x) => x[0]); const extra = nr.filter((k) => !(it.sim || []).some((s) => norm(s) === norm(k))); added += extra.length; it.semNear = nr; }
+      embInfo = ` (임베딩으로 뜻이 가까운 기존 키워드 ${added}개를 더 찾음)`;
+    } catch (e) { embInfo = ` (임베딩 못 씀: ${e.message} → 글자가 비슷한 것만 비교)`; pool.forEach((it) => (it.semNear = [])); }
+    const listOf = (it) => [...new Set([...(it.semNear || []), ...(it.sim || [])])];
+    const targets = pool.filter((it) => listOf(it).length);
+    if (!targets.length) { btn.disabled = false; btn.textContent = '의미 중복 검사'; return alert('비교할 만큼 가까운 기존 키워드가 있는 후보가 없어요.' + embInfo); }
+    const sent = new Set(targets.flatMap((t) => listOf(t).slice(0, 5)));
+    if (!await uiConfirm(`후보 ${targets.length}개와, 각 후보와 가까운 기존 키워드 ${sent.size}개만 AI로 보내 의미가 같은지 판단해요${embInfo}. 진행할까요?`, { ok: '진행', danger: false })) { btn.disabled = false; btn.textContent = '의미 중복 검사'; return; }
     try {
       for (let i = 0; i < targets.length; i += 100) {
         btn.textContent = `AI 판단 중 ${i}/${targets.length}`;
         const part = targets.slice(i, i + 100);
-        const j = await (await fetch('/api/ai/semantic', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pairs: part.map((t) => ({ candidate: t.keyword, existing: t.sim })) }) })).json();
+        const j = await (await fetch('/api/ai/semantic', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pairs: part.map((t) => ({ candidate: t.keyword, existing: listOf(t).slice(0, 5) })) }) })).json();
         if (j.error) throw new Error(j.error);
         for (const r of j.results) {
           const it = part.find((t) => norm(t.keyword) === norm(r.candidate));
           if (!it) continue;
-          const dup = r.duplicateOf && it.sim.find((s) => norm(s) === norm(r.duplicateOf));
+          const dup = r.duplicateOf && listOf(it).find((s) => norm(s) === norm(r.duplicateOf));
           it.sem = { checked: true, dup: dup || '', reason: r.reason };
           if (dup) { it.status = '의미 중복'; it.kind = 'AI 판단: ' + (r.reason || '의미가 같음'); it.match = dup; }
         }
