@@ -732,7 +732,7 @@
       }
       // ③ 발굴
       P.stage(useData ? 22 : 10, auto ? 60 : 100, Number(form.count), '키워드 작성 중');
-      const j = await streamPost('/api/ai/generate-stream', { topic: form.topic, examples: refs, refMode, plan: plan ? { intent: plan.intent, audience: plan.audience, angles: plan.angles, avoid: plan.avoid } : null, count: Number(form.count), avoid, existing, rejected, minLen: form.minLen, maxLen: form.maxLen, seeds: (data?.list || []).slice(0, 300).map((x) => ({ keyword: x.keyword, total: x.total })), suggest: (data?.suggest || []).slice(0, 200).map((x) => x.keyword) }, (ev) => P.event(ev), ctrl.signal, holder);
+      const j = await streamPost('/api/ai/generate-stream', { topic: form.topic, examples: refs, refMode, plan: plan ? { intent: plan.intent, audience: plan.audience, angles: plan.angles, avoid: plan.avoid } : null, count: Number(form.count), avoid, existing, rejected, minLen: form.minLen, maxLen: form.maxLen, seeds: (data?.list || []).slice(0, 300).map((x) => ({ keyword: x.keyword, total: x.total })), suggest: (data?.suggest || []).slice(0, 200).map((x) => ({ keyword: x.keyword, total: x.total })) }, (ev) => P.event(ev), ctrl.signal, holder);
       const exN = new Set(refs.map(norm));
       const inLen = j.items.filter((x) => { const L = charLen(x.keyword); return L >= form.minLen && L <= form.maxLen; });
       const outLen = j.items.length - inLen.length;
@@ -745,8 +745,8 @@
       const got = notSame.filter((x) => !exN.has(norm(x.keyword)));
       // 실제 검색 데이터에 있던 키워드는 출처를 표시하고 검색량을 바로 붙임
       const dmap = new Map((data?.list || []).map((x) => [norm(x.keyword), x]));
-      const smap = new Set((data?.suggest || []).map((x) => norm(x.keyword)));
-      const r = addItems(got.map((x) => { const dd = dmap.get(norm(x.keyword)); return dd ? { ...x, source: '검색데이터', vol: { pc: dd.pc, mo: dd.mo, total: dd.total, comp: dd.comp, pcLow: dd.pcLow, moLow: dd.moLow } } : { ...x, source: smap.has(norm(x.keyword)) ? '자동완성' : 'AI' }; }));
+      const smap = new Map((data?.suggest || []).map((x) => [norm(x.keyword), x]));
+      const r = addItems(got.map((x) => { const dd = dmap.get(norm(x.keyword)); return dd ? { ...x, source: '검색데이터', vol: { pc: dd.pc, mo: dd.mo, total: dd.total, comp: dd.comp, pcLow: dd.pcLow, moLow: dd.moLow } } : smap.has(norm(x.keyword)) ? (() => { const sx = smap.get(norm(x.keyword)); return { ...x, source: '자동완성', vol: sx.total != null ? (sx.notFound ? { pc: 0, mo: 0, total: 0, comp: '-', notFound: true } : { pc: sx.pc, mo: sx.mo, total: sx.total, comp: sx.comp, pcLow: sx.pcLow, moLow: sx.moLow }) : null }; })() : { ...x, source: 'AI' }; }));
       const dupEx = notSame.length - got.length + r.dropped;
       const fresh = new Set(r.keys);
       const nData = AI.items.filter((it) => fresh.has(it.keyword) && it.source === '검색데이터').length;
