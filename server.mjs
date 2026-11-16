@@ -870,8 +870,17 @@ async function geminiModels() {
 }
 
 const INTENTS = ['정보', '비교', '가입·구매', '후기', '세분화', '기타'];
-function generateRequest({ topic = '', examples = [], count = 50, extra = '', avoid = [], existing = [], rejected = [], minLen = 2, maxLen = 30, seeds = [], refMode = 'ref', plan = null, suggest = [] }) {
-  const brief = String(topic || '').trim() + (extra ? '\n' + String(extra).trim() : '');
+// 브리프 + 포함할 것(Positive) + 제외할 것(Negative)
+const pnList = (x) => (Array.isArray(x) ? x : String(x || '').split(/[\n,]+/)).map((v) => String(v).trim()).filter(Boolean).slice(0, 40);
+function withPN(brief, pos, neg) {
+  const P = pnList(pos), N = pnList(neg);
+  return [String(brief || '').trim(),
+    P.length ? `\n[포함할 것 · Positive] 결과는 이 방향·단어·대상을 적극 다뤄야 한다:\n${P.map((x) => '- ' + x).join('\n')}` : '',
+    N.length ? `\n[제외할 것 · Negative] 이 단어가 들어가거나 이 방향·대상·의도에 해당하면 절대 안 된다 (어기면 부적합):\n${N.map((x) => '- ' + x).join('\n')}` : '',
+  ].filter(Boolean).join('\n');
+}
+function generateRequest({ topic = '', examples = [], count = 50, extra = '', avoid = [], existing = [], rejected = [], minLen = 2, maxLen = 30, seeds = [], refMode = 'ref', plan = null, suggest = [], pos = [], neg = [] }) {
+  const brief = withPN(String(topic || '').trim() + (extra ? '\n' + String(extra).trim() : ''), pos, neg);
   const sug = (Array.isArray(suggest) ? suggest : []).map((x) => ({ keyword: String(x?.keyword ?? x ?? '').replace(/\s+/g, ''), total: x?.total })).filter((x) => x.keyword).slice(0, 200);
   const pl = plan && typeof plan === 'object' ? plan : null;
   // 네이버 키워드 도구 연관 키워드 (실제 검색량): AI가 이걸 바탕으로 넓힘
@@ -1062,7 +1071,7 @@ function verifyRequest({ conditions = {}, keywords = [], minVol = 0 }) {
   const c = conditions;
   const prompt = [
     '너는 검색 키워드 검수자다. 아래 조건을 기준으로 각 키워드가 적합한지 엄격하게 판정해줘.',
-    c.brief ? `브리프 (사용자가 쓴 의뢰: 목적·타깃·조건):\n"""\n${String(c.topic || '').slice(0, 3000)}\n"""` : `주제: ${c.topic || '(없음)'}`,
+    c.brief ? `브리프 (사용자가 쓴 의뢰: 목적·타깃·조건):\n"""\n${withPN(String(c.topic || '').slice(0, 3000), c.pos, c.neg)}\n"""` : `주제: ${c.topic || '(없음)'}`,
     c.brief && !(c.examples || []).length ? '' : `${c.brief ? '참고 키워드 (이 결이어야 함)' : '예시 키워드'}: ${(c.examples || []).join(', ') || '(없음)'}`,
     `요청 사항 (사용자가 자유롭게 쓴 지시): ${c.extra ? `\n"""\n${String(c.extra).slice(0, 2000)}\n"""` : '(없음)'}`,
     '',
@@ -1187,7 +1196,8 @@ function webProvider() {
   if ((cur === 'claude' || cur === 'codex') && cliPath(cur, config)) return cur;
   return ['claude', 'codex'].find((p) => cliPath(p, config)) || null;
 }
-async function aiWebResearch({ brief = '', refs = [] }, signal) {
+async function aiWebResearch({ brief = '', refs = [], pos = [], neg = [] }, signal) {
+  brief = withPN(brief, pos, neg);
   const p = webProvider();
   if (!p) throw new Error('웹 검색이 되는 로그인형 AI(Claude 또는 GPT)가 설치돼 있지 않아요 (설정 > API 설정 > AI 모델)');
   const b = String(brief || '').trim().slice(0, 3000);
@@ -1219,7 +1229,8 @@ async function aiWebResearch({ brief = '', refs = [] }, signal) {
 }
 
 // 브리프 해석: 목적·타깃·각도를 정하고, 실제 검색 데이터를 모을 씨앗 단어를 뽑음 (AI 한 번)
-async function aiPlan({ brief = '', refs = [], refMode = 'ref', web = null }) {
+async function aiPlan({ brief = '', refs = [], refMode = 'ref', web = null, pos = [], neg = [] }) {
+  brief = withPN(brief, pos, neg);
   const b = String(brief || '').trim().slice(0, 3000);
   const rf = (Array.isArray(refs) ? refs : []).map(String).filter(Boolean).slice(0, 30);
   if (!b && !rf.length) throw new Error('브리프를 넣어주세요');

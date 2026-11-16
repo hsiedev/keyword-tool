@@ -361,6 +361,8 @@ await test('브리프 생성: 씨앗마다 키워드 도구 조회 후 번갈아
   const p = globalThis.__lastPrompt;
   for (const t of ['[브리프]', '보험사 이름은 빼 줘', '[탐색 계획]', '다룰 각도: 가격 / 보장', '방향만 참고', '운전자보험비교(2720)', '운전자보험필요성(400)', '발굴 순서']) ok(p.includes(t), '요청문에 ' + t);
   ok(!p.includes('예시 키워드와 같은 결'), '예시 쏠림 규칙 없음');
+  await sse('/api/ai/generate-stream', { topic: '카드 발급', pos: ['캐시백'], neg: ['해지', '고객센터'], count: 10 });
+  ok(globalThis.__lastPrompt.includes('[포함할 것 · Positive]') && globalThis.__lastPrompt.includes('- 캐시백') && globalThis.__lastPrompt.includes('[제외할 것 · Negative]') && globalThis.__lastPrompt.includes('- 고객센터'), 'Positive/Negative 블록');
 });
 // ---------------------------------------------------------------- 결과
 console.log('\n키워드 분석기 자동 테스트\n' + results.join('\n'));

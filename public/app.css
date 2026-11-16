@@ -536,3 +536,9 @@ table th.rn,table td.rn{width:38px;min-width:38px;text-align:right!important;col
 #toTop.show{opacity:.75;transform:none;pointer-events:auto}
 #toTop:hover{opacity:1;color:var(--foreground)}
 @media print{#toTop{display:none}}
+
+/* 브리프 Positive / Negative (ai.js) */
+.pn-l{display:block;font-weight:600;margin-bottom:4px}
+.pn-l.pos{color:#15803d}.pn-l.neg{color:#b91c1c}
+html.dark .pn-l.pos{color:#4ade80}html.dark .pn-l.neg{color:#f87171}
+.pn-l .muted{font-weight:400;color:var(--muted-fg)}
