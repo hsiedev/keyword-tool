@@ -875,7 +875,7 @@ const pnList = (x) => (Array.isArray(x) ? x : String(x || '').split(/[\n,]+/)).m
 function withPN(brief, pos, neg) {
   const P = pnList(pos), N = pnList(neg);
   return [String(brief || '').trim(),
-    P.length ? `\n[포함할 것 · Positive] 결과는 이 방향·단어·대상을 적극 다뤄야 한다:\n${P.map((x) => '- ' + x).join('\n')}` : '',
+    P.length ? `\n[포함할 것 · Positive] 결과 전체에서 이 방향·단어·대상을 적극 다뤄야 한다. 키워드 하나하나가 이 단어를 모두 포함할 필요는 없고, 하나도 안 들어갔다는 이유로 부적합 처리하지 않는다. 브랜드·주제어가 없는 일반 키워드라도 여기에 해당하고 브리프 목적에 맞으면 허용한다:\n${P.map((x) => '- ' + x).join('\n')}` : '',
     N.length ? `\n[제외할 것 · Negative] 이 단어가 들어가거나 이 방향·대상·의도에 해당하면 절대 안 된다 (어기면 부적합):\n${N.map((x) => '- ' + x).join('\n')}` : '',
   ].filter(Boolean).join('\n');
 }
