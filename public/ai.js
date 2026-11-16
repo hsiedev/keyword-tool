@@ -369,21 +369,21 @@
             <div class="toolbar" style="margin-top:10px">
               <input id="aiManual" placeholder="후보 직접 추가 (쉼표로 구분)" style="flex:1;min-width:180px">
               <button class="btn" id="aiManualAdd">추가</button>
-              <span class="tb-sep"></span>
-              <button class="btn" id="aiMixBtn" title="AI 판정이 엇갈린 키워드를 적합/부적합/보류로 직접 정해요">엇갈림 정리</button>
-              <button class="btn danger-btn" id="aiSelBad">부적합 선택</button>
-              <button class="btn" id="aiRejSel" title="체크한 키워드를 결과에서 빼고 이 탭의 제외 목록에 넣어요. 다음 생성부터 다시 나오지 않아요.">체크한 키워드 제외</button>
-              <button class="btn" id="aiDel2">체크한 키워드 삭제</button>
-              <span style="flex-basis:100%;height:0"></span><span style="flex:1"></span>
-              <button class="btn" id="aiVol">검색량 붙이기</button>
-              <button class="btn" id="aiSem">의미 중복 검사</button>
-              <button class="btn" id="aiGroup" title="체크한 키워드(없으면 지금 표에 보이는 키워드)를 AI가 광고그룹으로 묶어요. 표의 '광고그룹' 열에 들어가요">광고그룹 묶기</button>
-              <button class="btn" id="aiDel">선택 삭제</button>
+              <span style="flex:1"></span>
+              <button class="btn hidden" id="aiDel">선택 삭제</button>
               <button class="btn" id="aiClear">결과 비우기</button>
               <button class="btn pri" id="aiXlsx">엑셀 다운로드</button>
               <button class="btn" id="aiTxt" title="지금 필터에 맞는 키워드만, 한 줄에 하나씩">TXT</button>
             </div>
             <div class="tbl-wrap" style="max-height:680px"><table class="rel" id="aiTbl"></table></div>
+            <div class="act-bar" id="aiActBar">
+              <span class="act-cnt" id="aiActCnt">체크한 키워드 없음</span>
+              <button class="btn" id="aiMixBtn" title="AI 판정이 엇갈린 키워드를 적합/부적합/보류로 직접 정해요">엇갈림 정리</button>
+              <button class="btn act-bad" id="aiSelBad" title="한 번도 적합 판정을 못 받은 키워드를 모두 체크해요">부적합 선택</button>
+              <span class="act-sep"></span>
+              <button class="btn" id="aiRejSel" title="체크한 키워드를 결과에서 빼고 이 탭의 제외 목록에 넣어요. 다음 생성부터 다시 나오지 않아요.">체크한 키워드 제외</button>
+              <button class="btn act-del" id="aiDel2">체크한 키워드 삭제</button>
+            </div>
             <details class="rej" id="aiRejBox"><summary id="aiRejSum"></summary><div id="aiRej"></div></details>
             <div class="muted" style="margin-top:8px;line-height:1.7">
               <b>중복</b>: 띄어쓰기·대소문자·기호만 다르거나 어순만 다른 경우 &nbsp;|&nbsp; <b>유사</b>: 기존 키워드를 포함하거나, 포함되거나, 1글자만 다른 경우 &nbsp;|&nbsp;
@@ -427,9 +427,6 @@
       msg(`${r.added}개 추가${r.dropped ? `, 결과 안에서 겹친 ${r.dropped}개 제외` : ''}`);
       if (AI.hasAd && r.keys.length) await attachVolumes(r.keys);
     };
-    $('#aiVol').onclick = () => attachVolumes();
-    $('#aiSem').onclick = semanticCheck;
-    $('#aiGroup').onclick = groupKeywords;
     $('#aiVerify').onclick = verify;
     $('#aiVReset').onclick = async () => { if (await uiConfirm('이 탭의 재검증 기록과 직접 판정을 모두 지울까요?')) { AI.items.forEach((it) => { delete it.checks; delete it.decision; }); save(); draw(); } };
     $('#aiMixBtn').onclick = () => openMixed(false);
@@ -632,8 +629,6 @@
       if (c.hasAI && !MODEL_LISTS[p]) loadModels(false, p).then(() => fillModelSelect(sel, AICFG.models[p])).catch(() => {});
       $$('.ai-name').forEach((el) => (el.textContent = AI.aiName));
       AI.hasAd = !!c.hasAd;
-      $('#aiVol').disabled = !c.hasAd;
-      $('#aiVol').title = c.hasAd ? '' : '검색광고 API 키가 필요해요';
       draw();
     } catch {}
   }
@@ -1067,7 +1062,7 @@
     if (!AI.hasAd) { if (!keys) alert('검색량은 API 설정에서 검색광고 API 키를 넣으면 볼 수 있어요.'); return; }
     const todo = keys || AI.items.filter((it) => !it.vol || it.vol.error).map((it) => it.keyword);
     if (!todo.length) { if (!keys) msg('모든 키워드에 검색량이 붙어 있어요'); return; }
-    const btn = $('#aiVol'); btn.disabled = true;
+    const btn = $('#aiVol') || {}; btn.disabled = true;
     const sess = AI.cur;
     const prevBusy = AI.busy;
     AI.busy = AI.busy || '검색량 조회';
@@ -1154,8 +1149,16 @@
     finally { btn.disabled = false; btn.textContent = '광고그룹 묶기'; }
   }
 
+  function actCount() {
+    const el = $('#aiActCnt'); if (!el) return;
+    const n = AI.items.filter((it) => it._sel).length;
+    el.textContent = n ? `${n.toLocaleString('ko-KR')}개 체크됨` : '체크한 키워드 없음';
+    $('#aiActBar').classList.toggle('has-sel', n > 0);
+    $('#aiActBar').classList.toggle('hidden', !AI.items.length);
+  }
+  document.addEventListener('change', (e) => { if (e.target.closest?.('#aiTbl')) setTimeout(actCount, 0); });
   // ---------------------------------------------------------------- 표
-  const COLS = [['keyword', '키워드', 'l'], ['status', '중복 상태', 'l'], ['verify', '조건 검증', 'l'], ['adGroup', '광고그룹', 'l'], ['match', '겹치는 기존 키워드', 'l'], ['intent', '의도', 'l'], ['reason', '이유', 'l'], ['total', '월간 검색량'], ['pc', 'PC'], ['mo', 'Mobile'], ['comp', '경쟁']];
+  const COLS = [['keyword', '키워드', 'l'], ['status', '중복 상태', 'l'], ['verify', '조건 검증', 'l'], ['match', '겹치는 기존 키워드', 'l'], ['intent', '의도', 'l'], ['reason', '이유', 'l'], ['total', '월간 검색량'], ['pc', 'PC'], ['mo', 'Mobile'], ['comp', '경쟁']];
   const val = (it, k) => {
     if (k === 'total') return it.vol && !it.vol.error ? (it.vol.notFound ? -0.5 : volLB(it.vol)) : undefined;
     if (['pc', 'mo', 'comp'].includes(k)) return it.vol?.[k];
@@ -1203,18 +1206,18 @@
         <td class="l kwc"><a href="#" data-go="${esc(it.keyword)}">${esc(it.keyword)}</a>${it.source && it.source !== 'AI' ? ` <span class="muted" title="${it.source === '검색데이터' ? '네이버 키워드 도구에 실제로 있는 키워드' : it.source === '자동완성' ? '네이버·구글 자동완성/관련 검색어에 실제로 나온 키워드' : ''}">(${esc(it.source)})</span>` : ''}</td>
         <td class="l"><span class="st" data-s="${esc(it.status)}">${esc(it.status)}</span>${it.kind ? `<div class="muted" style="font-size:11px">${esc(it.kind)}</div>` : ''}</td>
         <td class="l" style="min-width:150px">${verifyCell(it, form)}</td>
-        <td class="l">${esc(it.adGroup || '')}</td>
         <td class="l">${esc(it.match || '')}</td>
         <td class="l">${esc(it.intent || '')}</td>
         <td class="l muted" style="white-space:normal;min-width:110px">${esc(it.reason || '')}</td>
         <td>${vcell(it, 'total')}</td><td class="pc">${vcell(it, 'pc')}</td><td class="mo">${vcell(it, 'mo')}</td><td>${vcell(it, 'comp')}</td>
         <td><a href="#" class="muted" data-x="${esc(it.keyword)}" title="삭제" style="text-decoration:none">✕</a></td></tr>`).join('') ||
-        `<tr><td colspan="13" class="l muted" style="padding:24px">${AI.items.length ? '이 조건에 맞는 키워드가 없어요' : '① 에서 주제와 예시를 넣고 "키워드 생성"을 누르세요. 다른 주제는 왼쪽 "+ 새 탭"에서 시작하면 주제별로 따로 저장돼요.'}</td></tr>`}</tbody>`;
+        `<tr><td colspan="12" class="l muted" style="padding:24px">${AI.items.length ? '이 조건에 맞는 키워드가 없어요' : '① 에서 주제와 예시를 넣고 "키워드 생성"을 누르세요. 다른 주제는 왼쪽 "+ 새 탭"에서 시작하면 주제별로 따로 저장돼요.'}</td></tr>`}</tbody>`;
     $$('#aiTbl th[data-k]').forEach((th) => (th.onclick = () => { const k = th.dataset.k; AI.sort = { key: k, dir: AI.sort.key === k ? -AI.sort.dir : ['total', 'pc', 'mo', 'verify'].includes(k) ? -1 : 1 }; draw(); }));
     const syncAll = () => {
       const n = rows.filter((it) => it._sel).length, cb = $('#aiAll');
       cb.checked = !!rows.length && n === rows.length;
       cb.indeterminate = n > 0 && n < rows.length;
+      actCount();
     };
     $$('#aiTbl [data-sel]').forEach((c) => (c.onchange = () => { const it = AI.items.find((x) => x.keyword === c.dataset.sel); if (it) it._sel = c.checked; syncAll(); }));
     $('#aiAll').onchange = () => { const on = !(rows.length && rows.every((it) => it._sel)); rows.forEach((it) => (it._sel = on)); draw(); };
@@ -1253,13 +1256,13 @@
   function exportXlsx() {
     if (!AI.items.length) return alert('내보낼 결과가 없어요');
     const rows = viewRows();
-    const head = ['키워드', '광고그룹', '글자 수', '중복 상태', '구분', '겹치는 기존 키워드', '조건 검증', '적합 횟수', '검증 횟수', '마지막 판정 사유', '의도', '이유', '출처', '월간 검색량', 'PC', 'Mobile', '경쟁 정도'];
+    const head = ['키워드', '글자 수', '중복 상태', '구분', '겹치는 기존 키워드', '조건 검증', '적합 횟수', '검증 횟수', '마지막 판정 사유', '의도', '이유', '출처', '월간 검색량', 'PC', 'Mobile', '경쟁 정도'];
     const num = (it, k) => (it.vol && !it.vol.error && !it.vol.notFound ? ((k === 'pc' && it.vol.pcLow) || (k === 'mo' && it.vol.moLow) ? '<10' : it.vol[k]) : '');
     const data = [head, ...rows.map((it) => {
       const v = vsum(it), cs = it.checks || [];
-      return [it.keyword, it.adGroup || '', charLen(it.keyword), it.status, it.kind || '', it.match || '', v.label, v.p, v.n, cs.length ? cs[cs.length - 1].reason : '', it.intent || '', it.reason || '', it.source || '', num(it, 'total'), num(it, 'pc'), num(it, 'mo'), it.vol?.comp && !it.vol.notFound ? it.vol.comp : ''];
+      return [it.keyword, charLen(it.keyword), it.status, it.kind || '', it.match || '', v.label, v.p, v.n, cs.length ? cs[cs.length - 1].reason : '', it.intent || '', it.reason || '', it.source || '', num(it, 'total'), num(it, 'pc'), num(it, 'mo'), it.vol?.comp && !it.vol.notFound ? it.vol.comp : ''];
     })];
-    const blob = XlsxLite.writeXlsx([{ name: 'AI 키워드', rows: data, widths: [28, 18, 8, 10, 22, 22, 12, 9, 9, 22, 10, 22, 8, 12, 10, 10, 10] }]);
+    const blob = XlsxLite.writeXlsx([{ name: 'AI 키워드', rows: data, widths: [28, 8, 10, 22, 22, 12, 9, 9, 22, 10, 22, 8, 12, 10, 10, 10] }]);
     const a = document.createElement('a');
     const name = (AI.cur.name || 'AI키워드').replace(/[\\/:*?"<>|]/g, '').slice(0, 30);
     const tag = [AI.filter, AI.vfilter].filter((x) => x !== '전체').join('_');

@@ -551,3 +551,19 @@ html.dark .pd-c1{background:#172554;color:#93c5fd}html.dark .pd-c2{background:#0
 .pd-bar{display:flex;gap:8px;align-items:center;margin:6px 0}
 .pd-track{flex:1;height:8px;border-radius:99px;background:var(--muted);overflow:hidden}.pd-track>div{height:100%;background:var(--accent,#16a34a);border-radius:99px}
 .pf-mode button{font-size:13px}
+
+/* AI 생성기: 표 아래 따라다니는 선택 작업 줄 (ai.js) */
+.act-bar{position:sticky;bottom:14px;z-index:6;display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;padding:10px 12px;border-radius:12px;background:var(--foreground,#111);color:var(--background,#fff);box-shadow:0 8px 28px rgba(0,0,0,.22)}
+.act-bar .btn{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.22);color:inherit}
+.act-bar .btn:hover{background:rgba(255,255,255,.2)}
+.act-bar .act-bad{color:#fca5a5;border-color:rgba(252,165,165,.45)}
+.act-bar .act-del{background:#dc2626;border-color:#dc2626;color:#fff}
+.act-bar .act-del:hover{background:#b91c1c}
+.act-bar .act-cnt{font-size:13px;font-weight:600;margin-right:auto;opacity:.8}
+.act-bar.has-sel .act-cnt{opacity:1;color:#86efac}
+.act-bar .act-sep{width:1px;height:22px;background:rgba(255,255,255,.25)}
+html.dark .act-bar .btn{background:rgba(0,0,0,.06);border-color:rgba(0,0,0,.18)}
+html.dark .act-bar .act-bad{color:#b91c1c;border-color:rgba(185,28,28,.4)}
+html.dark .act-bar.has-sel .act-cnt{color:#15803d}
+html.dark .act-bar .act-sep{background:rgba(0,0,0,.2)}
+@media print{.act-bar{display:none}}

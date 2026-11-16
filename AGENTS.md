@@ -11,7 +11,7 @@
 | 항목 | 내용 |
 |-|-|
 | 프로젝트 | 네이버 키워드 분석기 (로컬 PC에서 실행하는 웹 앱) |
-| 로컬 경로 (원본 PC) | `C:\Users\황현성\Documents\Lhost\keyword-tool` |
+| 로컬 경로 (원본 PC) | `C:\Users\<사용자>\Documents\Lhost\keyword-tool` |
 | GitHub 저장소 | https://github.com/hsiedev/keyword-tool (**비공개**, 브랜치 `main`) |
 | 실행 | `start.bat` → Node.js로 `server.mjs` 실행 → http://localhost:8787 |
 | 필요 프로그램 | Node.js 18 이상 (fetch 내장). npm 패키지 없음 (`node_modules` 없음) |
