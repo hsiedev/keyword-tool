@@ -109,12 +109,35 @@
   // ---------------------------------------------------------------- 화면 전환
   const isOn = (id) => { const el = document.getElementById(id); return el && !el.classList.contains('hidden'); };
   const current = () => (isG() ? 'analyze' : isOn('copyView') ? 'copy' : isOn('mockView') ? 'mock' : isOn('perfView') ? 'perf' : isOn('aiView') ? 'ai' : isOn('dupView') ? 'dup' : isOn('bulkView') ? 'bulk' : 'analyze');
-  const POS = {}; // 메뉴(탭)마다 마지막 스크롤 위치
+  // 메뉴(탭)마다 마지막 스크롤 위치: 새로고침해도 유지 (sessionStorage)
+  let POS = {};
+  try { POS = JSON.parse(sessionStorage.getItem('ktPos') || '{}') || {}; } catch {}
+  const savePos = () => { try { POS[current()] = scrollY; sessionStorage.setItem('ktPos', JSON.stringify(POS)); } catch {} };
+  addEventListener('pagehide', savePos);
+  let posT = 0;
+  addEventListener('scroll', () => { clearTimeout(posT); posT = setTimeout(savePos, 300); }, { passive: true });
+  // 내용이 늦게 그려져서 아직 짧으면 그 위치까지 못 내려감 → 내용이 다 그려질 때까지(최대 4초) 다시 맞춤. 사용자가 직접 스크롤하면 멈춤
+  let restoreJob = 0;
+  function restoreY(y) {
+    const job = ++restoreJob;
+    if (!y) { scrollTo(0, 0); return; }
+    const t0 = Date.now();
+    const stop = () => { restoreJob++; off(); };
+    const off = () => { removeEventListener('wheel', stop); removeEventListener('keydown', stop); removeEventListener('touchstart', stop); removeEventListener('mousedown', stop); };
+    addEventListener('wheel', stop, { passive: true }); addEventListener('keydown', stop); addEventListener('touchstart', stop, { passive: true }); addEventListener('mousedown', stop);
+    const tick = () => {
+      if (job !== restoreJob) return;
+      scrollTo(0, y);
+      if (Math.abs(scrollY - y) < 4 || Date.now() - t0 > 4000) { off(); return; }
+      setTimeout(tick, 120);
+    };
+    tick();
+  }
   function go(v) {
     document.body.classList.remove('side-open');
     if (isG()) { if (v === 'analyze') return; setMode('naver'); }
     if (v === current()) return;
-    POS[current()] = scrollY;
+    savePos();
     if (v !== 'copy') window.__hideCopy?.();
     if (v !== 'mock') window.__hideMock?.();
     if (v !== 'perf') window.__hidePerf?.();
@@ -130,10 +153,8 @@
     if (v === 'dup') window.showDup?.(true);
     if (v === 'bulk') window.showBulk?.(true);
     sync();
-    // 그 탭에서 보던 위치로 (화면이 그려진 뒤에 한 번 더 맞춤)
-    const y = POS[v] || 0;
-    scrollTo(0, y);
-    requestAnimationFrame(() => requestAnimationFrame(() => scrollTo(0, y)));
+    // 그 탭에서 보던 위치로 (내용이 늦게 그려져도 따라가서 맞춤)
+    restoreY(POS[v] || 0);
   }
   side.querySelectorAll('[data-view]').forEach((b) => (b.onclick = () => go(b.dataset.view)));
 
@@ -282,4 +303,6 @@
   applyTheme();
   sync();
   applyMode();
+  if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; // 브라우저 기본 복원은 내용이 늦게 그려지면 실패해서 직접 함
+  setTimeout(() => restoreY(POS[current()] || 0), 50);
 })();
