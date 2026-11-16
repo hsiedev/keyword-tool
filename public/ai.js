@@ -252,10 +252,12 @@
     }
     recheckAll(); drawSources(); draw();
   }
+  window.addEventListener('sources-changed', (e) => { if (e.detail !== 'ai') loadSources(); });
   async function saveSources() {
     try {
       const r = await (await fetch('/api/sources', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sources: AI.sources }) })).json();
       if (r.error) throw new Error(r.error);
+      window.dispatchEvent(new CustomEvent('sources-changed', { detail: 'ai' })); // 중복 검사 화면 등에 알림
       return true;
     } catch (e) { alert('기존 키워드를 파일에 저장하지 못했어요: ' + e.message); return false; }
   }

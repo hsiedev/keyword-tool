@@ -138,6 +138,25 @@
   window.showDup = showDup;
   window.__hideDup = () => { if (!$('#dupView').classList.contains('hidden')) { $('#dupView').classList.add('hidden'); $('#dupBtn').textContent = '키워드 중복 검사'; } };
 
+  // 기존 키워드 목록 파일(AI 생성기 ②와 같은 파일) 저장 · 다른 화면에 알림
+  async function saveSaved() {
+    try {
+      const r = await (await fetch('/api/sources', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sources: D.saved }) })).json();
+      if (r.error) throw new Error(r.error);
+      window.dispatchEvent(new CustomEvent('sources-changed', { detail: 'dup' }));
+      return true;
+    } catch (e) { window.toast?.('기존 키워드 목록을 저장하지 못했어요: ' + e.message, 'err'); return false; }
+  }
+  window.addEventListener('sources-changed', (e) => { if (e.detail !== 'dup') loadSaved(); });
+  function dlSaved(s, fmt) {
+    const base = String(s.name).replace(/\.(txt|csv|xlsx?|xlsm|tsv)(?=\s*(\([^)]*\))?\s*$)/i, '').replace(/[\\/:*?"<>|]/g, '').trim() || '기존 키워드';
+    const blob = fmt === 'xlsx'
+      ? window.XlsxLite.writeXlsx([{ name: '기존 키워드', rows: [['키워드'], ...s.keywords.map((k) => [k])], widths: [40] }])
+      : new Blob(['\ufeff' + s.keywords.join('\r\n')], { type: 'text/plain;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob); link.download = base + (fmt === 'xlsx' ? '.xlsx' : '.txt');
+    document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(link.href), 3000);
+  }
   async function loadSaved() {
     try {
       const j = await (await fetch('/api/sources')).json();
@@ -157,7 +176,7 @@
       const width = Math.max(...rows.slice(0, 50).map((r) => (r || []).length), 1);
       const isTxt = /\.txt$/i.test(f.name);
       return `<div class="dfile" data-id="${f.id}">
-        <div class="dfile-top"><b>${esc(f.name)}</b><span class="muted">${f.keywords.length.toLocaleString('ko-KR')}개 <a href="#" class="ext" data-rm="1">빼기</a></span></div>
+        <div class="dfile-top"><b>${esc(f.name)}</b><span class="muted">${f.keywords.length.toLocaleString('ko-KR')}개 ${side === 'old' ? '<a href="#" class="ext" data-keep="1" title="기존 키워드 목록 파일에 저장해서 다음에도 쓰고, AI 키워드 생성기에서도 써요">목록으로 저장</a> ' : ''}<a href="#" class="ext" data-rm="1">빼기</a></span></div>
         ${isTxt ? '' : `<div class="dfile-opts">
           ${f.sheets.length > 1 ? `<select data-k="si">${f.sheets.map((s, i) => `<option value="${i}" ${i === f.si ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select>` : ''}
           <select data-k="col"><option value="-1" ${f.col === -1 ? 'selected' : ''}>모든 열</option>${Array.from({ length: width }, (_, c) => `<option value="${c}" ${c === f.col ? 'selected' : ''}>${colLetter(c)}열: ${esc(String((rows[0] || [])[c] ?? '').slice(0, 16))}</option>`).join('')}</select>
@@ -166,6 +185,19 @@
     }).join('');
     $$('.dfile', box).forEach((el) => {
       const f = D.sides[side].files.find((x) => String(x.id) === el.dataset.id);
+      const keepA = el.querySelector('[data-keep]');
+      if (keepA) keepA.onclick = async (e) => {
+        e.preventDefault();
+        if (!f.keywords.length) return window.toast?.('저장할 키워드가 없어요', 'warn');
+        const name = f.name + (f.sheets.length > 1 ? ` (${f.sheets[f.si].name})` : '');
+        const item = { id: String(Date.now()) + Math.floor(Math.random() * 1000), name, keywords: [...new Set(f.keywords)], addedAt: Date.now() };
+        D.saved.push(item);
+        if (!await saveSaved()) { D.saved = D.saved.filter((y) => y !== item); return; }
+        D.savedOn.add(item.id);
+        D.sides.old.files = D.sides.old.files.filter((x) => x !== f); // 같은 키워드가 두 번 들어가지 않게 올린 파일 쪽은 뺌
+        D.result = null; drawSide('old'); drawResult();
+        window.toast?.(`'${name}'을 기존 키워드 목록으로 저장했어요 (AI 키워드 생성기 ②에도 보여요)`, 'ok');
+      };
       el.querySelector('[data-rm]').onclick = (e) => { e.preventDefault(); D.sides[side].files = D.sides[side].files.filter((x) => x !== f); D.result = null; drawSide(side); drawResult(); };
       el.querySelectorAll('[data-k]').forEach((c) => (c.onchange = () => {
         if (c.dataset.k === 'si') { f.si = +c.value; const g = guess(f.sheets[f.si].rows); f.col = g.col; f.header = g.header; }
@@ -177,9 +209,29 @@
     if (side === 'old' && $('#dsaved')) {
       $('#dsaved').innerHTML = D.saved.length
         ? `<div class="muted" style="margin-top:10px;font-size:12px">저장된 기존 키워드 목록 (AI 생성기 ②와 같은 목록) 중 비교에 쓸 것:</div>
-           ${D.saved.map((s) => `<label class="src-row" style="cursor:pointer"><span style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-saved="${esc(s.id)}" ${D.savedOn.has(s.id) ? 'checked' : ''}> ${esc(s.name)}</span><span class="muted">${s.keywords.length.toLocaleString('ko-KR')}개</span></label>`).join('')}`
+           ${D.saved.map((s) => `<div class="src-row"><label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" data-saved="${esc(s.id)}" ${D.savedOn.has(s.id) ? 'checked' : ''}> ${esc(s.name)}</label><span class="muted src-acts">${s.keywords.length.toLocaleString('ko-KR')}개 <a href="#" class="ext" data-srn="${esc(s.id)}">이름 변경</a><a href="#" class="ext" data-sdl="${esc(s.id)}" data-fmt="txt" title="한 줄에 키워드 하나">TXT</a><a href="#" class="ext" data-sdl="${esc(s.id)}" data-fmt="xlsx">엑셀</a><a href="#" class="ext" data-srm="${esc(s.id)}">삭제</a></span></div>`).join('')}`
         : '';
       $$('[data-saved]', $('#dsaved')).forEach((cb) => (cb.onchange = () => { cb.checked ? D.savedOn.add(cb.dataset.saved) : D.savedOn.delete(cb.dataset.saved); D.result = null; drawCount('old'); drawResult(); }));
+      const find = (id) => D.saved.find((x) => String(x.id) === id);
+      $$('[data-srn]', $('#dsaved')).forEach((x) => (x.onclick = async (e) => {
+        e.preventDefault();
+        const s = find(x.dataset.srn); if (!s) return;
+        const v = await window.uiPrompt('기존 키워드 목록 이름', { value: s.name, max: 80 });
+        if (!v || v === s.name) return;
+        const old = s.name; s.name = v.slice(0, 80);
+        if (!await saveSaved()) s.name = old; else window.toast?.('이름을 바꿨어요', 'ok');
+        drawSide('old');
+      }));
+      $$('[data-sdl]', $('#dsaved')).forEach((x) => (x.onclick = (e) => { e.preventDefault(); const s = find(x.dataset.sdl); if (s) dlSaved(s, x.dataset.fmt); }));
+      $$('[data-srm]', $('#dsaved')).forEach((x) => (x.onclick = async (e) => {
+        e.preventDefault();
+        const s = find(x.dataset.srm); if (!s) return;
+        if (!await window.uiConfirm(`'${s.name}' 목록(${s.keywords.length}개)을 파일에서 삭제할까요? AI 키워드 생성기에서도 사라져요.`)) return;
+        const keep = D.saved;
+        D.saved = D.saved.filter((y) => y !== s); D.savedOn.delete(String(s.id));
+        if (!await saveSaved()) D.saved = keep;
+        D.result = null; drawSide('old'); drawResult();
+      }));
     }
     drawCount(side);
   }
