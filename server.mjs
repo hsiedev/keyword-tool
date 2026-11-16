@@ -854,7 +854,7 @@ async function llmJson(prompt, schema, { temperature = 0.9, system } = {}) {
 }
 async function providerModels(p) {
   if (p === 'gemini') return geminiModels();
-  if (p === 'agy') return (await cliModels('agy', config)).map((m) => m.id);
+  if (p === 'agy' || p === 'codex') return (await cliModels(p, config)).map((m) => m.id);
   return CLI_MODELS[p] || [];
 }
 

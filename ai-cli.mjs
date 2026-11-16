@@ -155,7 +155,7 @@ export async function runCli(p, prompt, { model = '', signal, config = {}, timeo
     const outFile = path.join(WORK, `codex-${process.pid}-${Date.now()}.txt`);
     const args = ['exec', '--skip-git-repo-check', '--sandbox', 'read-only', '--color', 'never', '-o', outFile];
     if (web) args.push('-c', 'web_search=live'); // 실시간 웹 검색 (exec에서는 --search 대신 이 설정)
-    if (model) args.push('-m', model);
+    if (model) { const [slug, effort] = String(model).split(':'); args.push('-m', slug); if (effort) args.push('-c', `model_reasoning_effort="${effort}"`); }
     args.push('-'); // 프롬프트는 표준 입력으로
     try {
       const r = await run(file, args, { input: prompt, signal, timeoutMs });
@@ -190,6 +190,26 @@ export async function runCli(p, prompt, { model = '', signal, config = {}, timeo
 // 로그인형 모델 목록: Gemini(agy)는 'agy models'로 읽음 (계정마다 다름, 10분 캐시)
 const modelCache = {};
 export async function cliModels(p, config = {}) {
+  if (p === 'codex') {
+    const cc = modelCache[p];
+    if (cc && Date.now() - cc.at < 600000) return cc.list;
+    const file = cliPath(p, config);
+    if (!file) return [];
+    try {
+      const r = await run(file, ['debug', 'models'], { timeoutMs: 30000 });
+      const t = String(r.out || '');
+      const j = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
+      const list = [];
+      for (const m of j.models || []) {
+        if (!m.slug || (m.visibility && m.visibility !== 'list')) continue;
+        list.push({ id: m.slug, label: m.display_name || m.slug, def: m.default_reasoning_level || '' });
+        for (const lv of (m.supported_reasoning_levels || []).map((x) => x.effort || x).filter(Boolean)) list.push({ id: `${m.slug}:${lv}`, label: `${m.display_name || m.slug} · 생각 ${lv}` });
+      }
+      cliModels.raw = { n: list.length };
+      if (list.length) modelCache[p] = { at: Date.now(), list };
+      return list;
+    } catch (e) { cliModels.raw = { error: e.message }; return []; }
+  }
   if (p !== 'agy') return CLI_MODELS[p] || [];
   const c = modelCache[p];
   if (c && Date.now() - c.at < 600000) return c.list;
