@@ -1,7 +1,7 @@
 // 키워드 표 공용: ① 키워드 열(그 왼쪽의 체크·번호 포함) 틀 고정  ② 열 제목을 끌어서 순서 바꾸기 (표마다 기억)
 // 표는 화면마다 innerHTML로 다시 그려지므로, 다시 그려질 때마다 저장된 순서대로 칸을 옮기고 고정을 다시 적용함
 (function () {
-  const TABLES = '#relTbl, #aiTbl, #bTblWrap > table, #dTblWrap > table, #gView table.g-tbl';
+  const TABLES = '#relTbl, #aiTbl, #bTblWrap > table, #dTblWrap > table, #gView table.g-tbl, #pfTbl';
   const KEY = (t) => 'colOrder:' + (t.id || t.closest('[id]')?.id || 'tbl') + (t.classList.contains('g-tbl') ? ':' + headLabels(t).join('|').slice(0, 60) : '');
   const labelOf = (th) => th.dataset.k || th.textContent.replace(/[↕▲▼]/g, '').trim();
   const headRow = (t) => t.tHead?.rows[0] || t.rows[0];

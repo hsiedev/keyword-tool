@@ -200,6 +200,11 @@ globalThis.fetch = async (u, o = {}) => {
   if (s.includes('suggestqueries.google.com')) return new Response(JSON.stringify(['q', ['운전자보험 가격', '운전자보험비교']]));
   if (s.includes('search.naver.com/search.naver') && s.includes('pltest')) return new Response(PL_HTML);
   if (s.includes('generativelanguage.googleapis.com')) return new Response(GEMINI_SSE(o));
+  if (s.includes('api.searchad.naver.com')) globalThis.__adCalls = [...(globalThis.__adCalls || []), (o.method || 'GET') + ' ' + new URL(s).pathname];
+  if (s.includes('api.searchad.naver.com/ncc/campaigns')) return new Response(JSON.stringify([{ nccCampaignId: 'cmp-1', name: '운전자보험_PL', campaignTp: 'WEB_SITE', status: 'ELIGIBLE', userLock: false }]));
+  if (s.includes('api.searchad.naver.com/ncc/adgroups')) return new Response(JSON.stringify([{ nccAdgroupId: 'grp-1', name: '비교', status: 'ELIGIBLE' }]));
+  if (s.includes('api.searchad.naver.com/ncc/keywords')) return new Response(JSON.stringify([{ nccKeywordId: 'nkw-1', keyword: '운전자보험비교', status: 'ELIGIBLE', useGroupBidAmt: true }, { nccKeywordId: 'nkw-2', keyword: '운전자보험추천', userLock: true, useGroupBidAmt: false, bidAmt: 3000 }]));
+  if (s.includes('api.searchad.naver.com/stats')) return new Response(JSON.stringify({ data: [{ id: 'nkw-1', impCnt: 1000, clkCnt: 40, salesAmt: 120000, ctr: 4, cpc: 3000, avgRnk: 2.1, ccnt: 3, convAmt: 0 }] }));
   if (s.includes('api.searchad.naver.com/keywordstool')) {
     // 가짜 키워드 도구: 긴 힌트는 자기 자신만, '운전자보험'은 관련도 순 연관 키워드
     const h = decodeURIComponent(new URL(s).searchParams.get('hintKeywords') || '').split(',');
@@ -311,6 +316,23 @@ await test('AI 생성기 + 키워드 도구: 힌트(예시·주제·핵심 단�
   eq((await post('/api/ai/seed', { topic: '', examples: [] }, H)).status, 400);
   await sse('/api/ai/generate-stream', { topic: '운전자보험', count: 10, seeds: [{ keyword: '운전자보험', total: 38110 }, { keyword: '운전자보험비교', total: 2720 }] });
   ok(globalThis.__lastPrompt.includes('네이버 키워드 도구 연관 키워드 2개') && globalThis.__lastPrompt.includes('운전자보험비교(2720)'), '요청문에 연관 키워드·검색량');
+});
+await test('광고 안전장치: 읽기·예상치 호출만 허용, 켜기/끄기·입찰가·삭제 호출은 차단', async () => {
+  const { adAllowed } = await import(pathToFileURL(path.join(TMP, 'ad-guard.mjs')).href);
+  for (const [m, u] of [['GET', '/keywordstool'], ['GET', '/ncc/campaigns'], ['GET', '/ncc/keywords'], ['GET', '/stats'], ['POST', '/estimate/performance-bulk'], ['POST', '/estimate/average-position-bid/keyword']]) ok(adAllowed(m, u), '허용: ' + m + ' ' + u);
+  for (const [m, u] of [['PUT', '/ncc/campaigns/cmp-1'], ['PUT', '/ncc/keywords'], ['DELETE', '/ncc/keywords/nkw-1'], ['POST', '/ncc/keywords'], ['POST', '/ncc/campaigns'], ['PUT', '/ncc/adgroups/grp-1'], ['GET', '/ncc/campaigns/cmp-1/../x'], ['POST', '/stats'], ['GET', '/billing/bizmoney']]) ok(!adAllowed(m, u), '차단: ' + m + ' ' + u);
+});
+await test('광고 성과(읽기 전용): 캠페인 → 그룹 → 키워드 → 성과, 네이버에는 GET만 나감', async () => {
+  const H = { Origin: 'http://localhost:' + PORT };
+  globalThis.__adCalls = [];
+  const c = await (await get('/api/ads/campaigns')).json();
+  eq(c.campaigns, [{ id: 'cmp-1', name: '운전자보험_PL', type: 'WEB_SITE', state: '노출 가능' }]);
+  const j = await (await post('/api/ads/perf', { campaigns: ['cmp-1'], since: '2026-11-01', until: '2026-11-07' }, H)).json();
+  eq(j.rows.map((x) => [x.keyword, x.clk, x.cost, x.state]), [['운전자보험비교', 40, 120000, '노출 가능'], ['운전자보험추천', 0, 0, '꺼짐']]);
+  ok(globalThis.__adCalls.length >= 4 && globalThis.__adCalls.every((x) => x.startsWith('GET ')), globalThis.__adCalls.join(', '));
+  eq((await post('/api/ads/perf', { campaigns: ['cmp-1'], since: 'x', until: '2026-11-07' }, H)).status, 502);
+  eq((await post('/api/ads/perf', { campaigns: ['cmp-1'], since: '2026-11-01', until: '2026-11-07' }, { Origin: 'https://evil.example' })).status, 403);
+  const cf = path.join(TMP, 'cache.json'); ok(!fs.existsSync(cf) || !fs.readFileSync(cf, 'utf8').includes('nkw-1'), '성과 자료는 파일에 안 남음');
 });
 // ---------------------------------------------------------------- 결과
 console.log('\n키워드 분석기 자동 테스트\n' + results.join('\n'));

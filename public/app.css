@@ -493,3 +493,13 @@ th.cw-over-l{box-shadow:inset 3px 0 0 var(--accent,#16a34a)}
 th.cw-over-r{box-shadow:inset -3px 0 0 var(--accent,#16a34a)}
 table.fp-table tr.fp-on>td.fz{background:var(--card)!important}
 @media print{table .fz{position:static;box-shadow:none}}
+
+/* 광고 성과 (perf.js) */
+.pf-ro{display:inline-block;font-size:12px;font-weight:600;color:#15803d;background:#dcfce7;border:1px solid #bbf7d0;border-radius:999px;padding:1px 9px;margin:0 6px;vertical-align:middle}
+html.dark .pf-ro{color:#86efac;background:#052e16;border-color:#14532d}
+.pf-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0}
+.pf-cmps{display:flex;flex-wrap:wrap;gap:6px 14px}
+.pf-cmp{display:flex;gap:5px;align-items:center}
+.pf-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px}
+.pf-sum .card{padding:12px 14px}
+.pf-sum b{font-size:18px}
