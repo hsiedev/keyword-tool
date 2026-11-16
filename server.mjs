@@ -1191,14 +1191,15 @@ async function embedNear({ candidates = [], existing = [], min = 0.82, top = 5 }
 
 // 웹 리서치 (선택): 웹 검색이 되는 로그인형 AI(Claude·GPT)가 브리프 주제를 먼저 조사 → 탐색 계획의 재료
 // 고르는 순서: 지금 고른 AI가 Claude/GPT면 그것, 아니면 설치된 Claude → GPT
-function webProvider() {
+function webProvider(pref) {
+  if ((pref === 'claude' || pref === 'codex') && cliPath(pref, config)) return pref;
   const cur = provider();
   if ((cur === 'claude' || cur === 'codex') && cliPath(cur, config)) return cur;
   return ['claude', 'codex'].find((p) => cliPath(p, config)) || null;
 }
-async function aiWebResearch({ brief = '', refs = [], pos = [], neg = [] }, signal) {
+async function aiWebResearch({ brief = '', refs = [], pos = [], neg = [], webProvider: pref = '' }, signal) {
   brief = withPN(brief, pos, neg);
-  const p = webProvider();
+  const p = webProvider(pref);
   if (!p) throw new Error('웹 검색이 되는 로그인형 AI(Claude 또는 GPT)가 설치돼 있지 않아요 (설정 > API 설정 > AI 모델)');
   const b = String(brief || '').trim().slice(0, 3000);
   if (!b) throw new Error('브리프를 넣어주세요');
@@ -1789,7 +1790,7 @@ const server = http.createServer(async (req, res) => {
           return res.end();
         }
         if (u.pathname === '/api/ai/web-research') return send(res, 200, await aiWebResearch(b));
-        if (u.pathname === '/api/ai/web-info') { const p = webProvider(); return send(res, 200, { provider: p, name: p ? PROVIDERS[p].name : null }); }
+        if (u.pathname === '/api/ai/web-info') { const p = webProvider(); return send(res, 200, { provider: p, name: p ? PROVIDERS[p].name : null, options: ['claude', 'codex'].map((x) => ({ id: x, name: PROVIDERS[x].name, ok: !!cliPath(x, config) })) }); }
         if (u.pathname === '/api/ai/plan') return send(res, 200, await aiPlan(b));
         if (u.pathname === '/api/ai/research') return send(res, 200, await research(b));
         if (u.pathname === '/api/ai/group') return send(res, 200, await aiGroup(b));
