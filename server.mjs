@@ -522,7 +522,32 @@ async function compare(keywords) {
       volumes = kws.map((k) => list.find((r) => normKw(r.keyword) === normKw(k)) || { keyword: k, pc: 0, mo: 0, total: 0 });
     } catch (e) { errors['검색량'] = e.message; }
   }
-  return { keywords: kws, series, volumes, errors, missing: { ad: !hasAd(), open: !hasOpen() } };
+  // 상대지수 → 월 검색량 추정 (키워드마다): 최근 30일 일별 지수 합을 검색광고 월간 검색수에 맞추고,
+  // 일별로 꽉 찬 지난달 합계와 그 달 월간 지수의 비율로 월 단위 환산 계수를 구함
+  let scaled = false, warn = '';
+  if (series.length && hasAd() && !errors['검색량']) {
+    try {
+      const dStart = ymd(addDays(today, -75));
+      const dres = await datalab(kws, dStart, end, 'date');
+      const lastM = ymd(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1))).slice(0, 7);
+      const ks = [];
+      series.forEach((sr, i) => {
+        const daily = fillDaily(dres[i]?.data || [], dStart, end);
+        const s30 = daily.slice(-30).reduce((a, b) => a + b.ratio, 0);
+        const total = volumes[i]?.total || 0;
+        const k = s30 > 0 && total > 0 ? total / s30 : 0;
+        const mSum = daily.filter((x) => x.date.startsWith(lastM)).reduce((a, b) => a + b.ratio * k, 0);
+        const mRatio = sr.data.find((x) => x.month === lastM)?.ratio || 0;
+        const scaleM = mRatio > 0 ? mSum / mRatio : 0;
+        sr.scale = scaleM;
+        sr.data.forEach((x) => (x.est = scaleM ? Math.round(x.ratio * scaleM) : null));
+        if (scaleM && total >= 100) ks.push(scaleM);
+      });
+      scaled = series.some((sr) => sr.scale);
+      if (ks.length > 1 && Math.max(...ks) / Math.min(...ks) > 2) warn = '키워드끼리 환산 계수가 2배 넘게 달라요. 검색량이 작은 키워드는 데이터랩 지수가 거칠어서 오차가 클 수 있어요.';
+    } catch (e) { errors['환산'] = e.message; }
+  }
+  return { keywords: kws, series, volumes, errors, scaled, warn, missing: { ad: !hasAd(), open: !hasOpen() } };
 }
 
 async function blogCounts(keywords) {

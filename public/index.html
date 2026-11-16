@@ -919,7 +919,7 @@ function renderTrend(d) {
       <div class="card"><h3>월별 검색 비율 <span class="muted">최근 3년 평균</span></h3><div class="chart" id="ch-mshare"></div></div>
       <div class="card"><h3>요일별 검색 비율 <span class="muted">최근 52주</span></h3><div class="chart" id="ch-wshare"></div></div>
     </div>
-    <div class="card" style="margin-top:14px"><h3>키워드 비교 <span class="muted">최대 5개, 데이터랩 상대지수 (최근 3년 월간)</span></h3>
+    <div class="card" style="margin-top:14px"><h3>키워드 비교 <span class="muted">최대 5개, 최근 3년 월별 검색량 (추정)</span></h3>
       <div class="toolbar"><input id="cmpInput" style="flex:1;min-width:260px" value="${esc(d.keyword)}" placeholder="쉼표로 구분 (예: 운전자보험, 암보험, 실손보험)"><button class="btn pri" id="cmpBtn">비교</button></div>
       <div id="cmpOut" class="muted">키워드를 쉼표로 넣고 비교를 누르세요.</div></div>`;
   const drawMonth = () => {
@@ -961,11 +961,11 @@ async function runCompare() {
     <div class="legend">${j.keywords.map((k, i) => `<span><i style="background:${PAL[i]}"></i>${esc(k)}</span>`).join('')}</div>
     <table class="mini" style="margin-top:12px"><tr><th>키워드</th><th>PC</th><th>Mobile</th><th>월간 검색량</th><th>경쟁 정도</th></tr>
     ${j.volumes.map((v, i) => `<tr><td><span style="color:${PAL[i]}">●</span> ${esc(v.keyword)}</td><td>${fmt(v.pc)}</td><td>${fmt(v.mo)}</td><td><b>${fmt(v.total)}</b></td><td>${esc(v.comp || '-')}</td></tr>`).join('')}</table>
-    ${j.missing?.open ? '<div class="muted" style="margin-top:6px">추이 차트는 검색어 트렌드 API 키를 넣으면 표시돼요.</div>' : ''}`;
+    ${j.missing?.open ? '<div class="muted" style="margin-top:6px">추이 차트는 검색어 트렌드 API 키를 넣으면 표시돼요.</div>' : `<div class="muted" style="margin-top:6px">${j.scaled ? '월 검색량은 데이터랩 상대지수를 키워드별 검색광고 월간 검색량에 맞춰 환산한 추정치예요 (이번 달은 진행 중이라 작게 보여요).' : '데이터랩 상대지수(최고점=100)예요. 검색광고 API 키가 있으면 월 검색량으로 환산돼요.'}${j.warn ? ' <b style="color:#b45309">' + esc(j.warn) + '</b>' : ''}</div>`}`;
   if (j.series.length) lineChart($('#ch-cmp'), {
     labels: j.series[0].data.map((x) => x.month.replace('-', '.')),
-    series: j.series.map((s, i) => ({ name: s.keyword, color: PAL[i], values: s.data.map((x) => +x.ratio.toFixed(1)), fmt: (v) => v.toFixed(1) })),
-    height: 260, yFmt: (v) => Math.round(v), area: false,
+    series: j.series.map((s, i) => ({ name: s.keyword, color: PAL[i], values: s.data.map((x) => (j.scaled ? x.est ?? 0 : +x.ratio.toFixed(1))), fmt: (v) => (j.scaled ? fmt(v) + '회' : v.toFixed(1)) })),
+    height: 260, yFmt: j.scaled ? fmtK : (v) => Math.round(v), area: false,
   });
 }
 
