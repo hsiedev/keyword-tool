@@ -330,7 +330,7 @@
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('#bCtx').classList.add('hidden'); });
     window.addEventListener('scroll', () => $('#bCtx').classList.add('hidden'), true);
     B.fb = FilterBar($('#bFbar'), {
-      ranges: [['total', '월간 검색량'], ['pc', 'PC 검색량'], ['mo', '모바일 검색량'], ['clk', '월 클릭 (PC+MO)'], ['ctr', '클릭률 평균', '%'], ['adDepth', '광고수'], ['pc1', 'PC 1위 입찰가', '원'], ['pc3', 'PC 3위 입찰가', '원'], ['mo1', 'MO 1위 입찰가', '원'], ['mo3', 'MO 3위 입찰가', '원'], ['blog', '블로그 누적'], ['sat', '포화 지수', '%'], ['len', '글자 수']],
+      ranges: [['total', '월간 검색량'], ['pc', 'PC 검색량'], ['mo', '모바일 검색량'], ['pcClk', 'PC 월 클릭'], ['moClk', '모바일 월 클릭'], ['pcCtr', 'PC 클릭률', '%'], ['moCtr', '모바일 클릭률', '%'], ['adDepth', '광고수'], ['pc1', 'PC 1위 입찰가', '원'], ['pc3', 'PC 3위 입찰가', '원'], ['mo1', 'MO 1위 입찰가', '원'], ['mo3', 'MO 3위 입찰가', '원'], ['blog', '블로그 누적'], ['sat', '포화 지수', '%'], ['len', '글자 수']],
       main: ['total'],
       onChange: () => { B.page = 1; drawTable(); },
     });
@@ -484,8 +484,10 @@
     ['total', '월간 검색량', lb],
     ['pc', 'PC', (r) => (r.pcLow ? 0 : r.pc)],
     ['mo', 'Mobile', (r) => (r.moLow ? 0 : r.mo)],
-    ['clk', '월 클릭 (PC/MO)', (r) => (r.pcClk ?? null) === null ? null : (r.pcClk || 0) + (r.moClk || 0)],
-    ['ctr', '클릭률 (PC/MO)', (r) => (r.pcCtr == null ? null : ((r.pcCtr || 0) + (r.moCtr || 0)) / 2)],
+    ['pcClk', 'PC 월 클릭', (r) => r.pcClk ?? null],
+    ['moClk', '모바일 월 클릭', (r) => r.moClk ?? null],
+    ['pcCtr', 'PC 클릭률', (r) => r.pcCtr ?? null],
+    ['moCtr', '모바일 클릭률', (r) => r.moCtr ?? null],
     ['comp', '경쟁', (r) => ({ 높음: 3, 중간: 2, 낮음: 1 }[r.comp] ?? null)],
     ['adDepth', '광고수', (r) => r.adDepth ?? null],
     ['pc1', 'PC 1위', (r) => bidAt(r, 'pc', 1)],
@@ -497,7 +499,7 @@
     ['blog', '블로그 누적', (r) => r.blog ?? null],
     ['sat', '포화 지수', sat],
   ];
-  const getV = (key, r) => COLS.find((c) => c[0] === key)[2](r);
+  const getV = (key, r) => (COLS.find((c) => c[0] === key)?.[2] || (() => null))(r);
   const n0 = (v) => (v == null ? '<span class="muted">-</span>' : Math.round(v).toLocaleString('ko-KR'));
   function viewRows() {
     const f = B.f;
@@ -560,8 +562,10 @@
         case 'total': { const v = lb(r); if (v == null) return '<td></td>'; return `<td><b>${r.pcLow && r.moLow ? '&lt;20' : r.pcLow || r.moLow ? `${v.toLocaleString('ko-KR')}~${(v + 9).toLocaleString('ko-KR')}` : v.toLocaleString('ko-KR')}</b></td>`; }
         case 'pc': return `<td class="pc">${r.pc == null ? '' : r.pcLow ? '&lt;10' : n0(r.pc)}</td>`;
         case 'mo': return `<td class="mo">${r.mo == null ? '' : r.moLow ? '&lt;10' : n0(r.mo)}</td>`;
-        case 'clk': return `<td>${r.pcClk == null ? '' : `${n0(r.pcClk)} / ${n0(r.moClk)}`}</td>`;
-        case 'ctr': return `<td>${r.pcCtr == null ? '' : `${r.pcCtr}% / ${r.moCtr}%`}</td>`;
+        case 'pcClk': return `<td class="pc">${r.pcClk == null ? '' : n0(r.pcClk)}</td>`;
+        case 'moClk': return `<td class="mo">${r.moClk == null ? '' : n0(r.moClk)}</td>`;
+        case 'pcCtr': return `<td class="pc">${r.pcCtr == null ? '' : r.pcCtr + '%'}</td>`;
+        case 'moCtr': return `<td class="mo">${r.moCtr == null ? '' : r.moCtr + '%'}</td>`;
         case 'comp': return `<td>${r.comp ? `<span class="comp ${esc(r.comp)}">${esc(r.comp)}</span>` : ''}</td>`;
         case 'adDepth': return `<td>${r.adDepth ?? ''}</td>`;
         case 'blog': return `<td>${r.blogError ? '<span class="muted">오류</span>' : n0(r.blog)}</td>`;
@@ -585,7 +589,7 @@
     tools.querySelectorAll('[data-proxy]').forEach((x) => (x.onclick = () => $('#' + x.dataset.proxy).click())); // 재검증 칸의 버튼을 표 바로 위에서
     const wrap = $('#bTblWrap');
     const keepScroll = wrap.scrollTop, keepLeft = wrap.scrollLeft;
-    wrap.innerHTML = `<table class="rel" style="min-width:${hasBids ? 1500 : 1000}px">
+    wrap.innerHTML = `<table class="rel" style="min-width:${hasBids ? 1700 : 1150}px">
       <thead><tr><th style="width:30px"><input type="checkbox" id="bSelAll" title="표에 보이는 키워드 전체 체크 (필터 적용, 모든 페이지) / 다시 누르면 전체 해제"></th><th style="width:44px">#</th>${cols.map(([k, n]) => `<th data-k="${k}" class="${k === 'keyword' ? 'l' : ''} ${key === k ? 'sorted' : ''}">${n}<span class="ar">${key === k ? (dir < 0 ? '▼' : '▲') : '↕'}</span></th>`).join('')}</tr></thead>
       <tbody>${view.map((r, i) => `<tr><td><input type="checkbox" data-sel="${esc(r.keyword)}" ${B.sel.has(r.keyword) ? 'checked' : ''}></td><td class="muted">${(B.page - 1) * PG() + i + 1}</td>${cols.map(([k]) => cell(k, r)).join('')}</tr>`).join('') || `<tr><td colspan="${cols.length + 2}" class="l muted" style="padding:20px">조건에 맞는 키워드가 없어요${B.fb?.active() ? ' · 필터를 확인해 주세요' : ''}</td></tr>`}</tbody>
     </table>`;
