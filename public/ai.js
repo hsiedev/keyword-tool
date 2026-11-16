@@ -364,6 +364,7 @@
               <span style="flex-basis:100%;height:0"></span><span style="flex:1"></span>
               <button class="btn" id="aiVol">검색량 붙이기</button>
               <button class="btn" id="aiSem">의미 중복 검사</button>
+              <button class="btn" id="aiGroup" title="체크한 키워드(없으면 지금 표에 보이는 키워드)를 AI가 광고그룹으로 묶어요. 표의 '광고그룹' 열에 들어가요">광고그룹 묶기</button>
               <button class="btn" id="aiDel">선택 삭제</button>
               <button class="btn" id="aiClear">결과 비우기</button>
               <button class="btn pri" id="aiXlsx">엑셀 다운로드</button>
@@ -415,6 +416,7 @@
     };
     $('#aiVol').onclick = () => attachVolumes();
     $('#aiSem').onclick = semanticCheck;
+    $('#aiGroup').onclick = groupKeywords;
     $('#aiVerify').onclick = verify;
     $('#aiVReset').onclick = async () => { if (await uiConfirm('이 탭의 재검증 기록과 직접 판정을 모두 지울까요?')) { AI.items.forEach((it) => { delete it.checks; delete it.decision; }); save(); draw(); } };
     $('#aiMixBtn').onclick = () => openMixed(false);
@@ -1090,8 +1092,29 @@
     finally { btn.disabled = false; btn.textContent = '의미 중복 검사'; }
   }
 
+  // 광고그룹 묶기: 체크한 것(없으면 표에 보이는 것) → AI → it.adGroup
+  async function groupKeywords() {
+    const sel = AI.items.filter((it) => it._sel);
+    const targets = sel.length ? sel : viewRows();
+    if (targets.length < 2) return vmsg('묶을 키워드가 2개 이상 있어야 해요', true);
+    if (targets.length > 400) return vmsg('한 번에 400개까지 묶을 수 있어요. 체크해서 나눠 주세요', true);
+    const size = await window.uiChoice?.('광고그룹 크기를 골라 주세요', [['small', '작게 (2~10개)'], ['mid', '보통 (3~20개)'], ['large', '크게 (5~40개)']], 'mid');
+    if (!size) return;
+    const btn = $('#aiGroup'); btn.disabled = true; btn.textContent = `묶는 중... (${targets.length}개)`;
+    try {
+      const j = await (await fetch('/api/ai/group', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic: readForm().topic, size, keywords: targets.map((it) => ({ keyword: it.keyword, total: it.vol && !it.vol.error ? volLB(it.vol) : 0 })) }) })).json();
+      if (j.error) throw new Error(j.error);
+      const by = new Map(); j.groups.forEach((g) => g.keywords.forEach((k) => by.set(norm(k), g.group)));
+      targets.forEach((it) => { const g = by.get(norm(it.keyword)); if (g) it.adGroup = g; });
+      AI.sort = { key: 'adGroup', dir: 1 };
+      save(); draw();
+      vmsg(`${targets.length}개를 광고그룹 ${j.groups.length}개로 묶었어요${j.missing ? ` (AI가 빠뜨린 ${j.missing}개는 "기타")` : ''} · ${j.model || ''}. 표의 '광고그룹' 열로 정렬해 뒀고, 엑셀에도 들어가요.`);
+    } catch (e) { vmsg('광고그룹 묶기 실패: ' + e.message, true); }
+    finally { btn.disabled = false; btn.textContent = '광고그룹 묶기'; }
+  }
+
   // ---------------------------------------------------------------- 표
-  const COLS = [['keyword', '키워드', 'l'], ['status', '중복 상태', 'l'], ['verify', '조건 검증', 'l'], ['match', '겹치는 기존 키워드', 'l'], ['intent', '의도', 'l'], ['reason', '이유', 'l'], ['total', '월간 검색량'], ['pc', 'PC'], ['mo', 'Mobile'], ['comp', '경쟁']];
+  const COLS = [['keyword', '키워드', 'l'], ['status', '중복 상태', 'l'], ['verify', '조건 검증', 'l'], ['adGroup', '광고그룹', 'l'], ['match', '겹치는 기존 키워드', 'l'], ['intent', '의도', 'l'], ['reason', '이유', 'l'], ['total', '월간 검색량'], ['pc', 'PC'], ['mo', 'Mobile'], ['comp', '경쟁']];
   const val = (it, k) => {
     if (k === 'total') return it.vol && !it.vol.error ? (it.vol.notFound ? -0.5 : volLB(it.vol)) : undefined;
     if (['pc', 'mo', 'comp'].includes(k)) return it.vol?.[k];
@@ -1139,12 +1162,13 @@
         <td class="l kwc"><a href="#" data-go="${esc(it.keyword)}">${esc(it.keyword)}</a>${it.source === '직접' ? ' <span class="muted">(직접)</span>' : it.source === '키워드도구' ? ' <span class="muted" title="네이버 키워드 도구 연관 키워드">(키워드도구)</span>' : ''}</td>
         <td class="l"><span class="st" data-s="${esc(it.status)}">${esc(it.status)}</span>${it.kind ? `<div class="muted" style="font-size:11px">${esc(it.kind)}</div>` : ''}</td>
         <td class="l" style="min-width:150px">${verifyCell(it, form)}</td>
+        <td class="l">${esc(it.adGroup || '')}</td>
         <td class="l">${esc(it.match || '')}</td>
         <td class="l">${esc(it.intent || '')}</td>
         <td class="l muted" style="white-space:normal;min-width:110px">${esc(it.reason || '')}</td>
         <td>${vcell(it, 'total')}</td><td class="pc">${vcell(it, 'pc')}</td><td class="mo">${vcell(it, 'mo')}</td><td>${vcell(it, 'comp')}</td>
         <td><a href="#" class="muted" data-x="${esc(it.keyword)}" title="삭제" style="text-decoration:none">✕</a></td></tr>`).join('') ||
-        `<tr><td colspan="12" class="l muted" style="padding:24px">${AI.items.length ? '이 조건에 맞는 키워드가 없어요' : '① 에서 주제와 예시를 넣고 "키워드 생성"을 누르세요. 다른 주제는 왼쪽 "+ 새 탭"에서 시작하면 주제별로 따로 저장돼요.'}</td></tr>`}</tbody>`;
+        `<tr><td colspan="13" class="l muted" style="padding:24px">${AI.items.length ? '이 조건에 맞는 키워드가 없어요' : '① 에서 주제와 예시를 넣고 "키워드 생성"을 누르세요. 다른 주제는 왼쪽 "+ 새 탭"에서 시작하면 주제별로 따로 저장돼요.'}</td></tr>`}</tbody>`;
     $$('#aiTbl th[data-k]').forEach((th) => (th.onclick = () => { const k = th.dataset.k; AI.sort = { key: k, dir: AI.sort.key === k ? -AI.sort.dir : ['total', 'pc', 'mo', 'verify'].includes(k) ? -1 : 1 }; draw(); }));
     const syncAll = () => {
       const n = rows.filter((it) => it._sel).length, cb = $('#aiAll');
@@ -1188,13 +1212,13 @@
   function exportXlsx() {
     if (!AI.items.length) return alert('내보낼 결과가 없어요');
     const rows = viewRows();
-    const head = ['키워드', '글자 수', '중복 상태', '구분', '겹치는 기존 키워드', '조건 검증', '적합 횟수', '검증 횟수', '마지막 판정 사유', '의도', '이유', '출처', '월간 검색량', 'PC', 'Mobile', '경쟁 정도'];
+    const head = ['키워드', '광고그룹', '글자 수', '중복 상태', '구분', '겹치는 기존 키워드', '조건 검증', '적합 횟수', '검증 횟수', '마지막 판정 사유', '의도', '이유', '출처', '월간 검색량', 'PC', 'Mobile', '경쟁 정도'];
     const num = (it, k) => (it.vol && !it.vol.error && !it.vol.notFound ? ((k === 'pc' && it.vol.pcLow) || (k === 'mo' && it.vol.moLow) ? '<10' : it.vol[k]) : '');
     const data = [head, ...rows.map((it) => {
       const v = vsum(it), cs = it.checks || [];
-      return [it.keyword, charLen(it.keyword), it.status, it.kind || '', it.match || '', v.label, v.p, v.n, cs.length ? cs[cs.length - 1].reason : '', it.intent || '', it.reason || '', it.source || '', num(it, 'total'), num(it, 'pc'), num(it, 'mo'), it.vol?.comp && !it.vol.notFound ? it.vol.comp : ''];
+      return [it.keyword, it.adGroup || '', charLen(it.keyword), it.status, it.kind || '', it.match || '', v.label, v.p, v.n, cs.length ? cs[cs.length - 1].reason : '', it.intent || '', it.reason || '', it.source || '', num(it, 'total'), num(it, 'pc'), num(it, 'mo'), it.vol?.comp && !it.vol.notFound ? it.vol.comp : ''];
     })];
-    const blob = XlsxLite.writeXlsx([{ name: 'AI 키워드', rows: data, widths: [28, 8, 10, 22, 22, 12, 9, 9, 22, 10, 22, 8, 12, 10, 10, 10] }]);
+    const blob = XlsxLite.writeXlsx([{ name: 'AI 키워드', rows: data, widths: [28, 18, 8, 10, 22, 22, 12, 9, 9, 22, 10, 22, 8, 12, 10, 10, 10] }]);
     const a = document.createElement('a');
     const name = (AI.cur.name || 'AI키워드').replace(/[\\/:*?"<>|]/g, '').slice(0, 30);
     const tag = [AI.filter, AI.vfilter].filter((x) => x !== '전체').join('_');

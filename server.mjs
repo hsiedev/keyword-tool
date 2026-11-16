@@ -1148,6 +1148,42 @@ async function embedNear({ candidates = [], existing = [], min = 0.82, top = 5 }
   return { near, pending, pool: E.length, note, model: EMB_MODEL };
 }
 
+// 광고그룹 묶기: 같은 광고 문구·랜딩으로 대응할 수 있는 키워드끼리 AI가 묶음 (지금 고른 AI 한 번 호출)
+async function aiGroup({ keywords = [], topic = '', size = '' }) {
+  const list = [];
+  const seen = new Set();
+  for (const x of Array.isArray(keywords) ? keywords : []) { const k = String(x?.keyword ?? x ?? '').trim(); if (k && !seen.has(normKw(k))) { seen.add(normKw(k)); list.push({ keyword: k, total: Number(x?.total) || 0 }); } }
+  if (list.length < 2) throw new Error('묶을 키워드가 2개 이상 있어야 해요');
+  if (list.length > 400) throw new Error('한 번에 400개까지 묶을 수 있어요. 체크해서 나눠 주세요');
+  const prompt = [
+    `주제: ${String(topic || '(없음)').slice(0, 200)}`,
+    '아래 키워드를 네이버 검색광고(파워링크) 광고그룹으로 묶어줘.',
+    '규칙:',
+    '- 같은 광고 문구와 같은 랜딩 페이지로 대응할 수 있는 검색 의도끼리 한 그룹 (예: 가격·비용·보험료는 한 그룹, 후기·추천은 다른 그룹)',
+    '- 대상(연령·직업 등)이나 상품 종류가 다르면 다른 그룹',
+    `- 한 그룹은 ${size === 'small' ? '2~10' : size === 'large' ? '5~40' : '3~20'}개 정도. 어디에도 안 맞는 것은 "기타" 그룹`,
+    '- 모든 키워드는 정확히 한 그룹에만, 키워드는 글자 그대로 (고치거나 새로 만들지 말 것)',
+    '- 그룹 이름은 광고그룹 이름으로 쓸 수 있게 짧게 (예: "운전자보험_가격", 15자 이내)',
+    '',
+    '키워드 (괄호는 월간 검색량):',
+    list.map((x) => `${x.keyword}(${x.total})`).join(', '),
+  ].join('\n');
+  const schema = { type: 'ARRAY', items: { type: 'OBJECT', properties: { group: { type: 'STRING' }, keywords: { type: 'ARRAY', items: { type: 'STRING' } } }, required: ['group', 'keywords'] } };
+  const { data, model } = await llmJson(prompt, schema, { temperature: 0.2, system: '너는 네이버 검색광고 계정 구조를 짜는 전문가다. 설명 없이 JSON만 출력한다.' });
+  // 검사: 목록에 없는 키워드는 버리고, 두 번 들어간 건 처음 그룹만, 빠진 건 "기타"로
+  const byN = new Map(list.map((x) => [normKw(x.keyword), x.keyword]));
+  const used = new Set(), groups = [];
+  for (const g of Array.isArray(data) ? data : []) {
+    const name = String(g?.group || '').trim().slice(0, 30) || '이름 없음';
+    const ks = [];
+    for (const k of Array.isArray(g?.keywords) ? g.keywords : []) { const n = normKw(k); if (byN.has(n) && !used.has(n)) { used.add(n); ks.push(byN.get(n)); } }
+    if (ks.length) { const ex = groups.find((x) => x.group === name); ex ? ex.keywords.push(...ks) : groups.push({ group: name, keywords: ks }); }
+  }
+  const missing = list.filter((x) => !used.has(normKw(x.keyword))).map((x) => x.keyword);
+  if (missing.length) { const etc = groups.find((x) => x.group === '기타'); etc ? etc.keywords.push(...missing) : groups.push({ group: '기타', keywords: missing }); }
+  return { groups, missing: missing.length, model };
+}
+
 // 키워드 여러 개의 검색량 (검색광고 API, 5개씩)
 async function volumes(keywords) {
   if (!hasAd()) throw new Error('검색광고 API 키가 없어 검색량을 붙일 수 없어요');
@@ -1513,6 +1549,7 @@ const server = http.createServer(async (req, res) => {
           catch (e) { if (!ac.signal.aborted) emit('error', { message: e.message }); }
           return res.end();
         }
+        if (u.pathname === '/api/ai/group') return send(res, 200, await aiGroup(b));
         if (u.pathname === '/api/ai/embed-near') return send(res, 200, await embedNear(b));
         if (u.pathname === '/api/ai/semantic') return send(res, 200, { results: await aiSemantic(b) });
         if (u.pathname === '/api/ai/verify') return send(res, 200, await aiVerify(b));

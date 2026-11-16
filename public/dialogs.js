@@ -71,6 +71,30 @@
     });
   }
 
+  // 고르기 창: options = [[값, 이름], ...] → Promise<값|null>. Enter = 지금 선택, Esc = 취소
+  function uiChoice(msg, options, def) {
+    return new Promise((resolve) => {
+      const bg = document.createElement('div');
+      bg.className = 'cfm-bg';
+      bg.innerHTML = `<div class="cfm" role="dialog" aria-modal="true" aria-labelledby="cfmMsg">
+        <div class="cfm-msg" id="cfmMsg">${nl(msg)}</div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px">${options.map(([v, n]) => `<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="radio" name="uich" value="${esc2(v)}" ${v === def ? 'checked' : ''}> ${esc2(n)}</label>`).join('')}</div>
+        <div class="cfm-btns"><button type="button" class="btn" data-v="0">취소</button><button type="button" class="btn pri" data-v="1">확인</button></div></div>`;
+      document.body.appendChild(bg);
+      const prev = document.activeElement;
+      const val = () => bg.querySelector('input[name=uich]:checked')?.value ?? null;
+      const done = (v) => { document.removeEventListener('keydown', onKey, true); bg.remove(); try { prev?.focus?.(); } catch {} resolve(v); };
+      const onKey = (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); }
+        if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(val()); }
+      };
+      document.addEventListener('keydown', onKey, true);
+      bg.querySelectorAll('[data-v]').forEach((b) => (b.onclick = () => done(b.dataset.v === '1' ? val() : null)));
+      bg.addEventListener('mousedown', (e) => { if (e.target === bg) done(null); });
+      bg.querySelector('[data-v="1"]').focus();
+    });
+  }
+  window.uiChoice = uiChoice;
   window.toast = toast;
   window.uiPrompt = uiPrompt;
   window.uiConfirm = uiConfirm;
