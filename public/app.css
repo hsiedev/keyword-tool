@@ -568,3 +568,21 @@ html.dark .act-bar.has-sel .act-cnt{color:#15803d}
 html.dark .act-bar .act-sep{background:rgba(0,0,0,.2)}
 @media print{.act-bar{display:none}}
 body:has(#aiView:not(.hidden) #aiActBar:not(.hidden)) #toTop{bottom:88px}
+
+/* 켜기/끄기 스위치 (toggles.js) */
+input.sw{-webkit-appearance:none;appearance:none;margin:0;width:34px;height:20px;flex:none;border-radius:999px;background:#c9c9c9;position:relative;cursor:pointer;vertical-align:middle;transition:background-color .25s ease;border:0}
+input.sw::before{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .3s cubic-bezier(.34,1.35,.64,1)}
+input.sw:checked{background:var(--accent,#16a34a)}
+input.sw:checked::before{transform:translateX(14px)}
+input.sw:active::before{width:19px}
+input.sw:checked:active::before{transform:translateX(11px)}
+input.sw:disabled{opacity:.45;cursor:default}
+input.sw:focus-visible{outline:2px solid var(--accent,#16a34a);outline-offset:2px}
+html.dark input.sw{background:#4b4b4b}
+html.dark input.sw:checked{background:var(--accent,#16a34a)}
+label:has(>input.sw){gap:8px}
+.pin-tg:has(input.sw){background:none!important;color:var(--foreground)!important;border-color:var(--border)!important}
+@media (prefers-reduced-motion:reduce){input.sw,input.sw::before{transition:none}}
+/* 기존 키워드 목록 줄: 모두 켜기/끄기를 같은 줄 오른쪽에 */
+.src-master{justify-content:space-between;cursor:default}
+.src-master .src-all{display:flex;gap:10px;font-size:12px;flex:none}

@@ -345,10 +345,14 @@
             <div class="card"><h3>② 기존 키워드 (중복 검사용) <span class="muted" id="exCount"></span></h3>
               <div class="drop" id="aiDrop">엑셀(xlsx), CSV, 메모장(txt) 파일을 끌어다 놓거나 <label class="ext" style="cursor:pointer">파일 선택<input type="file" id="aiFile" accept=".xlsx,.xlsm,.csv,.txt,.tsv,.xls" multiple hidden></label><div class="muted" style="margin-top:4px">파일은 이 PC 안에서만 읽어요</div></div>
               <div id="aiPick"></div>
-              <details style="margin-top:10px"><summary class="muted" style="cursor:pointer">직접 붙여넣기</summary>
-                <textarea id="aiPaste" class="inp" rows="3" placeholder="키워드를 줄바꿈이나 쉼표로 구분해서 붙여넣기" style="margin-top:6px"></textarea>
-                <button class="btn" id="aiPasteAdd" style="margin-top:6px">목록에 추가</button>
-              </details>
+              <div style="margin-top:10px">
+                <label class="muted" style="font-size:12px">직접 붙여넣기</label>
+                <textarea id="aiPaste" class="inp" rows="3" placeholder="키워드를 줄바꿈이나 쉼표로 구분해서 붙여넣기" style="margin-top:4px"></textarea>
+                <div style="display:flex;gap:6px;margin-top:6px">
+                  <input id="aiPasteName" class="inp" placeholder="목록 이름 (비우면 '붙여넣기 + 시각')" maxlength="80" style="flex:1">
+                  <button class="btn" id="aiPasteAdd">목록에 추가</button>
+                </div>
+              </div>
               <div id="aiSources" style="margin-top:10px"></div>
             </div>
           </div>
@@ -417,8 +421,10 @@
     $('#aiPasteAdd').onclick = () => {
       const ks = splitList($('#aiPaste').value);
       if (!ks.length) return;
-      addSource('붙여넣기 ' + new Date().toLocaleTimeString('ko-KR'), ks);
-      $('#aiPaste').value = '';
+      const nm = $('#aiPasteName').value.trim().slice(0, 80);
+      addSource(nm || '붙여넣기 ' + new Date().toLocaleTimeString('ko-KR'), ks);
+      $('#aiPaste').value = ''; $('#aiPasteName').value = '';
+      toast(`'${nm || '붙여넣기'}' 목록에 ${ks.length.toLocaleString('ko-KR')}개를 추가했어요`, 'ok');
     };
     $('#aiManualAdd').onclick = async () => {
       const ks = splitList($('#aiManual').value);
@@ -983,11 +989,12 @@
         <label class="muted"><input type="checkbox" id="pkHead" ${p.header ? 'checked' : ''}> 첫 행은 제목</label>
       </div>
       <div class="muted">키워드 ${kws.length.toLocaleString('ko-KR')}개 · 미리보기: ${esc(kws.slice(0, 6).join(', '))}${kws.length > 6 ? ' …' : ''}</div>
-      <div style="display:flex;gap:6px;margin-top:8px"><button class="btn pri" id="pkAdd">추가</button><button class="btn" id="pkCancel">취소</button></div></div>`;
+      <div style="display:flex;gap:6px;margin-top:8px"><input id="pkName" class="inp" maxlength="80" style="flex:1" placeholder="목록 이름" value="${esc(p.nameOverride ?? (p.file + (p.sheets.length > 1 ? ` (${p.sheets[p.si].name})` : '')))}"><button class="btn pri" id="pkAdd">목록에 추가</button><button class="btn" id="pkCancel">취소</button></div></div>`;
     if ($('#pkSheet')) $('#pkSheet').onchange = (e) => { p.si = +e.target.value; p.col = null; drawPicker(); };
     $('#pkCol').onchange = (e) => { p.col = +e.target.value; drawPicker(); };
     $('#pkHead').onchange = (e) => { p.header = e.target.checked; drawPicker(); };
-    $('#pkAdd').onclick = () => { const name = p.file + (p.sheets.length > 1 ? ` (${p.sheets[p.si].name})` : ''); addSource(name, p.keywords); const d = p.done; AI.pending = null; drawPicker(); d && d(); };
+    $('#pkAdd').onclick = () => { const name = ($('#pkName')?.value.trim() || p.file + (p.sheets.length > 1 ? ` (${p.sheets[p.si].name})` : '')).slice(0, 80); addSource(name, p.keywords); const d = p.done; AI.pending = null; drawPicker(); d && d(); };
+    $('#pkName').oninput = (e) => (p.nameOverride = e.target.value);
     $('#pkCancel').onclick = () => { const d = p.done; AI.pending = null; drawPicker(); d && d(); };
   }
   async function addSource(name, keywords) {
@@ -1003,11 +1010,10 @@
     $('#exCount').textContent = c?.srcNone ? '사용 안 함' : total ? `사용 중 ${onN}개 목록 · 중복 제외 ${total.toLocaleString('ko-KR')}개` : '';
     const fd = (t) => (t ? new Date(t).toLocaleDateString('ko-KR') : '');
     $('#aiSources').innerHTML = AI.sources.length
-      ? `<label class="src-master"><input type="checkbox" id="srcUse" ${c?.srcNone ? '' : 'checked'}> <b>기존 키워드 목록</b> <span class="muted">${c?.srcNone ? '(꺼짐: 생성 결과끼리만 중복을 걸러요)' : ''}</span></label>
+      ? `<div class="src-master"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;min-width:0"><input type="checkbox" id="srcUse" ${c?.srcNone ? '' : 'checked'}> <b>기존 키워드 목록</b> <span class="muted">${c?.srcNone ? '(꺼짐: 생성 결과끼리만 중복을 걸러요)' : ''}</span></label>${AI.sources.length > 1 && !c?.srcNone ? '<span class="src-all"><a href="#" class="ext" id="srcAll">모두 켜기</a><a href="#" class="ext" id="srcNoneAll">모두 끄기</a></span>' : ''}</div>
         <div class="src-list ${c?.srcNone ? 'off' : ''}">
         ${AI.sources.map((s) => `<div class="src-row"><label><input type="checkbox" data-src="${esc(s.id)}" ${(c?.srcOff || []).includes(String(s.id)) ? '' : 'checked'} ${c?.srcNone ? 'disabled' : ''}> <span class="sn2">${esc(s.name)}</span></label><span class="muted src-acts">${s.keywords.length.toLocaleString('ko-KR')}개${s.addedAt ? ' · ' + fd(s.addedAt) : ''} <a href="#" class="ext" data-rn="${esc(s.id)}">이름 변경</a><a href="#" class="ext" data-dl="${esc(s.id)}" data-fmt="txt" title="한 줄에 키워드 하나">TXT</a><a href="#" class="ext" data-dl="${esc(s.id)}" data-fmt="xlsx">엑셀</a><a href="#" class="ext" data-rm="${esc(s.id)}">삭제</a></span></div>`).join('')}
         </div>
-        ${AI.sources.length > 1 && !c?.srcNone ? '<div style="display:flex;gap:10px;margin-top:6px;font-size:12px"><a href="#" class="ext" id="srcAll">모두 켜기</a><a href="#" class="ext" id="srcNoneAll">모두 끄기</a></div>' : ''}
         <div class="muted" style="font-size:11px;margin-top:6px">목록은 분석기 폴더에 저장돼 모든 탭이 같이 써요. 켜고 끄기는 탭마다 따로 기억해요.${srcFile ? `<br>${esc(srcFile)}` : ''}</div>`
       : '<div class="muted">아직 불러온 기존 키워드가 없어요. 없어도 생성 결과끼리는 중복을 걸러요.</div>';
     const box = $('#aiSources');
