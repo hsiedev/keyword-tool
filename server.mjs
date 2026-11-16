@@ -856,7 +856,10 @@ async function geminiModels() {
 }
 
 const INTENTS = ['정보', '비교', '가입·구매', '후기', '세분화', '기타'];
-function generateRequest({ topic = '', examples = [], count = 50, extra = '', avoid = [], existing = [], rejected = [], minLen = 2, maxLen = 30, seeds = [] }) {
+function generateRequest({ topic = '', examples = [], count = 50, extra = '', avoid = [], existing = [], rejected = [], minLen = 2, maxLen = 30, seeds = [], refMode = 'ref', plan = null, suggest = [] }) {
+  const brief = String(topic || '').trim() + (extra ? '\n' + String(extra).trim() : '');
+  const sug = (Array.isArray(suggest) ? suggest : []).map((x) => String(x?.keyword ?? x ?? '').replace(/\s+/g, '')).filter(Boolean).slice(0, 200);
+  const pl = plan && typeof plan === 'object' ? plan : null;
   // 네이버 키워드 도구 연관 키워드 (실제 검색량): AI가 이걸 바탕으로 넓힘
   const sd = (Array.isArray(seeds) ? seeds : []).filter((x) => x && x.keyword).slice(0, 200);
   const ex = (Array.isArray(existing) ? existing : []).map((k) => String(k).replace(/\s+/g, '')).filter(Boolean).slice(0, 2000);
@@ -867,19 +870,26 @@ function generateRequest({ topic = '', examples = [], count = 50, extra = '', av
   const lenRule = lo === 2 && hi === 30 ? '' : `- 각 키워드는 띄어쓰기를 뺀 글자 수가 반드시 ${lo}자 이상 ${hi}자 이하 (예: "운전자 보험"은 5자). 범위를 벗어나면 버려진다`;
   const G = RG();
   const system = G.system;
+  // 예전 규칙 문장("예시 키워드와 같은 결을 유지")이 남아 있으면 브리프 기준 문장으로 바꿔 씀
+  const ruleLines = String(G.rules || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+    .map((l) => (/예시 키워드와 같은 결/.test(l) && refMode !== 'expand' ? '- 브리프의 목적·타깃·조건에 맞춰 다양한 각도로 발굴: 정보 탐색, 비교, 가입·구매, 후기, 대상·상황 세분화, 롱테일' : l))
+    .map((l) => (/^[-•\d]/.test(l) ? l : '- ' + l));
   const prompt = [
-    `주제: ${topic || '(없음)'}`,
-    `예시 키워드: ${examples.length ? examples.join(', ') : '(없음)'}`,
-    extra ? `요청 사항 (사용자가 자유롭게 쓴 지시이므로 의도를 파악해 반드시 따를 것. 단, 아래 규칙과 충돌하면 규칙을 우선):\n"""\n${String(extra).slice(0, 2000)}\n"""` : '',
+    `[브리프] (사용자가 쓴 의뢰 내용. 목적·타깃·조건·제외할 것을 파악해 반드시 따를 것. 단, 아래 규칙과 충돌하면 규칙 우선)\n"""\n${brief.slice(0, 3000) || '(없음)'}\n"""`,
+    pl ? `\n[탐색 계획] (브리프를 해석한 결과)\n- 검색 의도: ${String(pl.intent || '').slice(0, 300)}\n- 타깃: ${String(pl.audience || '').slice(0, 200)}\n- 다룰 각도: ${(pl.angles || []).slice(0, 12).join(' / ')}${(pl.avoid || []).length ? `\n- 피할 것: ${pl.avoid.slice(0, 12).join(', ')}` : ''}` : '',
+    examples.length ? (refMode === 'expand'
+      ? `\n[참고 키워드] 이 키워드들과 같은 결로 넓혀라: ${examples.join(', ')}`
+      : `\n[참고 키워드] 사용자가 참고로 준 것 (방향만 참고. 이 단어 조합 안에서만 맴돌지 말고, 브리프에 맞으면 전혀 다른 단어로도 발굴할 것): ${examples.join(', ')}`) : '',
     '',
-    `위 주제와 예시에 맞는 검색 키워드를 ${n}개 제안해줘.`,
+    `위 브리프에 맞는 검색 키워드를 ${n}개 발굴해줘.${sd.length || sug.length ? ' 아래 [실제 검색 데이터]에 브리프에 맞는 키워드가 있으면 그대로 골라도 되고, 탐색 계획의 각도 중 데이터가 부족한 각도는 실제 사람들이 검색할 만한 표현으로 새로 만들어 채워라.' : ''}`,
     '규칙:',
-    ...String(G.rules || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => (/^[-•\d]/.test(l) ? l : '- ' + l)),
+    ...ruleLines,
     G.noSpace ? '- 모든 키워드는 띄어쓰기 없이 붙여 쓴다 (예: "운전자보험추천", "30대암보험비교"). 공백이 하나라도 있으면 안 된다' : '',
     lenRule,
     `- intent는 ${INTENTS.join(', ')} 중 하나`,
     '- reason은 왜 유망한지 15자 이내',
-    sd.length ? `\n네이버 키워드 도구 연관 키워드 ${sd.length}개 (키워드 도구가 준 관련도 순, 괄호는 실제 월간 검색량):\n${sd.map((x) => `${String(x.keyword).replace(/\s+/g, '')}(${Number(x.total) || 0})`).join(', ')}\n→ 이 목록에서 실제로 많이 검색되는 표현·수식어·조합 패턴을 파악해서, 주제에 맞으면서 이 목록에 없는 새 키워드로 넓혀라. 목록에 있는 키워드를 그대로 다시 내지 말 것. 괄호 속 검색량을 보면 짧고 흔한 표현일수록 많이 검색된다. 실제 사람들이 검색창에 칠 만한 짧은 조합(2~3개 단어)을 우선하고, 검색량이 거의 없을 너무 길거나 꾸민 표현(예: ~꿀팁정리, ~총정리비교)은 피할 것. 주제와 무관한 연관 키워드는 무시할 것.` : '',
+    sug.length ? `\n[실제 검색 데이터 ① 네이버·구글 자동완성과 관련 검색어] (사람들이 실제로 입력하는 표현, 검색량 미확인):\n${sug.join(', ')}` : '',
+    sd.length ? `\n[실제 검색 데이터 ② 네이버 키워드 도구 연관 키워드 ${sd.length}개] (괄호는 실제 월간 검색량):\n${sd.map((x) => `${String(x.keyword).replace(/\s+/g, '')}(${Number(x.total) || 0})`).join(', ')}\n→ 이 목록에서 실제로 많이 검색되는 표현·수식어·조합 패턴을 파악해서, 주제에 맞으면서 이 목록에 없는 새 키워드로 넓혀라. 목록에 있는 키워드를 그대로 다시 내지 말 것. 괄호 속 검색량을 보면 짧고 흔한 표현일수록 많이 검색된다. 실제 사람들이 검색창에 칠 만한 짧은 조합(2~3개 단어)을 우선하고, 검색량이 거의 없을 너무 길거나 꾸민 표현(예: ~꿀팁정리, ~총정리비교)은 피할 것. 주제와 무관한 연관 키워드는 무시할 것.` : '',
     avoid.length ? `\n제외 목록 (이미 확보한 키워드):\n${avoid.slice(-600).join(', ')}` : '',
     ex.length ? `\n기존에 이미 운영 중인 키워드 ${ex.length}개 (이것들과 같거나, 대소문자·어순·조사만 다르거나, 의미가 사실상 같은 키워드는 절대 제안하지 말 것. 이 목록에 없는 새로운 각도로 넓힐 것):\n${ex.join(', ')}` : '',
     rej.length ? `\n부적합 판정을 받은 키워드 (다시 제안하지 말고, 같은 이유로 부적합할 만한 비슷한 유형도 피할 것. 특히 검색량 부족이면 더 널리 검색되는 표현을 쓸 것):\n${rej.map((r) => `${r.keyword} (${String(r.reason || '').slice(0, 30)})`).join('\n')}` : '',
