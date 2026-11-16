@@ -1093,7 +1093,7 @@ async function reportHtml() {
   let logo = '';
   try { const b = await (await fetch('logo-128.png')).blob(); logo = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); }); } catch {}
   const body = $('#result').cloneNode(true);
-  body.querySelectorAll('button, input, select, .toolbar, .pager, .seg, script, .loading, details summary').forEach((el) => el.remove());
+  body.querySelectorAll('button, input, select, .toolbar, .pager, .seg, script, .loading, details summary, .so-grip, .fp-bar').forEach((el) => el.remove());
   // 연관 키워드는 화면의 한 페이지만 보이므로, 지금 정렬·필터 기준 상위 100개 표로 바꿈
   const rel = body.querySelector('#relTbl');
   if (rel && typeof relRows === 'function') {
@@ -1150,6 +1150,7 @@ fetch('/api/config').then((r) => r.json()).then((c) => { if (!c.hasAd && !c.hasO
 <script src="google.js"></script>
 <script src="tablecols.js"></script>
 <script src="focus.js"></script>
+<script src="sectionorder.js"></script>
 <script src="layout.js"></script>
 </body>
 </html>

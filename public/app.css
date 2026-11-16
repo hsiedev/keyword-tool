@@ -515,3 +515,24 @@ html.dark .pf-ro{color:#86efac;background:#052e16;border-color:#14532d}
 .ai-plan #aiPlanBody{display:flex;flex-direction:column;gap:5px;margin-top:8px;line-height:1.6}
 .ai-plan b{display:inline-block;min-width:66px;color:var(--muted-fg);font-weight:500}
 .ai-plan .chip{display:inline-block;padding:1px 8px;border-radius:999px;background:var(--card);border:1px solid var(--border);margin:1px 2px;font-size:12px}
+
+/* 섹션 순서 바꾸기 (sectionorder.js) */
+.so-grip{display:inline-block;width:16px;margin-left:-20px;margin-right:4px;color:var(--muted-fg);cursor:grab;opacity:0;font-size:15px;user-select:none;transition:opacity .15s}
+section.sec>h2:hover .so-grip{opacity:.7}
+section.sec>h2{position:relative}
+.so-src{opacity:.45}
+.tabs a[draggable=true]{cursor:pointer}
+.tabs a.so-l{box-shadow:inset 3px 0 0 var(--accent,#16a34a)}
+.tabs a.so-r{box-shadow:inset -3px 0 0 var(--accent,#16a34a)}
+h2.so-t{box-shadow:0 -3px 0 var(--accent,#16a34a)}
+h2.so-b{box-shadow:0 3px 0 var(--accent,#16a34a)}
+@media print{.so-grip{display:none}}
+
+/* 키워드 표 번호 열 (tablecols.js) */
+table th.rn,table td.rn{width:38px;min-width:38px;text-align:right!important;color:var(--muted-fg);font-variant-numeric:tabular-nums;font-size:12px;padding-right:6px!important}
+
+/* 맨 위로 버튼 (layout.js) */
+#toTop{position:fixed;right:22px;bottom:22px;z-index:40;width:38px;height:38px;border-radius:50%;border:1px solid var(--border);background:var(--card);color:var(--muted-fg);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.08);opacity:0;transform:translateY(8px);pointer-events:none;transition:opacity .2s,transform .2s,color .15s}
+#toTop.show{opacity:.75;transform:none;pointer-events:auto}
+#toTop:hover{opacity:1;color:var(--foreground)}
+@media print{#toTop{display:none}}

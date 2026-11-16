@@ -106,10 +106,30 @@
     });
   }
 
+  // 맨 왼쪽(체크 칸 다음, 키워드 앞)에 번호 열: 이미 '#' 열이 있는 표는 그대로
+  function addNumbers(t) {
+    const hr = headRow(t);
+    if (!hr || hr.querySelector('th.rn')) return;
+    if ([...hr.cells].some((c) => c.textContent.trim() === '#')) return;
+    const k = kwIndex(t);
+    if (k < 0) return;
+    const n = hr.cells.length;
+    const th = document.createElement('th');
+    th.className = 'rn'; th.textContent = '#';
+    hr.insertBefore(th, hr.cells[k]);
+    // 페이지로 나뉜 표(연관 키워드)는 앞 페이지 개수만큼 더함
+    let off = 0;
+    try { if (t.id === 'relTbl' && typeof REL !== 'undefined' && typeof PAGE_REL === 'function') off = (REL.page - 1) * PAGE_REL(); } catch {}
+    let i = 0;
+    for (const tb of t.tBodies) for (const row of tb.rows) {
+      if (row.cells.length === n) { const td = document.createElement('td'); td.className = 'rn'; td.textContent = String(off + ++i); row.insertBefore(td, row.cells[k]); }
+      else if (row.cells.length === 1) row.cells[0].colSpan = (row.cells[0].colSpan || 1) + 1;
+    }
+  }
   let busy = false;
   function refresh(t) {
     busy = true;
-    try { applyOrder(t); wireDrag(t); freeze(t); } finally { busy = false; }
+    try { addNumbers(t); applyOrder(t); wireDrag(t); freeze(t); } finally { busy = false; }
   }
   function all() { document.querySelectorAll(TABLES).forEach((t) => { if (t.offsetParent !== null && headRow(t)) refresh(t); }); }
 

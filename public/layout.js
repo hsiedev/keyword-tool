@@ -109,10 +109,12 @@
   // ---------------------------------------------------------------- 화면 전환
   const isOn = (id) => { const el = document.getElementById(id); return el && !el.classList.contains('hidden'); };
   const current = () => (isG() ? 'analyze' : isOn('copyView') ? 'copy' : isOn('mockView') ? 'mock' : isOn('perfView') ? 'perf' : isOn('aiView') ? 'ai' : isOn('dupView') ? 'dup' : isOn('bulkView') ? 'bulk' : 'analyze');
+  const POS = {}; // 메뉴(탭)마다 마지막 스크롤 위치
   function go(v) {
     document.body.classList.remove('side-open');
     if (isG()) { if (v === 'analyze') return; setMode('naver'); }
     if (v === current()) return;
+    POS[current()] = scrollY;
     if (v !== 'copy') window.__hideCopy?.();
     if (v !== 'mock') window.__hideMock?.();
     if (v !== 'perf') window.__hidePerf?.();
@@ -127,8 +129,11 @@
     if (v === 'ai') window.showAI?.(true);
     if (v === 'dup') window.showDup?.(true);
     if (v === 'bulk') window.showBulk?.(true);
-    scrollTo({ top: 0 });
     sync();
+    // 그 탭에서 보던 위치로 (화면이 그려진 뒤에 한 번 더 맞춤)
+    const y = POS[v] || 0;
+    scrollTo(0, y);
+    requestAnimationFrame(() => requestAnimationFrame(() => scrollTo(0, y)));
   }
   side.querySelectorAll('[data-view]').forEach((b) => (b.onclick = () => go(b.dataset.view)));
 
@@ -171,6 +176,15 @@
     placeSearch(v);
   }
   window.__LAYOUT = { sync, go, current };
+
+  // 맨 위로 버튼: 한 화면 넘게 내려가면 오른쪽 아래에 작게
+  const topBtn = document.createElement('button');
+  topBtn.type = 'button'; topBtn.id = 'toTop'; topBtn.title = '맨 위로'; topBtn.setAttribute('aria-label', '맨 위로');
+  topBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>';
+  topBtn.onclick = () => scrollTo({ top: 0, behavior: 'smooth' });
+  document.body.appendChild(topBtn);
+  let topRaf = 0;
+  addEventListener('scroll', () => { if (!topRaf) topRaf = requestAnimationFrame(() => { topRaf = 0; topBtn.classList.toggle('show', scrollY > innerHeight * 0.8); }); }, { passive: true });
 
   // ---------------------------------------------------------------- 열린 탭 줄
   const openKey = () => (isG() ? 'openViews_g' : 'openViews');
