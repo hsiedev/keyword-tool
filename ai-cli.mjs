@@ -203,7 +203,7 @@ export async function cliModels(p, config = {}) {
       for (const m of j.models || []) {
         if (!m.slug || (m.visibility && m.visibility !== 'list')) continue;
         list.push({ id: m.slug, label: m.display_name || m.slug, def: m.default_reasoning_level || '' });
-        for (const lv of (m.supported_reasoning_levels || []).map((x) => x.effort || x).filter(Boolean)) list.push({ id: `${m.slug}:${lv}`, label: `${m.display_name || m.slug} · 생각 ${lv}` });
+        for (const lv of (m.supported_reasoning_levels || []).map((x) => x.effort || x).filter((x) => ['low', 'medium', 'high'].includes(x))) list.push({ id: `${m.slug}:${lv}`, label: `${m.display_name || m.slug} · 생각 ${lv}` });
       }
       cliModels.raw = { n: list.length };
       if (list.length) modelCache[p] = { at: Date.now(), list };

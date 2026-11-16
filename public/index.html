@@ -301,7 +301,7 @@ const PROV = {
     need: '개인 구글 계정 (무료 등급 있음, Google AI Pro·Ultra면 한도가 더 넉넉해요)' },
   claude: { name: 'Claude (로그인)', cli: true, tool: 'Claude Code', defaults: ['', 'sonnet', 'opus', 'haiku'], notes: { '': '기본 (계정 설정)', sonnet: '추천', opus: '고성능 · 한도가 빨리 참', haiku: '빠름' },
     need: 'Claude 유료 구독 (Pro·Max 등). 무료 계정은 안 돼요' },
-  codex: { name: 'GPT (ChatGPT 로그인)', cli: true, tool: 'Codex CLI', defaults: [''], notes: { '': '기본 모델' },
+  codex: { name: 'GPT (ChatGPT 로그인)', cli: true, tool: 'Codex CLI', defaults: ['', 'gpt-6.1-terra:low', 'gpt-6-luna:low', 'gpt-6.1-sol', 'gpt-6-astra'], notes: { '': '기본 (지금 gpt-6.1-sol · 50개 약 30초)', 'gpt-6.1-terra:low': '빠름 · 글쓰기에 강함 (약 27초)', 'gpt-6-luna:low': '가장 가벼움 (약 26초)', 'gpt-6.1-sol': '꼼꼼 · 추천', 'gpt-6-astra': '최고 성능 · 느림 · 한도가 빨리 참' },
     need: 'ChatGPT 계정 (Plus·Pro 등 유료 플랜 권장, 무료 플랜은 제한적일 수 있어요)' },
 };
 let AICFG = { provider: 'gemini', models: {}, has: {}, pin: false };
