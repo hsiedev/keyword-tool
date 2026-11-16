@@ -567,3 +567,4 @@ html.dark .act-bar .act-bad{color:#b91c1c;border-color:rgba(185,28,28,.4)}
 html.dark .act-bar.has-sel .act-cnt{color:#15803d}
 html.dark .act-bar .act-sep{background:rgba(0,0,0,.2)}
 @media print{.act-bar{display:none}}
+body:has(#aiView:not(.hidden) #aiActBar:not(.hidden)) #toTop{bottom:88px}
