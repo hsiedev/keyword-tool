@@ -12,6 +12,7 @@ import { parseSections } from './sections.mjs';
 import { CLI, CLI_MODELS, cliPath, runCli, cliStatus, cliTest, openConsole, cliJobs, cliModels } from './ai-cli.mjs';
 import { createGitSync } from './github-sync.mjs';
 import { createGoogle } from './google-core.mjs';
+import { assertAdAllowed } from './ad-guard.mjs';
 import { parsePowerlinks, copyGenerateRequest, cleanCopyItems, copyVerifyRequest, cleanVerifyItems, createStore, copyMeta, mockMeta } from './copy-core.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -79,6 +80,7 @@ const addDays = (d, n) => new Date(d.getTime() + n * 86400e3);
 
 // ---------------------------------------------------------------- 네이버 검색광고 API
 async function adRequest(method, uri, { query, body } = {}) {
+  assertAdAllowed(method, uri); // 읽기·예상치 호출만 (광고 켜기/끄기·입찰가 변경 등은 네트워크로 보내기 전에 차단)
   const url = 'https://api.searchad.naver.com' + uri + (query ? '?' + new URLSearchParams(query) : '');
   for (let attempt = 0; attempt < 4; attempt++) {
     const ts = String(Date.now());
@@ -1069,6 +1071,56 @@ async function volumes(keywords) {
   return out;
 }
 
+// ---------------------------------------------------------------- 광고 성과 (읽기 전용)
+// 광고 계정 자료는 파일에 남기지 않고 메모리에만 10분 보관
+const ADS_MEM = new Map();
+async function adsMem(key, fn) {
+  const hit = ADS_MEM.get(key);
+  if (hit && hit.exp > Date.now()) return hit.v;
+  const v = await fn();
+  ADS_MEM.set(key, { v, exp: Date.now() + 10 * 60e3 });
+  return v;
+}
+const ON_OFF = (x) => (x.userLock ? '꺼짐' : x.status === 'ELIGIBLE' ? '노출 가능' : x.statusReason || x.status || '-');
+async function adsCampaigns() {
+  const list = await adsMem('cmp', () => adRequest('GET', '/ncc/campaigns'));
+  return (Array.isArray(list) ? list : []).map((c) => ({ id: c.nccCampaignId, name: c.name, type: c.campaignTp, state: ON_OFF(c) }));
+}
+const PERF_FIELDS = ['impCnt', 'clkCnt', 'salesAmt', 'ctr', 'cpc', 'avgRnk', 'ccnt', 'convAmt'];
+async function adsPerf(b = {}) {
+  const day = (x) => (/^\d{4}-\d{2}-\d{2}$/.test(String(x)) ? String(x) : null);
+  const since = day(b.since), until = day(b.until);
+  if (!since || !until || since > until) throw new Error('기간을 확인해 주세요');
+  const cmps = await adsCampaigns();
+  const want = new Set((Array.isArray(b.campaigns) ? b.campaigns : [b.campaign]).filter(Boolean).map(String));
+  const pick = cmps.filter((c) => want.has(c.id));
+  if (!pick.length) throw new Error('캠페인을 골라 주세요');
+  const groups = [];
+  for (const c of pick) {
+    const gs = await adsMem('grp:' + c.id, () => adRequest('GET', '/ncc/adgroups', { query: { nccCampaignId: c.id } }));
+    for (const g of gs || []) groups.push({ id: g.nccAdgroupId, name: g.name, state: ON_OFF(g), cmp: c });
+  }
+  if (groups.length > 300) throw new Error(`광고그룹이 ${groups.length}개라 너무 많아요. 캠페인을 나눠서 골라 주세요 (300개까지)`);
+  const rows = [];
+  for (const g of groups) {
+    const ks = await adsMem('kw:' + g.id, () => adRequest('GET', '/ncc/keywords', { query: { nccAdgroupId: g.id } }));
+    for (const k of ks || []) rows.push({ id: k.nccKeywordId, keyword: k.keyword, group: g.name, groupState: g.state, campaign: g.cmp.name, state: ON_OFF(k), bid: k.useGroupBidAmt ? null : k.bidAmt });
+    if (rows.length > 8000) throw new Error('키워드가 8,000개를 넘어요. 캠페인을 나눠서 골라 주세요');
+  }
+  const stat = new Map();
+  for (let i = 0; i < rows.length; i += 100) {
+    const ids = rows.slice(i, i + 100).map((x) => x.id);
+    const j = await adsMem(`st:${since}:${until}:${ids.join(',')}`, () => adRequest('GET', '/stats', { query: { ids: ids.join(','), fields: JSON.stringify(PERF_FIELDS), timeRange: JSON.stringify({ since, until }), timeIncrement: 'allDays' } }));
+    for (const d of j?.data || []) stat.set(d.id, d);
+    await sleep(120);
+  }
+  const out = rows.map((x) => {
+    const d = stat.get(x.id) || {};
+    return { ...x, imp: +d.impCnt || 0, clk: +d.clkCnt || 0, cost: +d.salesAmt || 0, ctr: +d.ctr || 0, cpc: +d.cpc || 0, rank: +d.avgRnk || 0, conv: +d.ccnt || 0, convAmt: +d.convAmt || 0 };
+  });
+  return { since, until, campaigns: pick.map((c) => c.name), groups: groups.length, rows: out };
+}
+
 // ---------------------------------------------------------------- HTTP 서버
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
 
@@ -1136,6 +1188,15 @@ const server = http.createServer(async (req, res) => {
       try { fs.writeFileSync(CACHE_PATH, JSON.stringify(cache)); } catch {}
       setTimeout(() => process.exit(99), 300); // start.bat이 코드 99를 받으면 다시 실행
       return;
+    }
+    if (u.pathname === '/api/ads/campaigns' || u.pathname === '/api/ads/perf') {
+      // 광고 성과 (읽기 전용): 캠페인 목록 / 캠페인의 키워드별 성과
+      if (!hasAd()) return send(res, 400, { error: '검색광고 API 키가 없어요 (설정 > API 설정)' });
+      try {
+        if (u.pathname === '/api/ads/campaigns') return send(res, 200, { campaigns: await adsCampaigns() });
+        const b = req.method === 'POST' ? await readBody(req) : {};
+        return send(res, 200, await adsPerf(b));
+      } catch (e) { return send(res, e.blocked ? 403 : 502, { error: e.message }); }
     }
     if (u.pathname === '/api/suggest') {
       const kw = String(u.searchParams.get('keyword') || '').trim().slice(0, 60);
