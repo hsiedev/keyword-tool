@@ -601,3 +601,9 @@ body.fp-mode .act-bar .act-ic{background:#16a34a;border-color:#16a34a;color:#fff
 .ai-model-row select.prov-sel{flex:0 0 auto}
 .ai-model-row select.model-sel{flex:1 1 200px;min-width:0;width:auto;text-overflow:ellipsis}
 .ai-model-row>span.muted:last-child{font-size:12px}
+
+/* 생성하면서 재검증 + 최소 월간 검색량 (아래 결과 칸과 연동) */
+.av-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-top:6px}
+.av-mv{display:inline-flex;align-items:center;gap:6px;font-size:13px}
+.av-mv input{width:84px;height:30px;padding:0 8px;border:1px solid var(--border);border-radius:8px;background:var(--background);color:var(--foreground);font-size:13px}
+.av-mv.off{opacity:.45}

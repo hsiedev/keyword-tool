@@ -330,7 +330,7 @@
                 <div class="gscale"><span>2자</span><span>30자</span></div>
               </div>
               <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="aiSendExisting"> 기존 키워드도 AI에 보내 처음부터 피하게 하기 (②에서 켜 둔 목록, 최대 2,000개)</label>
-              <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px" title="생성이 끝나면 새로 들어온 키워드를 바로 이 탭의 주제·예시·요청 사항과 최소 월간 검색량으로 한 번 판정해요 (AI를 한 번 더 써요)"><input type="checkbox" id="aiAutoVerify"> 생성하면서 조건 재검증까지 하기 (진행은 막대 하나로)</label>
+              <div class="av-row"><label class="muted" style="display:flex;gap:6px;align-items:center" title="생성이 끝나면 새로 들어온 키워드를 바로 이 탭의 주제·예시·요청 사항과 최소 월간 검색량으로 한 번 판정해요 (AI를 한 번 더 써요)"><input type="checkbox" id="aiAutoVerify"> 생성하면서 조건 재검증까지 하기 (진행은 막대 하나로)</label><label class="av-mv muted" title="이 값보다 월간 검색량(PC+Mobile)이 적으면 부적합으로 처리해요. 0이면 검색량 기준 없이 AI 판단만 써요. 아래 결과의 '최소 월간 검색량'과 같은 값이에요.">최소 월간 검색량 <input type="number" id="aiMinVol2" min="0" step="10"></label></div>
               <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px" title="AI가 브리프에서 뽑은 씨앗 단어마다 네이버 키워드 도구·자동완성·관련 검색어를 조회해 실제 검색 데이터를 모으고, AI가 그 안에서 고르고 빈 각도를 채워요"><input type="checkbox" id="aiSeed"> 네이버 실제 검색 데이터로 서칭하기 (키워드 도구 · 자동완성 · 관련 검색어)</label>
               <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px" title="웹 검색이 되는 로그인형 AI(Claude 또는 GPT)가 브리프 주제를 먼저 조사해요: 공식 페이지·이벤트 조건, 후기·커뮤니티 표현, 경쟁 광고 문구. 그 결과로 씨앗 단어를 정해요. 1~3분 더 걸리고 구독 사용량을 더 써요"><input type="checkbox" id="aiWeb"> AI가 웹을 먼저 조사하기 (1~3분 더)<span id="aiWebWho" style="font-size:12px"></span></label>
               <div id="aiModel" class="ai-model-row"></div>
@@ -456,6 +456,14 @@
     $('#aiDel2').onclick = () => $('#aiDel').click();
     $('#aiRejSel').onclick = rejectChecked;
     $('#aiMinVol').addEventListener('change', () => save());
+    // 위(생성하면서 재검증) · 아래(결과의 조건 재검증) 최소 월간 검색량 연동
+    const mvA = $('#aiMinVol'), mvB = $('#aiMinVol2');
+    mvB.addEventListener('input', () => { mvA.value = mvB.value; mvA.dispatchEvent(new Event('input', { bubbles: true })); });
+    mvB.addEventListener('change', () => { mvA.value = mvB.value; mvA.dispatchEvent(new Event('change', { bubbles: true })); });
+    mvA.addEventListener('input', () => { mvB.value = mvA.value; });
+    mvA.addEventListener('change', () => { mvB.value = mvA.value; });
+    const avDim = () => mvB.closest('.av-mv').classList.toggle('off', !$('#aiAutoVerify').checked);
+    $('#aiAutoVerify').addEventListener('change', avDim); setTimeout(avDim);
     // 기존 키워드를 Gemini에 보내기: 기본 켜짐, 마지막 선택을 기억
     AI.fb = FilterBar($('#aiFbar'), { ranges: [['total', '월간 검색량'], ['pc', 'PC 검색량'], ['mo', '모바일 검색량'], ['len', '글자 수']], main: ['total', 'len'], onChange: () => draw() });
     const se = $('#aiSendExisting');
@@ -529,7 +537,7 @@
     $('#aiNeg').value = f.neg || '';
     $('#aiLenMin').value = f.minLen;
     $('#aiLenMax').value = f.maxLen;
-    $('#aiMinVol').value = f.minVol;
+    $('#aiMinVol').value = f.minVol; $('#aiMinVol2').value = f.minVol;
     lenUI();
   }
   function readForm() {
