@@ -784,7 +784,8 @@ function relRows() {
   if (f.comp) rows = rows.filter((r) => r.comp === f.comp);
   const { key, dir } = REL.sort;
   rows.sort((a, b) => {
-    const x = a[key], y = b[key];
+    const CR = { 높음: 3, 중간: 2, 낮음: 1 }; // 경쟁은 가나다가 아니라 정도 순으로
+    const x = key === 'comp' ? CR[a.comp] ?? 0 : a[key], y = key === 'comp' ? CR[b.comp] ?? 0 : b[key];
     if (typeof x === 'string') return x.localeCompare(y, 'ko') * dir;
     return ((x ?? -1) - (y ?? -1)) * dir;
   });

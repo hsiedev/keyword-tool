@@ -1195,7 +1195,8 @@
   const COLS = [['keyword', '키워드', 'l'], ['status', '중복 상태', 'l'], ['verify', '조건 검증', 'l'], ['match', '겹치는 기존 키워드', 'l'], ['intent', '의도', 'l'], ['reason', '이유', 'l'], ['total', '월간 검색량'], ['pc', 'PC'], ['mo', 'Mobile'], ['comp', '경쟁']];
   const val = (it, k) => {
     if (k === 'total') return it.vol && !it.vol.error ? (it.vol.notFound ? -0.5 : volLB(it.vol)) : undefined;
-    if (['pc', 'mo', 'comp'].includes(k)) return it.vol?.[k];
+    if (k === 'comp') return ({ 높음: 3, 중간: 2, 낮음: 1 })[it.vol?.comp]; // 가나다가 아니라 정도 순
+    if (['pc', 'mo'].includes(k)) return it.vol?.[k];
     if (k === 'verify') { const v = vsum(it); return v.n ? v.p / v.n + v.n / 1000 : -1; }
     return it[k];
   };
@@ -1246,7 +1247,7 @@
         <td>${vcell(it, 'total')}</td><td class="pc">${vcell(it, 'pc')}</td><td class="mo">${vcell(it, 'mo')}</td><td>${vcell(it, 'comp')}</td>
         <td><a href="#" class="muted" data-x="${esc(it.keyword)}" title="삭제" style="text-decoration:none">✕</a></td></tr>`).join('') ||
         `<tr><td colspan="12" class="l muted" style="padding:24px">${AI.items.length ? '이 조건에 맞는 키워드가 없어요' : '① 에서 주제와 예시를 넣고 "키워드 생성"을 누르세요. 다른 주제는 왼쪽 "+ 새 탭"에서 시작하면 주제별로 따로 저장돼요.'}</td></tr>`}</tbody>`;
-    $$('#aiTbl th[data-k]').forEach((th) => (th.onclick = () => { const k = th.dataset.k; AI.sort = { key: k, dir: AI.sort.key === k ? -AI.sort.dir : ['total', 'pc', 'mo', 'verify'].includes(k) ? -1 : 1 }; draw(); }));
+    $$('#aiTbl th[data-k]').forEach((th) => (th.onclick = () => { const k = th.dataset.k; AI.sort = { key: k, dir: AI.sort.key === k ? -AI.sort.dir : ['total', 'pc', 'mo', 'verify', 'comp'].includes(k) ? -1 : 1 }; draw(); }));
     const syncAll = () => {
       const n = rows.filter((it) => it._sel).length, cb = $('#aiAll');
       cb.checked = !!rows.length && n === rows.length;
