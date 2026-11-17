@@ -1058,11 +1058,12 @@ async function aiVerifyStream(b, emit, signal) {
 const cleanVerify = (data) => (Array.isArray(data) ? data : []).map((x) => ({ keyword: String(x.keyword || '').replace(/\s*\(월간 검색량[^)]*\)\s*$/, '').trim(), pass: !!x.pass, reason: String(x.reason || '').slice(0, 40) }));
 // keywords: 문자열 또는 { keyword, volume } (volume: 월간 검색량 합계, null이면 미조회, -1이면 네이버 데이터 없음)
 function verifyRequest({ conditions = {}, keywords = [], minVol = 0 }) {
-  const vol = new Map(), labels = new Map();
+  const vol = new Map(), labels = new Map(), comps = new Map();
   const names = keywords.map((k) => {
     const name = String(typeof k === 'string' ? k : k?.keyword || '').trim();
     if (name && typeof k === 'object' && k.volume !== undefined && k.volume !== null) vol.set(name, Number(k.volume));
     if (name && typeof k === 'object' && k.label) labels.set(name, String(k.label).slice(0, 40));
+    if (name && typeof k === 'object' && ['높음', '중간', '낮음'].includes(k.comp)) comps.set(name, k.comp);
     return name;
   });
   const list = [...new Set(names.filter(Boolean))].slice(0, 120);
@@ -1083,12 +1084,12 @@ function verifyRequest({ conditions = {}, keywords = [], minVol = 0 }) {
       return ['', '사용자가 직접 판정한 예시 (판정이 엇갈렸던 키워드에 대한 사용자의 결정이다. 비슷한 유형의 키워드는 이 기준을 따른다):',
         ...j.map((x) => `- ${String(x.keyword).slice(0, 40)}: ${x.pass ? '적합' : '부적합'}${!x.pass && x.reason ? ` (${String(x.reason).slice(0, 40)})` : ''}`), ''];
     })(),
-    hasVol ? `검색량 기준) 괄호 안 월간 검색량(네이버 PC+모바일)을 참고한다. 검색량이 매우 적거나 "데이터 없음"이면 사람들이 실제로 쓰는 표현이 아닐 가능성이 크다. 검색량이 충분하면 3)의 자연스러움에 유리한 근거다.${minVol > 0 ? ` (최소 기준 ${minVol}회 미만은 프로그램이 따로 부적합 처리하므로, 너는 나머지 기준과 함께 종합 판단만 한다)` : ''}` : '',
+    hasVol ? `검색량 기준) 괄호 안 월간 검색량(네이버 PC+모바일)을 참고한다. 검색량이 매우 적거나 "데이터 없음"이면 사람들이 실제로 쓰는 표현이 아닐 가능성이 크다. 검색량이 충분하면 3)의 자연스러움에 유리한 근거다. 광고 경쟁이 '높음'이면 광고주들이 실제로 돈을 내고 사는 상업적 표현이므로, 검색량이 적어도 실제로 쓰는 표현으로 본다.${minVol > 0 ? ` (최소 기준 ${minVol}회 미만은 프로그램이 경쟁 정도와 함께 따로 처리하므로, 너는 검색량이 적다는 이유만으로 부적합하게 하지 말고 나머지 기준으로 판단한다)` : ''}` : '',
     '글자 수는 따로 검사하므로 판단에서 제외한다.',
     'pass는 적합이면 true, reason은 판정 근거 15자 이내. 모든 키워드에 빠짐없이 답하고, keyword에는 괄호 앞의 키워드만 주어진 그대로 적는다.',
     '',
     '키워드 목록:',
-    ...list.map((k, i) => (hasVol ? `${i + 1}. ${k} (월간 검색량 ${volText(k)})` : `${i + 1}. ${k}`)),
+    ...list.map((k, i) => (hasVol ? `${i + 1}. ${k} (월간 검색량 ${volText(k)}${comps.has(k) ? ` · 광고 경쟁 ${comps.get(k)}` : ''})` : `${i + 1}. ${k}`)),
   ].join('\n');
   const schema = {
     type: 'ARRAY',

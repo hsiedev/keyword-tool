@@ -581,6 +581,7 @@
       <span style="flex:1"></span>
       <span class="muted" id="bSelInfo"></span>
       ${hasChecks ? '<button class="btn" data-proxy="bvMix" title="AI 판정이 엇갈린 키워드를 적합/부적합/보류로 직접 정해요">엇갈림 정리</button><button class="btn danger-btn" data-proxy="bvBad">부적합만 체크</button>' : ''}
+      <button class="btn" id="bOkSel" title="체크한 키워드를 '적합 (직접)'으로 확정해요. 다음 재검증에서 빠지고, AI에게 예시로 전달돼요.">체크한 키워드 적합으로</button>
       <button class="btn" id="bDelSel">체크한 키워드 삭제</button>
       <span class="muted"><b>${rows.length.toLocaleString('ko-KR')}</b>개 표시${rows.length !== all.length ? ` / 전체 ${all.length.toLocaleString('ko-KR')}` : ''}</span>
       <button class="btn pri" id="bXlsx">엑셀 다운로드</button>
@@ -606,6 +607,13 @@
     $('#bSelAll').onchange = () => { const on = !(rows.length && rows.every((r) => B.sel.has(r.keyword))); for (const r of rows) on ? B.sel.add(r.keyword) : B.sel.delete(r.keyword); drawTable(); };
     syncAll();
     $('#bDelSel').onclick = delSelected;
+    $('#bOkSel').onclick = () => {
+      const list = [...B.sel].map((k) => B.rows.get(k)).filter(Boolean);
+      if (!list.length) return toast('적합으로 바꿀 키워드를 먼저 체크하세요.', 'warn');
+      for (const r of list) r.decision = { pass: true, reason: '직접 적합', at: Date.now() };
+      B.sel = new Set(); persist(); drawResult();
+      toast(`${list.length}개를 '적합 (직접)'으로 바꿨어요`, 'ok');
+    };
     selInfo();
     $$('th[data-k]', wrap).forEach((th) => (th.onclick = () => { const k = th.dataset.k; B.sort = { key: k, dir: B.sort.key === k ? -B.sort.dir : k === 'keyword' ? 1 : -1 }; drawTable(); }));
     $$('[data-p]', $('#bPager')).forEach((b) => (b.onclick = () => { B.page = +b.dataset.p; drawTable(); $('#bTblWrap').scrollTop = 0; }));
@@ -675,6 +683,7 @@
     const n = B.order.filter((k) => B.sel.has(k)).length;
     if ($('#bSelInfo')) $('#bSelInfo').textContent = n ? `체크 ${n.toLocaleString('ko-KR')}개` : '';
     if ($('#bDelSel')) $('#bDelSel').disabled = !n;
+    if ($('#bOkSel')) $('#bOkSel').disabled = !n;
   }
   async function delSelected() {
     const ks = B.order.filter((k) => B.sel.has(k));
@@ -773,11 +782,10 @@
           const x = byN.get(nk(r.keyword)) || (j.results?.length === part.length ? j.results[k] : null);
           if (!x) { missing++; return; }
           const v = volOf(r);
-          const low = minVol > 0 && v !== null && (v < 0 ? 0 : v) < minVol;
-          if (low) lowVol++;
-          const ok = x.pass && !low;
-          const reason = low ? `검색량 부족 (${volText(r)} < ${minVol})${x.pass ? '' : ' · ' + x.reason}` : x.reason;
-          (r.checks = r.checks || []).push({ pass: ok, reason, ai: x.pass, vol: v, minVol, at: Date.now(), model: j.model });
+          const g = window.volGate(v, minVol, r.comp, x, volText(r));
+          if (g.low) lowVol++;
+          const ok = g.pass, reason = g.reason;
+          (r.checks = r.checks || []).push({ pass: ok, reason, ai: x.pass, vol: v, minVol, comp: r.comp || null, at: Date.now(), model: j.model, ...(g.mix ? { mix: true } : {}) });
           ok ? pass++ : fail++;
         });
         done += part.length;

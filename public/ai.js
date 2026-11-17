@@ -278,6 +278,7 @@
     // 엇갈림을 사용자가 직접 정한 경우 그 결정이 최종
     if (it.decision) return it.decision.pass ? { n, p, label: '적합 (직접)', cls: 'ok man', group: '일관 적합', manual: true } : { n, p, label: '부적합 (직접)', cls: 'bad man', group: '부적합', manual: true };
     if (!n) return { n, p, label: '미검증', cls: 'none', group: '미검증' };
+    if (cs[n - 1].mix) return { n, p, label: '판정 엇갈림', cls: 'mix', group: '엇갈림' }; // 검색량은 낮은데 경쟁 중간 → 사람이 정하기
     const cN = Math.max(1, RULES().verify?.consistN ?? 2);
     if (p === n) return n >= cN ? { n, p, label: `일관 적합`, cls: 'ok', group: '일관 적합' } : { n, p, label: '적합', cls: 'ok1', group: '적합 (1회)' };
     if (p === 0) return n >= cN ? { n, p, label: '일관 부적합', cls: 'bad', group: '부적합' } : { n, p, label: '부적합', cls: 'bad1', group: '부적합' };
@@ -386,6 +387,7 @@
               <button class="btn act-ic" id="aiFp" type="button" title="집중 피킹 (↑↓ 이동 · Space 체크/해제 · Esc 끝내기)" aria-label="집중 피킹"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M3 9V5a2 2 0 0 1 2-2h4M15 3h4a2 2 0 0 1 2 2v4M21 15v4a2 2 0 0 1-2 2h-4M9 21H5a2 2 0 0 1-2-2v-4"/></svg></button>
               <span class="act-sep"></span>
               <button class="btn" id="aiMixBtn" title="AI 판정이 엇갈린 키워드를 적합/부적합/보류로 직접 정해요">엇갈림 정리</button>
+              <button class="btn act-ok" id="aiOkSel" title="체크한 키워드를 '적합 (직접)'으로 확정해요. 다음 재검증에서 빠지고, AI에게 예시로 전달돼요.">체크한 키워드 적합으로</button>
               <button class="btn act-bad" id="aiSelBad" title="한 번도 적합 판정을 못 받은 키워드를 모두 체크해요">부적합 선택</button>
               <span class="act-sep"></span>
               <button class="btn" id="aiRejSel" title="체크한 키워드를 결과에서 빼고 이 탭의 제외 목록에 넣어요. 다음 생성부터 다시 나오지 않아요.">체크한 키워드 제외</button>
@@ -452,6 +454,13 @@
       vmsg(`${n}개를 삭제했어요.${nBad ? ` 부적합 ${nBad}개는 제외 목록에 저장했어요.` : ''}`);
     };
     $('#aiSelBad').onclick = selectBad;
+    $('#aiOkSel').onclick = () => {
+      const sel = AI.items.filter((it) => it._sel);
+      if (!sel.length) return toast('적합으로 바꿀 키워드를 먼저 체크하세요.', 'warn');
+      for (const it of sel) { it.decision = { pass: true, reason: '직접 적합', at: Date.now() }; it._sel = false; }
+      save(); draw();
+      toast(`${sel.length}개를 '적합 (직접)'으로 바꿨어요`, 'ok');
+    };
     $('#aiFp').onclick = () => { const FP = window.FocusPick; if (!FP) return; if (FP.on) FP.stop(); else FP.start($('#aiTbl')); };
     $('#aiDel2').onclick = () => $('#aiDel').click();
     $('#aiRejSel').onclick = rejectChecked;
@@ -917,7 +926,7 @@
       for (let i = 0; i < targets.length; i += B) {
         const part = targets.slice(i, i + B);
         P.setBase(done, batches > 1 ? `묶음 ${i / B + 1} / ${batches} (${part.length}개)` : '');
-        const j = await streamPost('/api/ai/verify-stream', { conditions, minVol, keywords: part.map((t) => ({ keyword: t.keyword, volume: volOf(t), label: t.vol && !t.vol.error ? volLabel(t.vol, true) : null })) }, (ev) => P.event(ev), ctrl.signal, holder);
+        const j = await streamPost('/api/ai/verify-stream', { conditions, minVol, keywords: part.map((t) => ({ keyword: t.keyword, volume: volOf(t), comp: t.vol?.comp || null, label: t.vol && !t.vol.error ? volLabel(t.vol, true) : null })) }, (ev) => P.event(ev), ctrl.signal, holder);
         model = j.model || model;
         const byN = new Map(j.results.map((r) => [norm(r.keyword), r]));
         part.forEach((it, k) => {
@@ -925,11 +934,10 @@
           if (!r) { missing++; return; }
           // 최소 검색량 기준은 PC에서 정확히 적용 (Gemini 판정과 합쳐서 최종 판정)
           const v = volOf(it);
-          const low = minVol > 0 && v !== null && (v < 0 ? 0 : v) < minVol;
-          if (low) lowVol++;
-          const ok = r.pass && !low;
-          const reason = low ? `검색량 부족 (${volLabel(it.vol, true)} < ${minVol})${r.pass ? '' : ' · ' + r.reason}` : r.reason;
-          (it.checks = it.checks || []).push({ pass: ok, reason, ai: r.pass, vol: v, minVol, at: Date.now(), model: j.model });
+          const g = window.volGate(v, minVol, it.vol?.comp, r, volLabel(it.vol, true));
+          if (g.low) lowVol++;
+          const ok = g.pass, reason = g.reason;
+          (it.checks = it.checks || []).push({ pass: ok, reason, ai: r.pass, vol: v, minVol, comp: it.vol?.comp || null, at: Date.now(), model: j.model, ...(g.mix ? { mix: true } : {}) });
           ok ? pass++ : fail++;
         });
         done += part.length;

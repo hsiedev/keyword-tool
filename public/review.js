@@ -7,7 +7,20 @@
     get teach() { return localStorage.getItem('reviewTeach') !== '0'; },
     set teach(v) { localStorage.setItem('reviewTeach', v ? '1' : '0'); },
   };
-  const isMixed = (it) => !it.decision && (it.checks || []).some((c) => c.pass) && (it.checks || []).some((c) => !c.pass);
+  const isMixed = (it) => !it.decision && (((it.checks || []).slice(-1)[0] || {}).mix || ((it.checks || []).some((c) => c.pass) && (it.checks || []).some((c) => !c.pass)));
+  // 최소 검색량 판정 (AI 생성기·대량 분석 공용)
+  //  기준 이상 → AI 판정 그대로
+  //  기준 미만 + 경쟁 높음 → AI 판정 그대로 (광고주가 몰리는 키워드라 검색량이 적어도 살림)
+  //  기준 미만 + 경쟁 중간 → AI가 적합이면 '엇갈림' (사람이 정함), 부적합이면 부적합
+  //  기준 미만 + 경쟁 낮음·정보 없음 → 부적합
+  window.volGate = (v, minVol, comp, ai, label) => {
+    const low = minVol > 0 && v !== null && v !== undefined && (v < 0 ? 0 : v) < minVol;
+    if (!low) return { low: false, pass: !!ai.pass, reason: ai.reason };
+    const base = `검색량 부족 (${label} < ${minVol})`;
+    if (comp === '높음') return { low: true, pass: !!ai.pass, reason: ai.pass ? `검색량 낮지만 경쟁 높음 · ${ai.reason || '적합'}` : `${ai.reason} · 검색량 낮음` };
+    if (comp === '중간' && ai.pass) return { low: true, pass: false, mix: true, reason: `${base} · 경쟁 중간 (확인 필요)` };
+    return { low: true, pass: false, reason: `${base}${comp ? ` · 경쟁 ${comp}` : ''}${ai.pass ? '' : ' · ' + ai.reason}` };
+  };
   // 키워드의 대표 부적합 사유 (가장 많이 나온 것)
   function failReason(it) {
     const m = new Map();
