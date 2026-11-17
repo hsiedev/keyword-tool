@@ -594,3 +594,10 @@ body.fp-mode .act-bar .act-ic{background:#16a34a;border-color:#16a34a;color:#fff
 .reset-btn.spin1 svg{animation:rsSpin .5s ease}
 @keyframes rsSpin{from{transform:rotate(0)}to{transform:rotate(-360deg)}}
 @media (max-width:760px){.reset-btn span{display:none}}
+
+/* AI 키워드 생성기: AI·모델 선택을 생성 버튼 바로 위로 */
+.ai-model-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:14px;font-size:13px;color:var(--muted-fg)}
+.ai-model-row .pin-tg{margin-left:2px;flex:0 0 auto}
+.ai-model-row select.prov-sel{flex:0 0 auto}
+.ai-model-row select.model-sel{flex:1 1 200px;min-width:0;width:auto;text-overflow:ellipsis}
+.ai-model-row>span.muted:last-child{font-size:12px}

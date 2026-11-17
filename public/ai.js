@@ -300,7 +300,7 @@
      <div class="ai-wrap">
       <aside class="side" id="aiSide"></aside>
       <main class="ai-main">
-        <div class="sec"><h2>AI 키워드 생성기 <span class="muted" style="font-size:13px;font-weight:500" id="aiModel"></span></h2>
+        <div class="sec"><h2>AI 키워드 생성기</h2>
           <div class="grid g2">
             <div class="card"><h3>① 브리프 <span class="muted" id="aiTabName"></span></h3>
               <label class="muted">무엇을, 누구에게, 왜 찾는지, 빼고 싶은 것까지 자유롭게 써 주세요. AI가 읽고 탐색 계획을 세운 뒤 네이버 실제 검색 데이터에서 찾아요.</label>
@@ -332,8 +332,8 @@
               <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="aiSendExisting"> 기존 키워드도 AI에 보내 처음부터 피하게 하기 (②에서 켜 둔 목록, 최대 2,000개)</label>
               <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px" title="생성이 끝나면 새로 들어온 키워드를 바로 이 탭의 주제·예시·요청 사항과 최소 월간 검색량으로 한 번 판정해요 (AI를 한 번 더 써요)"><input type="checkbox" id="aiAutoVerify"> 생성하면서 조건 재검증까지 하기 (진행은 막대 하나로)</label>
               <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px" title="AI가 브리프에서 뽑은 씨앗 단어마다 네이버 키워드 도구·자동완성·관련 검색어를 조회해 실제 검색 데이터를 모으고, AI가 그 안에서 고르고 빈 각도를 채워요"><input type="checkbox" id="aiSeed"> 네이버 실제 검색 데이터로 서칭하기 (키워드 도구 · 자동완성 · 관련 검색어)</label>
-              <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px" title="웹 검색이 되는 로그인형 AI(Claude 또는 GPT)가 브리프 주제를 먼저 조사해요: 공식 페이지·이벤트 조건, 후기·커뮤니티 표현, 경쟁 광고 문구. 그 결과로 씨앗 단어를 정해요. 1~3분 더 걸리고 구독 사용량을 더 써요"><input type="checkbox" id="aiWeb"> AI가 웹을 먼저 조사하기 (1~3분 더)</label>
-              <div class="muted" style="display:flex;gap:6px;align-items:center;margin:4px 0 0 42px;font-size:12px">웹 조사 AI <select id="aiWebProv" class="hsel" style="height:30px;padding:0 26px 0 10px;line-height:28px" title="웹 검색이 되는 로그인형 AI만 고를 수 있어요. 자동: 지금 고른 AI가 Claude·GPT면 그것, 아니면 Claude → GPT 순서"></select></div>
+              <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px" title="웹 검색이 되는 로그인형 AI(Claude 또는 GPT)가 브리프 주제를 먼저 조사해요: 공식 페이지·이벤트 조건, 후기·커뮤니티 표현, 경쟁 광고 문구. 그 결과로 씨앗 단어를 정해요. 1~3분 더 걸리고 구독 사용량을 더 써요"><input type="checkbox" id="aiWeb"> AI가 웹을 먼저 조사하기 (1~3분 더)<span id="aiWebWho" style="font-size:12px"></span></label>
+              <div id="aiModel" class="ai-model-row"></div>
               <div style="display:flex;gap:8px;margin-top:12px">
                 <button class="btn pri" id="aiGen">키워드 생성</button>
                 <button class="btn" id="aiMore">이어서 더 생성</button>
@@ -472,15 +472,12 @@
     $('#aiSeed').onchange = (e) => localStorage.setItem('aiSeed', e.target.checked ? '1' : '0');
     $('#aiWeb').checked = localStorage.getItem('aiWeb') !== '0';
     $('#aiWeb').onchange = (e) => localStorage.setItem('aiWeb', e.target.checked ? '1' : '0');
-    // 웹 조사 AI: 자동 / Claude / GPT (설치 안 된 건 고를 수 없음), 마지막 선택 기억
+    // 웹 조사 AI: 자동 (지금 고른 AI가 Claude·GPT면 그것, 아니면 Claude → GPT)
     const fillWebProv = () => fetch('/api/ai/web-info').then((x) => x.json()).then((j) => {
-      const sel = $('#aiWebProv'), saved = localStorage.getItem('aiWebProv') || 'auto';
-      sel.innerHTML = `<option value="auto">자동 (지금: ${esc(j.name || '없음')})</option>` + (j.options || []).map((o) => `<option value="${o.id}" ${o.ok ? '' : 'disabled'}>${esc(o.name)}${o.ok ? '' : ' · 설치 안 됨'}</option>`).join('');
-      sel.value = (j.options || []).some((o) => o.id === saved && o.ok) ? saved : 'auto';
-      if (!j.name) { $('#aiWeb').checked = false; $('#aiWeb').disabled = true; sel.disabled = true; }
+      const w = $('#aiWebWho'); if (w) w.textContent = j.name ? ` · 조사: ${j.name}` : ' · 웹 조사 되는 AI(Claude·GPT 로그인형) 없음';
+      if (!j.name) { $('#aiWeb').checked = false; $('#aiWeb').disabled = true; }
     }).catch(() => {});
     fillWebProv();
-    $('#aiWebProv').onchange = (e) => localStorage.setItem('aiWebProv', e.target.value);
     window.__fillWebProv = fillWebProv; // AI를 바꾸면 '자동'이 누구인지 다시 표시 (refreshModel에서 부름)
     // 생성하면서 조건 재검증까지: 기본 켜짐, 마지막 선택을 기억
     $('#aiAutoVerify').checked = localStorage.getItem('aiAutoVerify') !== '0';
@@ -760,7 +757,7 @@
       if (!plan && useWeb) {
         P.stage(0, 16, 1, '웹 조사');
         P.phase('AI가 웹에서 브리프 주제를 조사하는 중 (1~3분)', 20);
-        try { web = await postJson('/api/ai/web-research', { brief: form.topic, refs, pos: splitList(form.pos), neg: splitList(form.neg), webProvider: $('#aiWebProv').value === 'auto' ? '' : $('#aiWebProv').value }, ctrl.signal); }
+        try { web = await postJson('/api/ai/web-research', { brief: form.topic, refs, pos: splitList(form.pos), neg: splitList(form.neg), webProvider: '' }, ctrl.signal); }
         catch (e) { if (isAbort(e)) throw e; webFail = e.message; }
       }
       if (!plan) {
