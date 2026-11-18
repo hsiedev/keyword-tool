@@ -87,6 +87,7 @@
     S.timer = setTimeout(async () => {
       if (!$('#plView') || $('#plView').classList.contains('hidden')) { S.timer = setTimeout(poll, 3000); return; }
       await openJob(S.cur);
+      loadJobs(); // 왼쪽 목록의 진행 개수도
       if (S.job?.status !== 'running' && !S.thread.some((m) => m.status === 'running')) { loadJobs(); if (S.job?.status === 'done') toast(`'${S.job.name}' 분석이 끝났어요`, 'ok'); }
     }, 2500);
   }
