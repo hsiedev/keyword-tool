@@ -1559,6 +1559,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { boot: BOOT_HASH, now, stale: now !== BOOT_HASH, startedAt: STARTED_AT, canRestart: process.env.KT_LOOP === '1', node: process.version });
     }
     if (u.pathname === '/api/restart' && req.method === 'POST') {
+      if (PL.isRunning() && u.searchParams.get('force') !== '1') return send(res, 200, { ok: false, error: '파워링크 분석이 진행 중이라 다시 시작하지 않았어요. 끝나거나 [중지]한 뒤에 다시 시작하세요 (중지해도 [이어서 하기]로 이어갈 수 있어요)' });
       if (process.env.KT_LOOP !== '1') return send(res, 200, { ok: false, error: '이번에는 start.bat 창을 닫고 다시 실행해 주세요. 그다음부터는 이 버튼으로 다시 시작돼요.' });
       send(res, 200, { ok: true });
       console.log('  화면에서 다시 시작을 요청했어요. 서버를 다시 켜요...');
