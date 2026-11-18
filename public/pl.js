@@ -413,8 +413,11 @@
       if (!tr) return;
       document.querySelectorAll('#plBody tr.pl-hit').forEach((t) => t.classList.remove('pl-hit'));
       tr.classList.add('pl-hit');
-      tr.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      setTimeout(() => tr.classList.remove('pl-hit'), 2500);
+      tr.scrollIntoView({ block: 'center', behavior: 'instant' });
+      // 위쪽 캡처 그림이 늦게 뜨면 줄이 밀려남 → 잠깐 동안 다시 가운데로 (사용자가 스크롤하면 멈춤)
+      const y0 = { v: scrollY }, again = () => { if (Math.abs(scrollY - y0.v) > 2) return; tr.scrollIntoView({ block: 'center', behavior: 'instant' }); y0.v = scrollY; };
+      [150, 400, 900].forEach((ms) => setTimeout(again, ms));
+      clearTimeout(tr._hl); tr._hl = setTimeout(() => tr.classList.remove('pl-hit'), 3000);
     }
     inp.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); go(e.shiftKey ? -1 : 1); }
