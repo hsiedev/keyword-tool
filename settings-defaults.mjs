@@ -54,6 +54,10 @@ export const DEFAULT_SETTINGS = {
       temperature: 0.9,
       system: '', // 비우면 기본 지시문
     },
+    powerlink: {
+      runs: 4, // 키워드마다 몇 번 검색해서 평균 순위를 낼지 (1~5)
+      gapMs: 1200, // 네이버 검색 사이 간격(ms). 너무 짧으면 검색 제한에 걸려요
+    },
     dedup: {
       ignoreCase: true,
       ignoreChars: "-_.,·/()[]{}'\"!?~:;+|#*", // 띄어쓰기와 함께 무시할 기호

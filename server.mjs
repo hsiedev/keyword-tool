@@ -13,6 +13,7 @@ import { CLI, CLI_MODELS, cliPath, runCli, cliStatus, cliTest, openConsole, cliJ
 import { createGitSync } from './github-sync.mjs';
 import { createGoogle } from './google-core.mjs';
 import { assertAdAllowed } from './ad-guard.mjs';
+import { createPowerlink } from './powerlink-core.mjs';
 import { parsePowerlinks, copyGenerateRequest, cleanCopyItems, copyVerifyRequest, cleanVerifyItems, createStore, copyMeta, mockMeta } from './copy-core.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -46,6 +47,8 @@ if (config.claudeKey || config.openaiKey) {
   try { fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2)); } catch {}
 }
 const hasAd = () => !!(config.adApiKey && config.adSecret && config.adCustomerId);
+// 파워링크 분석기 (크롤링: 순위·캡처, 검색광고 API: 순위별 입찰가·예상 실적) — data\powerlink\ 에 저장
+const PL = createPowerlink({ dataDir: path.join(__dirname, 'data'), adRequest: (...a) => adRequest(...a), hasAd: () => hasAd(), getRules: () => SETTINGS.rules.powerlink });
 const hasOpen = () => !!(config.clientId && config.clientSecret);
 
 // ---------------------------------------------------------------- 캐시 (디스크에도 저장)
@@ -1536,7 +1539,7 @@ function guard(req, u) {
 }
 
 // ---------------------------------------------------------------- 버전: 서버 코드가 바뀌었는지 (다시 시작 필요 여부)
-const SERVER_FILES = ['server.mjs', 'ai-cli.mjs', 'github-sync.mjs', 'sections.mjs', 'settings-defaults.mjs', 'copy-core.mjs', 'public/copy-spec.js', 'google-core.mjs'];
+const SERVER_FILES = ['server.mjs', 'ai-cli.mjs', 'github-sync.mjs', 'sections.mjs', 'settings-defaults.mjs', 'copy-core.mjs', 'public/copy-spec.js', 'google-core.mjs', 'powerlink-core.mjs'];
 const codeHash = () => {
   const h = crypto.createHash('sha1');
   for (const f of SERVER_FILES) { try { h.update(fs.readFileSync(path.join(__dirname, f))); } catch {} }
@@ -1573,6 +1576,7 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, await adsPerf(b));
       } catch (e) { return send(res, e.blocked ? 403 : 502, { error: e.message }); }
     }
+    if (u.pathname.startsWith('/api/pl/')) return PL.handle(req, res, u, readBody, send);
     if (u.pathname === '/api/suggest') {
       const kw = String(u.searchParams.get('keyword') || '').trim().slice(0, 60);
       if (!kw) return send(res, 400, { error: '키워드를 넣어주세요' });
