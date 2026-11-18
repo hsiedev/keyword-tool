@@ -114,6 +114,9 @@ class Headless {
     await this.send('Emulation.setDeviceMetricsOverride', { width: mo ? 390 : 1280, height: 2400, deviceScaleFactor: mo ? 2 : 1, mobile: mo }, true);
     await this.send('Emulation.setTouchEmulationEnabled', { enabled: mo }, true);
     await this.send('Emulation.setUserAgentOverride', { userAgent: mo ? UA_MO : UA_PC, acceptLanguage: 'ko-KR,ko' }, true);
+    // 매번 쿠키·저장소를 지워서 처음 온 사람처럼 (지난 검색이 다음 결과에 영향 주지 않게)
+    await this.send('Network.clearBrowserCookies', {}, true).catch(() => {});
+    await this.send('Storage.clearDataForOrigin', { origin: '*', storageTypes: 'cookies,local_storage,session_storage' }, true).catch(() => {});
     this.events = [];
     await this.send('Page.navigate', { url }, true);
     const t0 = Date.now();
