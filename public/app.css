@@ -620,11 +620,11 @@ html.dark .btn.ok-btn{color:#4ade80;border-color:rgba(74,222,128,.45)}
 .pl-opts .hsel{height:30px;padding:0 24px 0 8px}
 .pl-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .pl-tbl td{vertical-align:middle}
-.pl-cap{width:250px}
-.pl-th{display:block;max-width:230px;max-height:150px;object-fit:cover;object-position:top;border:1px solid var(--border);border-radius:6px;cursor:zoom-in;background:#fff}
+.pl-cap{width:300px;text-align:center}
+.pl-th{display:block;margin:0 auto 3px;max-width:280px;max-height:190px;object-fit:contain;border:1px solid var(--border);border-radius:6px;cursor:zoom-in;background:#fff}
 .pl-th:hover{outline:2px solid var(--accent)}
 .pl-rk{font-size:15px}
-.pl-rk.top{color:#16a34a}
+.pl-rk.pl-top{color:#16a34a}
 .pl-miss{color:#b91c1c;font-weight:600}
 .pl-warn{display:inline-block;margin-top:3px;font-size:11px;color:#b45309;background:color-mix(in oklab,#f59e0b 14%,transparent);border-radius:4px;padding:1px 5px}
 .pl-up{color:#dc2626}.pl-dn{color:#2563eb}

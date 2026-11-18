@@ -254,7 +254,7 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
     clearTimeout(saveT.get(j.id));
     if (now) w(); else saveT.set(j.id, setTimeout(w, 1500));
   }
-  const meta = (j) => ({ id: j.id, name: j.name, createdAt: j.createdAt, updatedAt: j.updatedAt, status: j.status, total: j.rows.length, done: j.rows.filter((r) => r.done).length, devices: j.devices });
+  const meta = (j) => ({ id: j.id, name: j.name, createdAt: j.createdAt, updatedAt: j.updatedAt, status: j.status, total: j.rows.filter((r) => r.on !== false).length, done: j.rows.filter((r) => r.on !== false && r.done).length, devices: j.devices });
   function list() {
     const out = [];
     for (const d of fs.readdirSync(ROOT)) { if (!okId(d)) continue; const j = load(d); if (j) out.push(meta(j)); }
@@ -374,45 +374,49 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
     return RUN.browser;
   }
   async function capture(j, row, dev) {
-    const b = await browser(), q = encodeURIComponent(row.kw), D = DEV[dev];
-    const go = async (url) => { await gate(); await b.load(url, dev); const t = await b.eval('() => document.title + " " + (document.body?.innerText || "").slice(0, 3000)'); if (isBlocked(200, t)) { blocked(); return false; } return true; };
-    let where = 'main';
-    for (let a = 0; a < 4 && !(await go(D.main(q))); a++);
-    let info = await b.eval(pageAds, 'main');
-    let me = findMine(info.ads, j.urls);
-    if (!me) { // 통합검색 영역에 없음 → 광고 더보기
-      const mainCount = info.ads.length;
-      for (let a = 0; a < 4 && !(await go(D.more(q))); a++);
+    const b = await browser(), q = encodeURIComponent(row.kw), D = DEV[dev], mo = dev === 'mo', dsf = mo ? 2 : 1, pad = 8;
+    const go = async (url) => { for (let a = 0; a < 4; a++) { await gate(); await b.load(url, dev); const t = await b.eval('() => document.title + " " + (document.body?.innerText || "").slice(0, 3000)'); if (!isBlocked(200, t)) return; blocked(); } };
+    // 찍을 영역 정하기 → 원본 · 내 광고 주변(표·엑셀용) 두 장
+    const shoot = async (info, me, where) => {
+      let clip;
+      const mine = me ? info.ads.find((x) => x.rank === me.rank)?.r : null;
+      if (where === 'main' && info.block) clip = { x: Math.max(0, info.block.x - pad), y: Math.max(0, info.block.y - pad), width: info.block.w + pad * 2, height: info.block.h + pad * 2 };
+      else if (info.ads.length) {
+        const first = info.ads[0].r, last = mine || info.ads[Math.min(info.ads.length, 5) - 1].r;
+        let top = first.y - 60;
+        if (last.y + last.h - top > 2200) top = last.y - 900; // 너무 길면 내 광고 위쪽 일부만
+        const left = Math.max(0, Math.min(first.x, last.x) - pad);
+        clip = { x: left, y: Math.max(0, top), width: Math.min(info.vw - left, Math.max(first.w, last.w) + pad * 2), height: last.y + last.h + 16 - Math.max(0, top) };
+      } else clip = { x: 0, y: 0, width: info.vw, height: 900 };
+      clip.height = Math.min(clip.height, 3000);
+      const full = await b.shot(clip, mo ? 0.75 : 1, 80); // 원본 (모바일은 1.5배)
+      // 내 광고 주변: 위아래 여유를 두고 잘라서 폭 약 420px
+      const fy = mine ? Math.max(clip.y, mine.y - 110) : clip.y;
+      const fb = mine ? Math.min(clip.y + clip.height, mine.y + mine.h + 110) : Math.min(clip.y + clip.height, clip.y + 520);
+      const fclip = { x: clip.x, y: fy, width: clip.width, height: Math.max(40, fb - fy) };
+      const fs2 = Math.min(1, 420 / (clip.width * dsf));
+      const focus = await b.shot(fclip, fs2, 80);
+      return { full, focus, fw: Math.round(fclip.width * dsf * fs2), fh: Math.round(fclip.height * dsf * fs2) };
+    };
+    await go(D.main(q));
+    const main = await b.eval(pageAds, 'main');
+    row.res[dev].mainCount = main.ads.length;
+    let me = findMine(main.ads, j.urls), where = 'main', shot;
+    if (me) { await b.eval(markAd, me.rank); await sleep(200); shot = await shoot(main, me, 'main'); }
+    else {
+      // 통합검색 영역에 없음 → 통합검색 화면은 미리 찍어 두고, 광고 더보기에서 다시 찾기
+      const mainShot = main.block ? await shoot(main, null, 'main') : null;
+      await go(D.more(q));
       const more = await b.eval(pageAds, 'more');
       const me2 = findMine(more.ads, j.urls);
-      if (me2 || !info.block) { info = more; me = me2; where = 'more'; }
-      row.res[dev].mainCount = mainCount;
-    } else row.res[dev].mainCount = info.ads.length;
-    if (me) await b.eval(markAd, me.rank);
-    await sleep(250);
-    // 찍을 영역
-    let clip;
-    const pad = 8, mo = dev === 'mo';
-    if (where === 'main' && info.block) clip = { x: Math.max(0, info.block.x - pad), y: Math.max(0, info.block.y - pad), width: info.block.w + pad * 2, height: info.block.h + pad * 2 };
-    else if (info.ads.length) {
-      const first = info.ads[0].r, mine = me ? info.ads.find((a) => a.rank === me.rank).r : info.ads[Math.min(info.ads.length, 5) - 1].r;
-      let top = first.y - 60;
-      if (mine.y + mine.h - top > 2200) top = mine.y - 900; // 너무 길면 내 광고 위쪽 일부만
-      const left = Math.max(0, Math.min(first.x, mine.x) - pad);
-      clip = { x: left, y: Math.max(0, top), width: Math.min(info.vw - left, Math.max(first.w, mine.w) + pad * 2), height: mine.y + mine.h + 16 - Math.max(0, top) };
-    } else {
-      clip = { x: 0, y: 0, width: info.vw, height: 900 };
-      where = 'none';
+      if (me2) { await b.eval(markAd, me2.rank); await sleep(200); shot = await shoot(more, me2, 'more'); me = me2; where = 'more'; }
+      else if (mainShot) shot = mainShot;
+      else { shot = await shoot(more, null, 'more'); where = more.ads.length ? 'more' : 'none'; }
     }
-    clip.height = Math.min(clip.height, 3000);
-    const dsf = mo ? 2 : 1;
-    const full = await b.shot(clip, mo ? 0.75 : 1, 80); // 원본 (모바일은 1.5배)
-    const tScale = Math.min(0.6, 380 / (clip.height * dsf)) ; // 엑셀용 작은 그림: 높이 약 380px 이하
-    const thumb = await b.shot(clip, tScale, 72);
     const base = `${String(row.i).padStart(4, '0')}_${dev}`;
-    fs.writeFileSync(path.join(jobDir(j.id), base + '.jpg'), full);
-    fs.writeFileSync(path.join(jobDir(j.id), base + '_t.jpg'), thumb);
-    return { file: base + '.jpg', thumb: base + '_t.jpg', where, rank: me ? me.rank : null, tw: Math.round(clip.width * dsf * tScale), th: Math.round(clip.height * dsf * tScale), at: Date.now() };
+    fs.writeFileSync(path.join(jobDir(j.id), base + '.jpg'), shot.full);
+    fs.writeFileSync(path.join(jobDir(j.id), base + '_f.jpg'), shot.focus);
+    return { file: base + '.jpg', focus: base + '_f.jpg', where, rank: me ? me.rank : null, fw: shot.fw, fh: shot.fh, at: Date.now() };
   }
 
   async function runJob(j) {
@@ -482,15 +486,15 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
         const ri = rows.length - 1;
         if (x.cap) {
           try {
-            const data = fs.readFileSync(path.join(jobDir(j.id), x.cap.thumb));
-            const maxW = 300, sc = Math.min(1, maxW / (x.cap.tw || maxW));
-            const w = Math.round((x.cap.tw || 300) * sc), h = Math.round((x.cap.th || 300) * sc);
+            const data = fs.readFileSync(path.join(jobDir(j.id), x.cap.focus));
+            const maxW = 360, sc = Math.min(1, maxW / (x.cap.fw || maxW));
+            const w = Math.round((x.cap.fw || 360) * sc), h = Math.round((x.cap.fh || 240) * sc);
             images.push({ row: ri, col: 4, data, w, h });
             heights[ri] = Math.max(heights[ri] || 0, Math.ceil((h + 10) * 0.75));
           } catch {}
         }
       }
-      return { name: dev === 'pc' ? 'PC' : '모바일', rows, images, heights, widths: [22, 10, 8, 10, 44, 11, 13, 13, 13, 13, 28, 10, 11, 30, 14] };
+      return { name: dev === 'pc' ? 'PC' : '모바일', rows, images, heights, widths: [22, 10, 8, 10, 53, 11, 13, 13, 13, 13, 28, 10, 11, 30, 14] };
     });
     return buildXlsx(sheets);
   }
@@ -507,7 +511,7 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
       }
       if (p === '/api/pl/img') {
         const j = load(u.searchParams.get('id')), f = String(u.searchParams.get('f') || '');
-        if (!j || !/^\d{4}_(pc|mo)(_t)?\.jpg$/.test(f)) { res.writeHead(404); return res.end(); }
+        if (!j || !/^\d{4}_(pc|mo)(_t|_f)?\.jpg$/.test(f)) { res.writeHead(404); return res.end(); }
         const fp = path.join(jobDir(j.id), f);
         if (!fs.existsSync(fp)) { res.writeHead(404); return res.end(); }
         res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'max-age=3600' });
