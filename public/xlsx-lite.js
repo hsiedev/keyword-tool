@@ -190,5 +190,71 @@
     return zipStore(files);
   }
 
-  window.XlsxLite = { readFile, readXlsx, parseCsv, writeXlsx };
+  // ---------------------------------------------------------------- 엑셀 표 붙여넣기
+  // 엑셀에서 셀을 복사하면 클립보드에 탭으로 구분된 글(TSV)과 HTML 표가 같이 들어옴 → 행·열로 읽음. 표가 아니면 null
+  function parseTsv(text) {
+    const rows = []; let row = [], cur = '', q = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (q) { if (ch === '"' && text[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch; }
+      else if (ch === '"' && cur === '') q = true;
+      else if (ch === '\t') { row.push(cur.trim()); cur = ''; }
+      else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cur.trim()); rows.push(row); row = []; cur = ''; }
+      else cur += ch;
+    }
+    if (cur || row.length) { row.push(cur.trim()); rows.push(row); }
+    return rows.filter((r) => r.some((c) => c !== ''));
+  }
+  function clipRows(dt) {
+    if (!dt) return null;
+    const txt = dt.getData('text/plain') || '';
+    if (/\t/.test(txt)) return parseTsv(txt);
+    const html = dt.getData('text/html') || '';
+    if (/<table/i.test(html)) {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const rows = [...doc.querySelectorAll('tr')].map((tr) => [...tr.children].map((td) => td.textContent.replace(/\s+/g, ' ').trim()));
+      if (rows.length && rows.some((r) => r.length > 1)) return rows.filter((r) => r.some((c) => c !== ''));
+    }
+    return null;
+  }
+  // 표에서 키워드 열 고르기: 머리글이 '키워드'(연관키워드·검색어·keyword)인 열, 없으면 숫자가 아닌 글자가 가장 많은 열
+  const HEAD_RE = /^(키워드|연관\s*키워드|검색어|keyword|keywords)$/i;
+  const isNum = (v) => /^[-+]?[\d,.]+\s*(%|원|회|위)?$/.test(String(v).trim()) || /^-$/.test(String(v).trim());
+  function pickKeywords(rows) {
+    let hi = -1, ci = -1;
+    for (let r = 0; r < Math.min(rows.length, 5) && ci < 0; r++) { const c = rows[r].findIndex((x) => HEAD_RE.test(String(x).replace(/\s+/g, ''))); if (c >= 0) { hi = r; ci = c; } }
+    if (ci < 0) {
+      const w = Math.max(...rows.map((r) => r.length)), score = Array(w).fill(0);
+      for (const r of rows) r.forEach((v, i) => { if (v && !isNum(v)) score[i]++; });
+      ci = score.indexOf(Math.max(...score));
+    }
+    const seen = new Set(), list = [];
+    for (const r of rows.slice(hi + 1)) {
+      const v = String(r[ci] ?? '').trim();
+      if (!v || isNum(v) || /^키워드 [\d,]+개 결과/.test(v)) continue;
+      const k = v.replace(/\s+/g, '').toUpperCase();
+      if (!seen.has(k)) { seen.add(k); list.push(v); }
+    }
+    return { list, col: hi >= 0 ? String(rows[hi][ci]) : ci + 1 + '번째 열', cols: Math.max(...rows.map((r) => r.length)) };
+  }
+  // 키워드 입력 칸들: 여러 열짜리 표를 붙여넣으면 키워드 열만 골라서 한 줄에 하나씩 넣음 (한 열이면 원래대로)
+  const KW_BOXES = new Set(['aiPaste', 'aiExamples', 'bPaste', 'dp_new', 'dp_old', 'cpKw']);
+  document.addEventListener('paste', (e) => {
+    const ta = e.target;
+    if (!ta || ta.tagName !== 'TEXTAREA' || !(KW_BOXES.has(ta.id) || ta.dataset.kwpaste != null)) return;
+    const rows = clipRows(e.clipboardData);
+    if (!rows || Math.max(...rows.map((r) => r.length)) < 2) return;
+    const k = pickKeywords(rows);
+    if (!k.list.length) return;
+    e.preventDefault();
+    const a = ta.selectionStart ?? ta.value.length, b = ta.selectionEnd ?? a;
+    const before = ta.value.slice(0, a), after = ta.value.slice(b);
+    const ins = (before && !/\n$/.test(before) ? '\n' : '') + k.list.join('\n') + (after && !/^\n/.test(after) ? '\n' : '');
+    ta.value = before + ins + after;
+    ta.selectionStart = ta.selectionEnd = (before + ins).length;
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    window.toast?.(`엑셀 표에서 '${k.col}' 열의 키워드 ${k.list.length.toLocaleString('ko-KR')}개를 넣었어요`, 'ok');
+  }, true);
+
+  window.XlsxLite = { readFile, readXlsx, parseCsv, writeXlsx, parseTsv, clipRows, pickKeywords };
 })();

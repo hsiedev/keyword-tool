@@ -59,7 +59,7 @@
         <div class="muted" style="margin-top:4px">${hint}</div></div>
       <div id="dl_${side}"></div>
       ${side === 'old' ? '<div id="dsaved"></div>' : ''}
-      <label class="muted" style="display:block;margin-top:10px">직접 붙여넣기 (줄바꿈·쉼표·탭으로 구분)</label>
+      <label class="muted" style="display:block;margin-top:10px">직접 붙여넣기 (줄바꿈·쉼표로 구분 · 엑셀 표를 복사해 붙여넣으면 '키워드' 열만 골라 넣어요)</label>
       <textarea id="dp_${side}" class="inp" rows="4" placeholder="${side === 'new' ? '운전자보험추천\n운전자보험비교' : '운전자보험\nKB운전자보험'}"></textarea>
     </div>`;
   }

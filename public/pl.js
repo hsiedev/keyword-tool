@@ -26,7 +26,11 @@
   const numOf = (v) => { const s = String(v ?? '').replace(/[^\d.]/g, ''); return s === '' ? null : Number(s); };
   function fromSheet(rows) {
     const hi = rows.findIndex((r) => (r || []).some((c) => String(c).trim() === '키워드'));
-    if (hi < 0) return rows.map((r) => (r || []).map((c) => String(c).trim())).filter((r) => r[0]).map((r) => ({ kw: r[0], bid: numOf(r[1]), state: '', on: true }));
+    if (hi < 0) {
+      const k = window.XlsxLite?.pickKeywords ? window.XlsxLite.pickKeywords(rows) : null;
+      const ci = k && typeof k.col === 'string' && /번째 열$/.test(k.col) ? parseInt(k.col) - 1 : 0;
+      return rows.map((r) => (r || []).map((c) => String(c).trim())).filter((r) => r[ci] && !/^[\d,.]+$/.test(r[ci])).map((r) => ({ kw: r[ci], bid: numOf(r.find((c, i) => i !== ci && /^[\d,]+원?$/.test(c))), state: '', on: true }));
+    }
     const h = rows[hi].map((c) => String(c).replace(/\s+/g, ''));
     const at = (name) => h.findIndex((c) => c === name);
     const iK = at('키워드'), iB = at('입찰가'), iS = at('상태'), iP = h.findIndex((c) => /^PC통검평균노출순위/.test(c)), iM = h.findIndex((c) => /^모바일통검평균노출순위/.test(c));
@@ -168,9 +172,9 @@
       <div class="card"><h3>② 키워드 <span class="muted" style="font-size:13px" id="plCnt">${C.head}</span></h3>
         <div class="drop" id="plDrop">네이버 광고관리 <b>키워드 다운로드 엑셀</b>을 끌어다 놓거나 <label class="ext" style="cursor:pointer">파일 선택<input type="file" id="plFile" accept=".xlsx,.xlsm,.csv,.txt" hidden></label>
           <div class="muted" style="margin-top:4px">키워드 · 입찰가 · 상태 · 통검 평균노출순위를 알아서 읽어요. '노출가능'만 체크돼요${S.draft.file ? ` · 넣은 파일: ${e2(S.draft.file)}` : ''}</div></div>
-        <details style="margin-top:8px"><summary class="muted">직접 붙여넣기 (한 줄에 "키워드" 또는 "키워드, 입찰가")</summary>
-          <textarea id="plPaste" class="inp" rows="3" placeholder="운전자보험, 600&#10;운전자보험추천"></textarea>
-          <button class="btn" id="plPasteAdd" style="margin-top:6px">목록에 추가</button></details>
+        <label class="muted" style="display:block;margin-top:10px">엑셀 표 붙여넣기 <span style="font-size:12px">(DRM 등으로 파일을 못 넣을 때: 엑셀에서 머리글 줄까지 범위를 복사해 아래 칸에 Ctrl+V)</span></label>
+        <textarea id="plPaste" class="inp" rows="3" placeholder="엑셀에서 '키워드 · 입찰가 · 상태 …' 머리글 줄부터 복사해서 붙여넣으면 바로 목록에 들어가요&#10;직접 쓸 때는 한 줄에 &quot;키워드&quot; 또는 &quot;키워드, 입찰가&quot; → [목록에 추가]"></textarea>
+        <button class="btn" id="plPasteAdd" style="margin-top:6px">목록에 추가</button>
       </div>
     </div>
     ${rows.length ? `<div class="card" style="margin-top:14px">
@@ -194,6 +198,19 @@
     dz.ondrop = (e) => { e.preventDefault(); dz.classList.remove('over'); addFiles([...e.dataTransfer.files]); };
     $('#plFile').onchange = (e) => addFiles([...e.target.files]);
     $('#plPasteAdd').onclick = () => { const r = fromPaste($('#plPaste').value); if (!r.length) return; mergeRows(r); draw(); };
+    // 엑셀 표를 붙여넣으면 바로 표로 읽어서 목록에 추가 (머리글 '키워드'가 있으면 입찰가·상태·평균노출순위 열도 읽음)
+    $('#plPaste').addEventListener('paste', (e) => {
+      const rows = window.XlsxLite?.clipRows(e.clipboardData);
+      if (!rows || Math.max(...rows.map((r) => r.length)) < 2) return;
+      e.preventDefault();
+      const got = fromSheet(rows);
+      if (!got.length) return toast('붙여넣은 표에서 키워드를 찾지 못했어요', 'warn');
+      const before = S.draft.rows.length;
+      mergeRows(got);
+      S.draft.file = S.draft.file || '붙여넣은 표';
+      draw();
+      toast(`붙여넣은 표: 키워드 ${got.length.toLocaleString('ko-KR')}개 (새로 추가 ${(S.draft.rows.length - before).toLocaleString('ko-KR')}개 · 노출가능 ${got.filter((r) => r.on).length.toLocaleString('ko-KR')}개 체크)`, 'ok');
+    }, true);
     if (!$('#plGo')) return;
     $$('[data-pick]').forEach((b) => (b.onclick = () => { const k = b.dataset.pick; S.draft.rows.forEach((r) => (r.on = k === 'all' ? true : k === 'none' ? false : !r.state || r.state === '노출가능')); draw(); }));
     $('#plAll').onchange = () => { const on = !S.draft.rows.every((r) => r.on); S.draft.rows.forEach((r) => (r.on = on)); draw(); };

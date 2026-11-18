@@ -254,7 +254,7 @@
             <div class="drop" id="bDrop">txt · 엑셀(xlsx) · csv 파일을 끌어다 놓거나 <label class="ext" style="cursor:pointer">파일 선택<input type="file" id="bFile" accept=".xlsx,.xlsm,.csv,.txt,.tsv,.xls" multiple hidden></label>
               <div class="muted" style="margin-top:4px">여러 파일 가능 · 최대 1,000개 · 띄어쓰기는 붙여서 조회해요</div></div>
             <div id="bFiles"></div>
-            <label class="muted" style="display:block;margin-top:10px">직접 붙여넣기 (줄바꿈·쉼표·탭으로 구분)</label>
+            <label class="muted" style="display:block;margin-top:10px">직접 붙여넣기 (줄바꿈·쉼표로 구분 · 엑셀 표를 복사해 붙여넣으면 '키워드' 열만 골라 넣어요)</label>
             <textarea id="bPaste" class="inp" rows="4" placeholder="운전자보험\n운전자보험추천\n암보험비교"></textarea>
           </div>
           <div class="card"><h3>조회 항목</h3>
