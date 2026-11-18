@@ -614,3 +614,23 @@ body.fp-mode .act-bar .act-ic{background:#16a34a;border-color:#16a34a;color:#fff
 .btn.ok-btn{color:#15803d;border-color:rgba(21,128,61,.45)}
 .btn.ok-btn:hover:not(:disabled){background:rgba(22,163,74,.08)}
 html.dark .btn.ok-btn{color:#4ade80;border-color:rgba(74,222,128,.45)}
+
+/* 파워링크 분석기 (pl.js) */
+.pl-opts{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:10px;font-size:13px}
+.pl-opts .hsel{height:30px;padding:0 24px 0 8px}
+.pl-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.pl-tbl td{vertical-align:middle}
+.pl-cap{width:250px}
+.pl-th{display:block;max-width:230px;max-height:150px;object-fit:cover;object-position:top;border:1px solid var(--border);border-radius:6px;cursor:zoom-in;background:#fff}
+.pl-th:hover{outline:2px solid var(--accent)}
+.pl-rk{font-size:15px}
+.pl-rk.top{color:#16a34a}
+.pl-miss{color:#b91c1c;font-weight:600}
+.pl-warn{display:inline-block;margin-top:3px;font-size:11px;color:#b45309;background:color-mix(in oklab,#f59e0b 14%,transparent);border-radius:4px;padding:1px 5px}
+.pl-up{color:#dc2626}.pl-dn{color:#2563eb}
+.prog.done{border-color:color-mix(in oklab,#16a34a 35%,transparent)}
+.pl-img{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.6);display:flex;align-items:flex-start;justify-content:center;padding:30px;overflow:auto}
+.pl-img-in{background:var(--background);border-radius:12px;padding:12px;max-width:min(1300px,96vw)}
+.pl-img-top{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.pl-img-top b{flex:1;font-size:14px}
+.pl-img img{display:block;max-width:100%;height:auto;border:1px solid var(--border)}

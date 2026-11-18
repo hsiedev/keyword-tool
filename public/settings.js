@@ -115,6 +115,10 @@
         row('의미 중복 후보 기준', num(`${D}.simThreshold`, { min: 0, max: 1, step: 0.05 }), '0~1, 낮을수록 더 많이 AI에 보냄') +
         row('같은 말 사전 (한 줄에 "기준=다른말=다른말")', '') + area(`${D}.synonyms`, 4, '저렴한=싼=저가\n비용=가격=요금\n자동차보험=자차보험'))}
 
+      <h3 class="set-h">⑥ 파워링크 분석기</h3>
+      ${sec('powerlink', '검색 횟수 · 속도', `키워드마다 로그아웃 상태의 네이버 '광고 더보기' 화면(PC 최대 25위 · 모바일 최대 15위)을 여러 번 열어 내 광고 순위의 평균을 내요. 검색할 때마다 순위가 조금씩 바뀌어서 여러 번 볼수록 정확해요. 캡처는 이 PC의 Edge(없으면 Chrome)를 화면 없이 띄워 찍어요.<br>네이버는 짧은 시간에 검색을 많이 하면 검색 제한을 걸어요. 제한에 걸리면 1분부터 점점 길게 쉬었다 자동으로 이어가요.`,
+        row('검색 횟수', sel('rules.powerlink.runs', [[1, '1회 (빠름)'], [2, '2회'], [3, '3회'], [4, '4회 (기본)'], [5, '5회']]), '새로 시작하는 분석부터 적용') +
+        row('검색 사이 간격 (ms)', num('rules.powerlink.gapMs', { min: 500, max: 10000, step: 100 }), '기본 1,200 · 너무 줄이면 검색 제한에 자주 걸려요'))}
       <h3 class="set-h">⑤ 대량 분석</h3>
       ${sec('', '조회 방식', `키워드는 띄어쓰기를 붙이고 대소문자만 다른 것은 하나로 합친 뒤(최대 1,000개) 서버가 네이버 API를 대신 호출해요: 검색량은 5개씩, 입찰가는 PC·모바일 각각 20개 × 1~5위를 한 번에, 블로그 발행량은 1개씩. 받은 값은 12시간 저장해 두고 다시 조회하면 바로 써요. 포화 지수 구간은 ①의 설정을 따라요.<br>결과 아래 <b>AI 조건 재검증</b>은 ③과 같은 방식이에요(주제·예시·요청 사항은 대량 분석 화면에서 입력하거나 AI 생성기 탭에서 가져와요). 대량 분석은 글자 수 범위를 따로 검사하지 않아요.`)}`;
   }
@@ -148,6 +152,7 @@
       if (id === 'sat') DRAFT.rules.analysis.satBands = clone(d.rules.analysis.satBands);
       if (id === 'grade') { DRAFT.rules.analysis.gradeMinVol = d.rules.analysis.gradeMinVol; DRAFT.rules.analysis.gradeBands = clone(d.rules.analysis.gradeBands); }
       if (id === 'issue') DRAFT.rules.analysis.issueBands = clone(d.rules.analysis.issueBands);
+      if (id === 'powerlink') DRAFT.rules.powerlink = clone(d.rules.powerlink);
       if (id === 'comm') for (const k of ['commercialWords', 'infoWords', 'commercialBonus', 'infoPenalty', 'commercialBands']) DRAFT.rules.analysis[k] = clone(d.rules.analysis[k]);
       if (id === 'gen') DRAFT.rules.generate = clone(d.rules.generate);
       if (id === 'verify') DRAFT.rules.verify = clone(d.rules.verify);

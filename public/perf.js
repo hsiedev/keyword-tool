@@ -248,7 +248,7 @@
   mount();
   draw();
   // 다른 화면이 열리면 이 화면은 닫음
-  const watch = new MutationObserver(() => { if (!$('#perfView').classList.contains('hidden') && ['aiView', 'dupView', 'bulkView', 'copyView', 'mockView', 'main'].some((id) => { const el = document.getElementById(id); return el && !el.classList.contains('hidden'); })) $('#perfView').classList.add('hidden'); });
-  ['aiView', 'dupView', 'bulkView', 'copyView', 'mockView', 'main'].forEach((id) => { const el = document.getElementById(id); if (el) watch.observe(el, { attributes: true, attributeFilter: ['class'] }); });
+  const watch = new MutationObserver(() => { if (!$('#perfView').classList.contains('hidden') && ['aiView', 'dupView', 'bulkView', 'copyView', 'mockView', 'plView', 'main'].some((id) => { const el = document.getElementById(id); return el && !el.classList.contains('hidden'); })) $('#perfView').classList.add('hidden'); });
+  ['aiView', 'dupView', 'bulkView', 'copyView', 'mockView', 'plView', 'main'].forEach((id) => { const el = document.getElementById(id); if (el) watch.observe(el, { attributes: true, attributeFilter: ['class'] }); });
   if (location.hash === '#perf') setTimeout(() => (window.__LAYOUT?.go ? window.__LAYOUT.go('perf') : showPerf(true)), 0);
 })();

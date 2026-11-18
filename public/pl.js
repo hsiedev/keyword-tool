@@ -128,7 +128,7 @@
         e.preventDefault();
         const id = el.dataset.pid, m = S.jobs.find((x) => x.id === id);
         const v = await uiChoice(`'${m.name}'`, [['rename', '이름 변경'], ['del', '삭제']]);
-        if (v === 'rename') { const n = await uiPrompt('새 이름', m.name); if (n) { await api('/api/pl/rename', { id, name: n }).catch((x) => toast(x.message, 'warn')); loadJobs(); } }
+        if (v === 'rename') { const n = await uiPrompt('새 이름', { value: m.name }); if (n) { await api('/api/pl/rename', { id, name: n }).catch((x) => toast(x.message, 'warn')); loadJobs(); } }
         if (v === 'del' && await uiConfirm(`'${m.name}' 분석과 캡처를 모두 지울까요?`)) {
           try { await api('/api/pl/delete', { id }); if (S.cur === id) { S.cur = null; S.job = null; } loadJobs(); draw(); } catch (x) { toast(x.message, 'warn'); }
         }
