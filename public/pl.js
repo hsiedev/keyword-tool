@@ -233,15 +233,16 @@
       </div>
     </div>
     ${rows.length ? `<div class="card" style="margin-top:14px">
-      <div class="pl-bar"><button class="btn" data-pick="ok">노출가능만</button><button class="btn" data-pick="all">전체</button><button class="btn" data-pick="none">모두 해제</button>
+      <div class="pl-bar"><button class="btn" data-pick="ok">노출가능만</button><button class="btn" data-pick="all">전체</button><button class="btn" data-pick="none">모두 해제</button><button class="btn" data-find title="키워드 찾기 (Ctrl+F)">⌕ 키워드 찾기</button>
         <span class="muted" id="plEta">${C.bar}</span><span style="flex:1"></span>
         <input id="plName" class="inp" style="width:220px" placeholder="분석 이름 (비우면 자동)">
         <button class="btn" id="plClr">목록 비우기</button><button class="btn pri" id="plGo">분석 시작</button></div>
       <div class="tbl-wrap" style="max-height:420px;margin-top:10px"><table class="rel"><thead><tr><th style="width:34px"><input type="checkbox" id="plAll" ${rows.every((r) => r.on) ? 'checked' : ''}></th><th>#</th><th class="l">키워드</th><th class="l">상태</th><th>현재 입찰가</th><th>계정 PC 평균순위</th><th>계정 모바일 평균순위</th></tr></thead>
-      <tbody>${view.map((r, i) => `<tr><td><input type="checkbox" data-on="${i}" ${r.on ? 'checked' : ''}></td><td class="muted">${i + 1}</td><td class="l"><b>${e2(r.kw)}</b></td><td class="l ${r.state && r.state !== '노출가능' ? 'muted' : ''}">${e2(r.state || '')}</td><td>${r.bid == null ? '' : n0(r.bid) + '원'}</td><td>${r.acctPc || ''}</td><td>${r.acctMo || ''}</td></tr>`).join('')}</tbody></table>
+      <tbody>${view.map((r, i) => `<tr data-kw="${e2(r.kw)}"><td><input type="checkbox" data-on="${i}" ${r.on ? 'checked' : ''}></td><td class="muted">${i + 1}</td><td class="l"><b>${e2(r.kw)}</b></td><td class="l ${r.state && r.state !== '노출가능' ? 'muted' : ''}">${e2(r.state || '')}</td><td>${r.bid == null ? '' : n0(r.bid) + '원'}</td><td>${r.acctPc || ''}</td><td>${r.acctMo || ''}</td></tr>`).join('')}</tbody></table>
       ${rows.length > view.length ? `<div class="muted" style="padding:8px">… 나머지 ${(rows.length - view.length).toLocaleString('ko-KR')}개는 표에서 생략 (체크 상태는 그대로 반영)</div>` : ''}</div></div>` : ''}`;
   }
   function bindNew() {
+    $$('[data-find]').forEach((b) => (b.onclick = () => Finder.open()));
     $('#plUrls').oninput = (e) => { S.urls = e.target.value; localStorage.setItem('plUrls', S.urls); };
     $$('[data-dev]').forEach((c) => (c.onchange = () => { S.devices = $$('[data-dev]').filter((x) => x.checked).map((x) => x.dataset.dev); localStorage.setItem('plDevs', JSON.stringify(S.devices)); draw(); }));
     $('#plNPc').onchange = (e) => { S.nPc = +e.target.value; localStorage.setItem('plNPc', S.nPc); };
@@ -328,6 +329,7 @@
         <div class="seg">${j.devices.map((d) => `<button class="${d === dev ? 'on' : ''}" data-sd="${d}">${DEVN[d]}</button>`).join('')}</div>
         <input id="plQ" class="inp" style="width:220px" placeholder="키워드 검색" value="${e2(S.q)}">
         <label class="inl"><input type="checkbox" id="plMiss" ${S.onlyMiss ? 'checked' : ''}> 미노출만</label>
+        <button class="btn" data-find title="키워드 찾기 (Ctrl+F) · 치고 Enter → 그 줄로 이동">⌕ 키워드 찾기</button>
         <span style="flex:1"></span><span class="muted">${rows.length.toLocaleString('ko-KR')}개 표시</span>
       </div>
       <div class="tbl-wrap" style="margin-top:10px" id="plTblWrap"><table class="rel pl-tbl"><thead><tr><th>#</th>${th('kw', '키워드', 1)}${th('rank', '순위')}<th>순위 캡처</th>${th('bid', '현재 입찰가')}<th data-k="nbid" style="cursor:pointer">${nSel} 입찰가 ${S.sort.key === 'nbid' ? (S.sort.dir > 0 ? '▲' : '▼') : '<span class="muted">↕</span>'}</th>${th('clk', `${n}위 예상 (월)`)}</tr></thead>
@@ -339,7 +341,7 @@
           : `<span class="pl-miss">미노출</span><div class="muted" style="font-size:11px">${x.n}회 모두 · 광고 ${x.total || 0}개 중</div>`;
         const cap = x?.cap ? `<img class="pl-th" loading="lazy" src="/api/pl/img?id=${e2(j.id)}&f=${e2(x.cap.focus || x.cap.thumb)}" data-full="/api/pl/img?id=${e2(j.id)}&f=${e2(x.cap.file)}" data-t="${e2(r.kw)} · ${DEVN[dev]} · 캡처 당시 ${x.cap.rank ? x.cap.rank + '위' : '미노출'}${x.cap.where === 'more' ? ' (광고 더보기)' : ''}" alt=""><div class="muted" style="font-size:11px">캡처 당시 ${x.cap.rank ? x.cap.rank + '위' : '미노출'}${x.cap.where === 'more' ? ' · 더보기' : ''}</div>` : x?.capErr ? `<span class="muted" title="${e2(x.capErr)}">캡처 실패</span>` : '';
         const diff = r.bid != null && nb != null ? nb - r.bid : null;
-        return `<tr><td class="muted">${r.i}</td><td class="l"><b>${e2(r.kw)}</b></td><td>${rank}${chg ? `<div title="앞 분석(${e2(S.prev?.name || '')}) ${pv ? pv + '위' : '미노출'} 대비">${chg}</div>` : ''}</td><td class="pl-cap">${cap}</td>
+        return `<tr data-kw="${e2(r.kw)}"><td class="muted">${r.i}</td><td class="l"><b>${e2(r.kw)}</b></td><td>${rank}${chg ? `<div title="앞 분석(${e2(S.prev?.name || '')}) ${pv ? pv + '위' : '미노출'} 대비">${chg}</div>` : ''}</td><td class="pl-cap">${cap}</td>
           <td>${r.bid == null ? '<span class="muted">-</span>' : n0(r.bid) + '원'}</td>
           <td>${nb == null ? `<span class="muted" title="${e2(j.bids?.[r.key]?.[dev + 'Err'] || '')}">-</span>` : `${n0(nb)}원${diff ? `<div class="${diff > 0 ? 'pl-up' : 'pl-dn'}" style="font-size:11px">${diff > 0 ? '+' : ''}${n0(diff)}원</div>` : ''}`}</td>
           <td>${!p ? '<span class="muted">-</span>' : p.err ? `<span class="muted" title="${e2(p.err)}">조회 실패</span>` : `클릭 ${n0(p.clk)}회<div class="muted" style="font-size:11px">노출 ${n0(p.imp)} · 비용 ${n0(p.cost)}원</div>`}</td></tr>`;
@@ -349,6 +351,7 @@
     </div>`;
   }
   function bindJob() {
+    $$('[data-find]').forEach((b) => (b.onclick = () => Finder.open()));
     const j = S.job;
     $('#plStop')?.addEventListener('click', async () => { await api('/api/pl/stop', { id: j.id }).catch(() => {}); toast('중지할게요 (지금 키워드까지 마치고 멈춰요)', 'ok'); });
     $('#plRerun')?.addEventListener('click', () => rerun(j.id).catch((e) => toast(e.message, 'warn')));
@@ -374,6 +377,60 @@
     if (S.job === j) draw();
   }
 
+  // ---------------------------------------------------------------- 키워드 찾기 (작은 창)
+  const nk = (v) => String(v || '').replace(/\s+/g, '').toUpperCase();
+  const Finder = (() => {
+    const box = document.createElement('div');
+    box.className = 'pl-find hidden';
+    box.innerHTML = '<span class="pl-find-ic">⌕</span><input id="plFindQ" placeholder="찾을 키워드 · Enter" autocomplete="off"><span class="muted" id="plFindN"></span><button title="이전 (Shift+Enter)" data-fd="-1">▲</button><button title="다음 (Enter)" data-fd="1">▼</button><button title="닫기 (Esc)" data-fd="x">✕</button>';
+    document.body.appendChild(box);
+    const inp = box.querySelector('input'), cnt = box.querySelector('#plFindN');
+    let hits = [], at = -1, lastQ = '', curKw = '';
+    const list = () => (S.job ? rowsView() : S.draft.rows);
+    function search() {
+      const q = nk(inp.value);
+      lastQ = inp.value;
+      if (!q) { hits = []; at = -1; cnt.textContent = ''; return; }
+      const rows = list();
+      const exact = [], part = [];
+      rows.forEach((r, i) => { const k = nk(r.kw); if (k === q) exact.push(i); else if (k.includes(q)) part.push(i); });
+      hits = [...exact, ...part]; // 정확히 같은 키워드를 먼저
+      at = -1;
+    }
+    function go(dir) {
+      const qChanged = inp.value !== lastQ;
+      search(); // 표가 바뀌었을 수 있어서 매번 새로 찾고, 같은 검색어면 지금 위치 다음부터
+      if (!qChanged && curKw) { const rows = list(); at = hits.findIndex((i) => rows[i].kw === curKw); }
+      if (!hits.length) { cnt.textContent = inp.value.trim() ? '없음' : ''; box.classList.toggle('none', !!inp.value.trim()); return; }
+      box.classList.remove('none');
+      at = (at + dir + hits.length) % hits.length;
+      cnt.textContent = `${at + 1}/${hits.length}`;
+      const idx = hits[at], r = list()[idx];
+      curKw = r.kw;
+      if (S.job) { const pg = Math.floor(idx / PG) + 1; if (pg !== S.page) { S.page = pg; draw(); } }
+      else if (idx >= 300) { toast(`'${r.kw}'는 ${idx + 1}번째라 표에 안 보여요 (300개까지만 표시). 체크 상태는 그대로예요`, 'warn'); return; }
+      const tr = [...document.querySelectorAll('#plBody tr[data-kw]')].find((t) => t.dataset.kw === r.kw);
+      if (!tr) return;
+      document.querySelectorAll('#plBody tr.pl-hit').forEach((t) => t.classList.remove('pl-hit'));
+      tr.classList.add('pl-hit');
+      tr.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      setTimeout(() => tr.classList.remove('pl-hit'), 2500);
+    }
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); go(e.shiftKey ? -1 : 1); }
+      if (e.key === 'Escape') { e.preventDefault(); close(); }
+    });
+    inp.addEventListener('input', () => { cnt.textContent = ''; box.classList.remove('none'); });
+    box.querySelectorAll('[data-fd]').forEach((b) => (b.onclick = () => (b.dataset.fd === 'x' ? close() : go(+b.dataset.fd))));
+    function open() { box.classList.remove('hidden'); inp.focus(); inp.select(); }
+    function close() { box.classList.add('hidden'); }
+    // 파워링크 분석기 화면에서 Ctrl+F → 이 찾기 창 (다른 화면에서는 브라우저 기본 찾기)
+    addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f' && !$('#plView')?.classList.contains('hidden')) { e.preventDefault(); open(); }
+    });
+    return { open, close, reset: () => { hits = []; at = -1; lastQ = ''; cnt.textContent = ''; } };
+  })();
+
   // ---------------------------------------------------------------- 메뉴 열기·닫기
   window.__RESET_pl = () => { clearTimeout(S.timer); S.cur = null; S.job = null; S.draft = { rows: [], file: '', paste: '' }; localStorage.setItem('plCur', ''); draw(); scrollTo(0, 0); return '초기화했어요 (지난 분석은 왼쪽 내역에 있어요)'; };
   function showPl(on) {
@@ -389,6 +446,7 @@
   }
   window.showPl = showPl;
   window.__hidePl = () => {
+    Finder.close();
     if ($('#plView').classList.contains('hidden')) return;
     $('#plView').classList.add('hidden');
     $('#main').classList.remove('hidden'); $('#banners')?.classList.remove('hidden');
