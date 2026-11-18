@@ -333,18 +333,6 @@ await test('광고 안전장치: 읽기·예상치 호출만 허용, 켜기/끄�
   for (const [m, u] of [['GET', '/keywordstool'], ['GET', '/ncc/campaigns'], ['GET', '/ncc/keywords'], ['GET', '/stats'], ['POST', '/estimate/performance-bulk'], ['POST', '/estimate/average-position-bid/keyword']]) ok(adAllowed(m, u), '허용: ' + m + ' ' + u);
   for (const [m, u] of [['PUT', '/ncc/campaigns/cmp-1'], ['PUT', '/ncc/keywords'], ['DELETE', '/ncc/keywords/nkw-1'], ['POST', '/ncc/keywords'], ['POST', '/ncc/campaigns'], ['PUT', '/ncc/adgroups/grp-1'], ['GET', '/ncc/campaigns/cmp-1/../x'], ['POST', '/stats'], ['GET', '/billing/bizmoney']]) ok(!adAllowed(m, u), '차단: ' + m + ' ' + u);
 });
-await test('광고 성과(읽기 전용): 캠페인 → 그룹 → 키워드 → 성과, 네이버에는 GET만 나감', async () => {
-  const H = { Origin: 'http://localhost:' + PORT };
-  globalThis.__adCalls = [];
-  const c = await (await get('/api/ads/campaigns')).json();
-  eq(c.campaigns, [{ id: 'cmp-1', name: '운전자보험_PL', type: 'WEB_SITE', state: '노출 가능' }]);
-  const j = await (await post('/api/ads/perf', { campaigns: ['cmp-1'], since: '2026-11-01', until: '2026-11-07' }, H)).json();
-  eq(j.rows.map((x) => [x.keyword, x.clk, x.cost, x.state]), [['운전자보험비교', 40, 120000, '노출 가능'], ['운전자보험추천', 0, 0, '꺼짐']]);
-  ok(globalThis.__adCalls.length >= 4 && globalThis.__adCalls.every((x) => x.startsWith('GET ')), globalThis.__adCalls.join(', '));
-  eq((await post('/api/ads/perf', { campaigns: ['cmp-1'], since: 'x', until: '2026-11-07' }, H)).status, 502);
-  eq((await post('/api/ads/perf', { campaigns: ['cmp-1'], since: '2026-11-01', until: '2026-11-07' }, { Origin: 'https://evil.example' })).status, 403);
-  const cf = path.join(TMP, 'cache.json'); ok(!fs.existsSync(cf) || !fs.readFileSync(cf, 'utf8').includes('nkw-1'), '성과 자료는 파일에 안 남음');
-});
 await test('의미 중복 후보(임베딩): 글자가 달라도 뜻이 가까운 기존 키워드를 찾고, 겹치는 글자가 없는 건 안 보내고, 한 번 받은 건 저장해 다시 안 보냄', async () => {
   const H = { Origin: 'http://localhost:' + PORT };
   globalThis.__embSent = 0;
@@ -368,17 +356,6 @@ await test('브리프 생성: 씨앗마다 키워드 도구 조회 후 번갈아
   ok(!p.includes('예시 키워드와 같은 결'), '예시 쏠림 규칙 없음');
   await sse('/api/ai/generate-stream', { topic: '카드 발급', pos: ['캐시백'], neg: ['해지', '고객센터'], count: 10 });
   ok(globalThis.__lastPrompt.includes('[포함할 것 · Positive]') && globalThis.__lastPrompt.includes('- 캐시백') && globalThis.__lastPrompt.includes('[제외할 것 · Negative]') && globalThis.__lastPrompt.includes('- 고객센터'), 'Positive/Negative 블록');
-});
-await test('급등 원인 진단: 그날 vs 평소 하루 평균, 순위 상승·새로 노출 분류, 네이버에는 GET만', async () => {
-  const H = { Origin: 'http://localhost:' + PORT };
-  globalThis.__adCalls = [];
-  const j = await (await post('/api/ads/diagnose', { campaigns: ['cmp-1'], date: '2026-11-10', baseDays: 7 }, H)).json();
-  eq([j.base.since, j.base.until], ['2026-11-03', '2026-11-09']);
-  const k1 = j.top.find((r) => r.keyword === '운전자보험비교'), k2 = j.top.find((r) => r.keyword === '운전자보험추천');
-  eq([k1.imp, Math.round(k1.bImp), k1.causes[0], k2.causes[0]], [400, 143, '순위 상승', '새로 노출']);
-  ok(j.share['순위 상승'] > 0 && j.share['새로 노출'] === 50, JSON.stringify(j.share));
-  ok(globalThis.__adCalls.every((x) => x.startsWith('GET ')), globalThis.__adCalls.join(', '));
-  eq((await post('/api/ads/diagnose', { campaigns: ['cmp-1'], date: 'x' }, H)).status, 502);
 });
 // ---------------------------------------------------------------- 파워링크 분석기: 광고 순서 읽기 · 내 광고 찾기 · 그림 넣은 엑셀
 {

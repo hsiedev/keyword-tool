@@ -447,7 +447,7 @@
   // ---------------------------------------------------------------- 메뉴 열기·닫기
   window.__RESET_pl = () => { clearTimeout(S.timer); S.cur = null; S.job = null; S.draft = { rows: [], file: '', paste: '' }; localStorage.setItem('plCur', ''); draw(); scrollTo(0, 0); return '초기화했어요 (지난 분석은 왼쪽 내역에 있어요)'; };
   function showPl(on) {
-    if (on) { $('#aiView')?.classList.add('hidden'); window.__hideDup?.(); window.__hideBulk?.(); window.__hideCopy?.(); window.__hideMock?.(); window.__hidePerf?.(); }
+    if (on) { $('#aiView')?.classList.add('hidden'); window.__hideDup?.(); window.__hideBulk?.(); window.__hideCopy?.(); window.__hideMock?.(); }
     $('#plView').classList.toggle('hidden', !on);
     if (on) {
       $('#main').classList.add('hidden'); $('#banners')?.classList.add('hidden'); $('#tabs')?.classList.add('hidden');
@@ -468,7 +468,7 @@
   };
   mount();
   draw();
-  const others = ['aiView', 'dupView', 'bulkView', 'copyView', 'mockView', 'perfView', 'main'];
+  const others = ['aiView', 'dupView', 'bulkView', 'copyView', 'mockView', 'main'];
   const watch = new MutationObserver(() => { if (!$('#plView').classList.contains('hidden') && others.some((id) => { const el = document.getElementById(id); return el && !el.classList.contains('hidden'); })) $('#plView').classList.add('hidden'); });
   others.forEach((id) => { const el = document.getElementById(id); if (el) watch.observe(el, { attributes: true, attributeFilter: ['class'] }); });
   if (location.hash === '#pl') setTimeout(() => (window.__LAYOUT?.go ? window.__LAYOUT.go('pl') : showPl(true)), 0);

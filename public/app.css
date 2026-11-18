@@ -499,15 +499,6 @@ th.cw-over-r{box-shadow:inset -3px 0 0 var(--accent,#16a34a)}
 table.fp-table tr.fp-on>td.fz{background:var(--card)!important}
 @media print{table .fz{position:static;box-shadow:none}}
 
-/* 광고 성과 (perf.js) */
-.pf-ro{display:inline-block;font-size:12px;font-weight:600;color:#15803d;background:#dcfce7;border:1px solid #bbf7d0;border-radius:999px;padding:1px 9px;margin:0 6px;vertical-align:middle}
-html.dark .pf-ro{color:#86efac;background:#052e16;border-color:#14532d}
-.pf-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0}
-.pf-cmps{display:flex;flex-wrap:wrap;gap:6px 14px}
-.pf-cmp{display:flex;gap:5px;align-items:center}
-.pf-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px}
-.pf-sum .card{padding:12px 14px}
-.pf-sum b{font-size:18px}
 
 /* AI 탐색 계획 (ai.js) */
 .ai-plan{margin-top:10px;border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;background:var(--muted);font-size:13px}
@@ -542,15 +533,6 @@ table th.rn,table td.rn{width:38px;min-width:38px;text-align:right!important;col
 .pn-l.pos{color:#15803d}.pn-l.neg{color:#b91c1c}
 html.dark .pn-l.pos{color:#4ade80}html.dark .pn-l.neg{color:#f87171}
 .pn-l .muted{font-weight:400;color:var(--muted-fg)}
-
-/* 급등 원인 진단 (perf.js) */
-.pd-up{color:#16a34a}.pd-dn{color:#dc2626}
-.pd-chip{display:inline-block;font-size:11.5px;font-weight:600;border-radius:999px;padding:1px 8px;margin:1px 2px 1px 0;white-space:nowrap;cursor:help}
-.pd-c1{background:#dbeafe;color:#1d4ed8}.pd-c2{background:#dcfce7;color:#15803d}.pd-c3{background:#fef3c7;color:#b45309}.pd-c4{background:#fee2e2;color:#b91c1c}.pd-c5{background:#ede9fe;color:#6d28d9}.pd-c0{background:var(--muted);color:var(--muted-fg)}
-html.dark .pd-c1{background:#172554;color:#93c5fd}html.dark .pd-c2{background:#052e16;color:#86efac}html.dark .pd-c3{background:#451a03;color:#fcd34d}html.dark .pd-c4{background:#450a0a;color:#fca5a5}html.dark .pd-c5{background:#2e1065;color:#c4b5fd}
-.pd-bar{display:flex;gap:8px;align-items:center;margin:6px 0}
-.pd-track{flex:1;height:8px;border-radius:99px;background:var(--muted);overflow:hidden}.pd-track>div{height:100%;background:var(--accent,#16a34a);border-radius:99px}
-.pf-mode button{font-size:13px}
 
 /* AI 생성기: 표 아래 따라다니는 선택 작업 줄 (ai.js) */
 .act-bar{position:sticky;bottom:14px;z-index:6;display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;padding:10px 12px;border-radius:12px;background:var(--foreground,#111);color:var(--background,#fff);box-shadow:0 8px 28px rgba(0,0,0,.22)}

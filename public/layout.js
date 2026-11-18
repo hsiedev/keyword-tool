@@ -6,7 +6,6 @@
     ai: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>',
     dup: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
     copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
-    perf: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>',
     pl: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="1.5"/><path d="M7 7h6"/><path d="M3 14h10M3 18h7"/><circle cx="18" cy="17" r="3"/><path d="m20.2 19.2 1.8 1.8"/></svg>',
     mock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M7 13h6M7 16h10"/></svg>',
     bulk: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18M3 12h18M3 19h18"/><path d="M8 5v14"/></svg>',
@@ -20,7 +19,6 @@
     ['ai', 'AI 키워드 생성기'],
     ['dup', '키워드 중복 검사'],
     ['bulk', '대량 분석'],
-    ['perf', '광고 성과'],
     ['pl', '파워링크 분석기'],
     ['copy', 'AI 카피 생성기'],
     ['mock', '광고 목업'],
@@ -127,7 +125,7 @@
 
   // ---------------------------------------------------------------- 화면 전환
   const isOn = (id) => { const el = document.getElementById(id); return el && !el.classList.contains('hidden'); };
-  const current = () => (isG() ? 'analyze' : isOn('copyView') ? 'copy' : isOn('mockView') ? 'mock' : isOn('perfView') ? 'perf' : isOn('plView') ? 'pl' : isOn('aiView') ? 'ai' : isOn('dupView') ? 'dup' : isOn('bulkView') ? 'bulk' : 'analyze');
+  const current = () => (isG() ? 'analyze' : isOn('copyView') ? 'copy' : isOn('mockView') ? 'mock' : isOn('plView') ? 'pl' : isOn('aiView') ? 'ai' : isOn('dupView') ? 'dup' : isOn('bulkView') ? 'bulk' : 'analyze');
   // 메뉴(탭)마다 마지막 스크롤 위치: 새로고침해도 유지 (sessionStorage)
   let POS = {};
   try { POS = JSON.parse(sessionStorage.getItem('ktPos') || '{}') || {}; } catch {}
@@ -159,11 +157,9 @@
     savePos();
     if (v !== 'copy') window.__hideCopy?.();
     if (v !== 'mock') window.__hideMock?.();
-    if (v !== 'perf') window.__hidePerf?.();
     if (v !== 'pl') window.__hidePl?.();
     if (v === 'copy') window.showCopy?.(true);
     if (v === 'mock') window.showMock?.(true);
-    if (v === 'perf') window.showPerf?.(true);
     if (v === 'pl') window.showPl?.(true);
     if (v === 'analyze') {
       if (isOn('aiView')) window.showAI?.(false);
@@ -202,14 +198,14 @@
   }
 
   function sync() {
-    if (isG() && ['aiView', 'dupView', 'bulkView', 'copyView', 'mockView', 'perfView', 'plView'].some(isOn)) { localStorage.setItem('siteMode', 'naver'); applyMode(); return; }
+    if (isG() && ['aiView', 'dupView', 'bulkView', 'copyView', 'mockView', 'plView'].some(isOn)) { localStorage.setItem('siteMode', 'naver'); applyMode(); return; }
     adopt();
     const v = current();
     side.querySelectorAll('[data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
     document.getElementById('topTitle').textContent = NAME[v];
     const show = (id, on) => document.getElementById(id)?.classList.toggle('hidden', !on);
     show('aiSide', v === 'ai'); show('bSide', v === 'bulk'); show('cSide', v === 'copy'); show('mSide', v === 'mock'); show('pSide', v === 'pl'); show('asRecent', v === 'analyze'); show('asNone', v === 'dup');
-    document.getElementById('asLabel').textContent = v === 'analyze' ? '최근 검색' : v === 'mock' ? '캠페인' : v === 'perf' ? '' : '내역';
+    document.getElementById('asLabel').textContent = v === 'analyze' ? '최근 검색' : v === 'mock' ? '캠페인' : '내역';
     // 설정 › 화면 › 숨길 버튼 → 사이드바에도 적용
     const hide = new Set((window.SETTINGS?.ui?.hideButtons) || []);
     side.querySelectorAll('[data-view]').forEach((b) => { const k = b.dataset.view; b.style.display = k !== 'analyze' && hide.has(k) && k !== v ? 'none' : ''; });
@@ -230,6 +226,8 @@
 
   // ---------------------------------------------------------------- 열린 탭 줄
   const openKey = () => (isG() ? 'openViews_g' : 'openViews');
+  try { for (const k of ['openViews', 'openViews_g']) { const o = JSON.parse(localStorage.getItem(k) || 'null'); if (Array.isArray(o) && o.some((x) => !NAME[x])) localStorage.setItem(k, JSON.stringify(o.filter((x) => NAME[x]))); } } catch {}
+  for (const k of ['perfPick', 'perfPreset', 'perfMode']) localStorage.removeItem(k);
   let OPEN = [], openFor = '';
   const loadOpen = () => { openFor = getMode(); try { OPEN = JSON.parse(localStorage.getItem(openKey()) || '[]').filter((k) => NAME[k]); } catch { OPEN = []; } };
   const saveOpen = () => localStorage.setItem(openKey(), JSON.stringify(OPEN));
@@ -270,7 +268,7 @@
     modeMini.textContent = g ? 'G' : 'N';
     modeMini.title = g ? '지금 구글 모드 · 누르면 네이버로' : '지금 네이버 모드 · 누르면 구글로';
     if (g) {
-      window.__hideCopy?.(); window.__hideMock?.(); window.__hidePerf?.(); window.__hidePl?.();
+      window.__hideCopy?.(); window.__hideMock?.(); window.__hidePl?.();
       if (isOn('aiView')) window.showAI?.(false);
       if (isOn('dupView')) window.showDup?.(false);
       if (isOn('bulkView')) window.showBulk?.(false);
@@ -282,7 +280,7 @@
 
   // 화면이 바뀌면(다른 코드가 바꿔도) 사이드바·제목을 맞춤
   const mo = new MutationObserver(() => sync());
-  ['aiView', 'dupView', 'bulkView', 'copyView', 'mockView', 'perfView', 'plView', 'main', 'empty'].forEach((id) => { const el = document.getElementById(id); if (el) mo.observe(el, { attributes: true, attributeFilter: ['class'] }); });
+  ['aiView', 'dupView', 'bulkView', 'copyView', 'mockView', 'plView', 'main', 'empty'].forEach((id) => { const el = document.getElementById(id); if (el) mo.observe(el, { attributes: true, attributeFilter: ['class'] }); });
   if (typeof window.applyUI === 'function') { const o = window.applyUI; window.applyUI = function () { const r = o.apply(this, arguments); sync(); return r; }; }
 
   // ---------------------------------------------------------------- 서버 상태 띠: 꺼짐 / 예전 버전 / 코드가 바뀜 → 다시 시작
