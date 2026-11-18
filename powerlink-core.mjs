@@ -254,7 +254,7 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
     clearTimeout(saveT.get(j.id));
     if (now) w(); else saveT.set(j.id, setTimeout(w, 1500));
   }
-  const meta = (j) => ({ id: j.id, name: j.name, createdAt: j.createdAt, updatedAt: j.updatedAt, status: j.status, total: j.rows.filter((r) => r.on !== false).length, done: j.rows.filter((r) => r.on !== false && r.done).length, devices: j.devices });
+  const meta = (j) => ({ id: j.id, name: j.name, custom: !!j.custom, pinned: !!j.pinned, parentId: j.parentId || null, thread: j.thread || 0, createdAt: j.createdAt, updatedAt: j.updatedAt, status: j.status, total: j.rows.filter((r) => r.on !== false).length, done: j.rows.filter((r) => r.on !== false && r.done).length, devices: j.devices });
   function list() {
     const out = [];
     for (const d of fs.readdirSync(ROOT)) { if (!okId(d)) continue; const j = load(d); if (j) out.push(meta(j)); }
@@ -465,11 +465,31 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
       if (rows.length >= 2000) break;
     }
     if (!rows.some((r) => r.on)) throw new Error('검사할 키워드를 골라주세요');
+    if (RUN) throw new Error('다른 파워링크 분석이 진행 중이에요. 끝나거나 중지한 뒤에 시작하세요');
     const now = Date.now();
     const j = { id: 'pl' + now + Math.random().toString(36).slice(2, 6), name: String(b.name || '').trim().slice(0, 60) || `${rows.find((r) => r.on).kw} 외 ${rows.filter((r) => r.on).length - 1}개`,
+      parentId: b.parentId || null, thread: b.thread || 0, custom: !!b.custom,
       createdAt: now, updatedAt: now, urls, devices, runs: Math.min(5, Math.max(1, Number(R().runs) || 4)), nPc: Math.min(10, Math.max(1, Number(b.nPc) || 3)), nMo: Math.min(5, Math.max(1, Number(b.nMo) || 3)), rows, status: 'ready' };
     jobs.set(j.id, j); save(j, true);
     return j;
+  }
+
+  function threadOf(j) {
+    const root = j.parentId || j.id;
+    return list().filter((m) => m.id === root || m.parentId === root).sort((a, b) => a.createdAt - b.createdAt);
+  }
+  function prevRanks(j) {
+    const th = threadOf(j), i = th.findIndex((m) => m.id === j.id);
+    if (i <= 0) return null;
+    const p = load(th[i - 1].id);
+    if (!p) return null;
+    const out = {};
+    for (const r of p.rows) {
+      if (r.on === false || !r.res) continue;
+      out[r.key] = {};
+      for (const d of ['pc', 'mo']) { const x = r.res[d]; if (x && x.n) out[r.key][d] = x.seen ? x.avg : 0; }
+    }
+    return { id: p.id, name: p.name, at: p.createdAt, ranks: out };
   }
 
   function excel(j, nPc, nMo) {
@@ -507,7 +527,7 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
       if (p === '/api/pl/job') {
         const j = load(u.searchParams.get('id'));
         if (!j) return send(res, 404, { error: '없는 작업이에요' });
-        return send(res, 200, { job: j, running: RUN?.id === j.id ? { note: RUN.note, cur: RUN.cur } : null });
+        return send(res, 200, { job: j, running: RUN?.id === j.id ? { note: RUN.note, cur: RUN.cur } : null, thread: threadOf(j), prev: prevRanks(j) });
       }
       if (p === '/api/pl/img') {
         const j = load(u.searchParams.get('id')), f = String(u.searchParams.get('f') || '');
@@ -532,12 +552,22 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
       if (p === '/api/pl/resume') { const j = load(b.id); if (!j) return send(res, 404, { error: '없는 작업이에요' }); if (j.status === 'done') return send(res, 200, { id: j.id }); await runJob(j); return send(res, 200, { id: j.id }); }
       if (p === '/api/pl/stop') { if (RUN && (!b.id || RUN.id === b.id)) RUN.stop = true; return send(res, 200, { ok: true }); }
       if (p === '/api/pl/perf') { const j = load(b.id); if (!j) return send(res, 404, { error: '없는 작업이에요' }); const dev = b.dev === 'mo' ? 'mo' : 'pc'; const n = Math.min(DEV[dev].maxN, Math.max(1, Number(b.n) || 1)); if (!j.bids) await posBids(j); return send(res, 200, await perf(j, dev, n)); }
-      if (p === '/api/pl/rename') { const j = load(b.id); if (!j) return send(res, 404, { error: '없는 작업이에요' }); j.name = String(b.name || '').trim().slice(0, 60) || j.name; save(j, true); return send(res, 200, { ok: true }); }
+      if (p === '/api/pl/rerun') {
+        const src = load(b.id); if (!src) return send(res, 404, { error: '없는 작업이에요' });
+        const root = load(src.parentId || src.id) || src;
+        const k = threadOf(root).length; // 첫 분석 = 1 → 재분석 1, 2, …
+        const j = create({ urls: src.urls, devices: src.devices, nPc: src.nPc, nMo: src.nMo, rows: src.rows.map((r) => ({ kw: r.kw, bid: r.bid, state: r.state, acctPc: r.acctPc, acctMo: r.acctMo, on: r.on })), name: `${root.name} · 재분석 ${k}`, parentId: root.id, thread: k });
+        await runJob(j);
+        return send(res, 200, { id: j.id });
+      }
+      if (p === '/api/pl/pin') { const j = load(b.id); if (!j) return send(res, 404, { error: '없는 작업이에요' }); j.pinned = !!b.pinned; save(j, true); return send(res, 200, { ok: true }); }
+      if (p === '/api/pl/rename') { const j = load(b.id); if (!j) return send(res, 404, { error: '없는 작업이에요' }); const v = String(b.name || '').trim().slice(0, 60); if (v) { j.name = v; j.custom = true; } save(j, true); return send(res, 200, { ok: true }); }
       if (p === '/api/pl/delete') {
         const j = load(b.id); if (!j) return send(res, 404, { error: '없는 작업이에요' });
-        if (RUN?.id === j.id) return send(res, 400, { error: '진행 중인 작업은 먼저 중지하세요' });
-        jobs.delete(j.id); fs.rmSync(jobDir(j.id), { recursive: true, force: true });
-        return send(res, 200, { ok: true });
+        const ids = j.parentId ? [j.id] : threadOf(j).map((m) => m.id); // 첫 분석을 지우면 그 재분석도 같이
+        if (RUN && ids.includes(RUN.id)) return send(res, 400, { error: '진행 중인 분석이 있어요. 먼저 중지하세요' });
+        for (const id of ids) { clearTimeout(saveT.get(id)); saveT.delete(id); jobs.delete(id); fs.rmSync(jobDir(id), { recursive: true, force: true }); }
+        return send(res, 200, { ok: true, deleted: ids.length });
       }
       return send(res, 404, { error: '없는 주소예요' });
     } catch (e) { return send(res, e.status || 400, { error: e.message }); }

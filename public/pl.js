@@ -16,6 +16,7 @@
     devices: JSON.parse(localStorage.getItem('plDevs') || '["pc","mo"]'),
     nPc: +localStorage.getItem('plNPc') || 3, nMo: +localStorage.getItem('plNMo') || 3,
     dev: localStorage.getItem('plDev') === 'mo' ? 'mo' : 'pc',
+    thread: [], prev: null,
     q: '', onlyMiss: false, sort: { key: 'i', dir: 1 }, page: 1, timer: 0, perfBusy: false,
   };
   const PG = 100;
@@ -72,7 +73,7 @@
   };
   async function loadJobs() { try { const j = await api('/api/pl/jobs'); S.jobs = j.jobs; S.running = j.running; } catch {} drawSide(); }
   async function openJob(id) {
-    try { const j = await api('/api/pl/job?id=' + encodeURIComponent(id)); S.job = j.job; S.cur = id; S.running = j.running ? { id, ...j.running } : (S.running?.id === id ? null : S.running); }
+    try { const j = await api('/api/pl/job?id=' + encodeURIComponent(id)); S.job = j.job; S.cur = id; S.thread = j.thread || []; S.prev = j.prev || null; S.running = j.running ? { id, ...j.running } : (S.running?.id === id ? null : S.running); }
     catch (e) { toast(e.message, 'warn'); S.cur = null; S.job = null; }
     localStorage.setItem('plCur', S.cur || '');
     S.page = 1;
@@ -106,38 +107,92 @@
     v.id = 'plView'; v.className = 'hidden';
     v.innerHTML = `<div class="ai-wrap"><aside class="side" id="pSide"></aside><main class="ai-main" style="max-width:1400px"><div id="plBody"></div></main></div>`;
     $('#main').after(v);
+    const cx = document.createElement('div'); cx.className = 'ctx hidden'; cx.id = 'pCtx'; document.body.appendChild(cx);
+    document.addEventListener('click', (e) => { if (!e.target.closest('#pCtx')) cx.classList.add('hidden'); });
+    window.addEventListener('scroll', () => cx.classList.add('hidden'), true);
     const im = document.createElement('div');
     im.id = 'plImg'; im.className = 'pl-img hidden';
     im.innerHTML = '<div class="pl-img-in"><div class="pl-img-top"><b id="plImgT"></b><a class="ext" id="plImgO" target="_blank">새 창으로</a><button class="btn" id="plImgX">닫기</button></div><img id="plImgI" alt="캡처"></div>';
     document.body.appendChild(im);
     im.onclick = (e) => { if (e.target === im || e.target.id === 'plImgX') im.classList.add('hidden'); };
-    addEventListener('keydown', (e) => { if (e.key === 'Escape') im.classList.add('hidden'); });
+    addEventListener('keydown', (e) => { if (e.key === 'Escape') { im.classList.add('hidden'); cx.classList.add('hidden'); } });
   }
   function showImg(src, title) { $('#plImgI').src = src; $('#plImgO').href = src; $('#plImgT').textContent = title; $('#plImg').classList.remove('hidden'); }
 
   const fmtD = (t) => { const d = new Date(t); return new Date().toDateString() === d.toDateString() ? d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : `${d.getMonth() + 1}.${d.getDate()}`; };
   const ST = { running: '진행 중', done: '완료', stopped: '중지됨', error: '오류', ready: '대기' };
+  const PIN = '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style="flex:none;opacity:.7"><path d="M16 3l5 5-3 1-4 4 1 5-2 2-4-4-5 5-1-1 5-5-4-4 2-2 5 1 4-4z"/></svg>';
+  const subName = (m) => (m.custom ? m.name : `재분석 ${m.thread || ''}`.trim());
   function drawSide() {
     const side = $('#pSide');
     if (!side) return;
+    const roots = S.jobs.filter((m) => !m.parentId || !S.jobs.some((x) => x.id === m.parentId));
+    const kids = (r) => S.jobs.filter((m) => m.parentId === r.id).sort((x, y) => x.createdAt - y.createdAt);
+    const meta = (m) => `${ST[m.status] || ''} · ${m.done.toLocaleString('ko-KR')}/${m.total.toLocaleString('ko-KR')}개 · ${fmtD(m.createdAt)}`;
+    const item = (m, sub) => `<div class="sit ${sub ? 'pl-sub' : ''} ${S.cur === m.id ? 'on' : ''}" data-pid="${e2(m.id)}" title="${e2(m.name)} (우클릭: ${sub ? '' : '고정·'}재분석·이름 변경·삭제)">
+        <div class="sn">${sub ? '<span class="pl-br">↳</span>' : m.pinned ? PIN : ''}<span>${e2(sub ? subName(m) : m.name)}</span></div>
+        <div class="sm">${meta(m)}</div></div>`;
+    const group = (r) => item(r) + kids(r).map((k) => item(k, true)).join('');
+    const last = (r) => Math.max(r.createdAt, ...kids(r).map((k) => k.createdAt));
+    const pinned = roots.filter((r) => r.pinned).sort((x, y) => last(y) - last(x)), rest = roots.filter((r) => !r.pinned).sort((x, y) => last(y) - last(x));
     side.innerHTML = `<button class="btn pri newbtn" id="pSideNew">+ 새 분석</button>
+      ${pinned.length ? `<div class="side-h">고정됨</div>${pinned.map(group).join('')}` : ''}
       <div class="side-h">내역</div>
-      ${S.jobs.map((m) => `<div class="sit ${S.cur === m.id ? 'on' : ''}" data-pid="${e2(m.id)}" title="${e2(m.name)} (우클릭: 이름 변경·삭제)">
-        <div class="sn"><span>${e2(m.name)}</span></div>
-        <div class="sm">${ST[m.status] || ''} · ${m.done.toLocaleString('ko-KR')}/${m.total.toLocaleString('ko-KR')}개 · ${fmtD(m.createdAt)}</div></div>`).join('') || '<div class="muted" style="padding:6px 10px;font-size:12px">분석할 때마다 여기 쌓여요</div>'}`;
-    $('#pSideNew').onclick = () => { clearTimeout(S.timer); S.cur = null; S.job = null; localStorage.setItem('plCur', ''); draw(); };
+      ${rest.map(group).join('') || '<div class="muted" style="padding:6px 10px;font-size:12px">분석할 때마다 여기 쌓여요</div>'}`;
+    $('#pSideNew').onclick = () => { clearTimeout(S.timer); S.cur = null; S.job = null; S.thread = []; S.prev = null; localStorage.setItem('plCur', ''); draw(); };
     $$('[data-pid]', side).forEach((el) => {
       el.onclick = () => openJob(el.dataset.pid);
-      el.oncontextmenu = async (e) => {
-        e.preventDefault();
-        const id = el.dataset.pid, m = S.jobs.find((x) => x.id === id);
-        const v = await uiChoice(`'${m.name}'`, [['rename', '이름 변경'], ['del', '삭제']]);
-        if (v === 'rename') { const n = await uiPrompt('새 이름', { value: m.name }); if (n) { await api('/api/pl/rename', { id, name: n }).catch((x) => toast(x.message, 'warn')); loadJobs(); } }
-        if (v === 'del' && await uiConfirm(`'${m.name}' 분석과 캡처를 모두 지울까요?`)) {
-          try { await api('/api/pl/delete', { id }); if (S.cur === id) { S.cur = null; S.job = null; } loadJobs(); draw(); } catch (x) { toast(x.message, 'warn'); }
-        }
-      };
+      el.oncontextmenu = (e) => { e.preventDefault(); const m = S.jobs.find((x) => x.id === el.dataset.pid); if (m) showCtx(e, m); };
     });
+  }
+  function showCtx(e, m) {
+    const box = $('#pCtx'), sub = !!m.parentId;
+    box.innerHTML = `${sub ? '' : `<button data-a="pin">${m.pinned ? '고정 해제' : '상단에 고정'}</button>`}<button data-a="rerun">같은 키워드로 재분석</button><button data-a="rename">이름 변경</button><button data-a="del" class="danger">삭제</button>`;
+    box.classList.remove('hidden');
+    box.style.left = Math.min(e.clientX, innerWidth - 190) + 'px';
+    box.style.top = Math.min(e.clientY, innerHeight - 160) + 'px';
+    $$('button', box).forEach((b) => (b.onclick = async () => {
+      box.classList.add('hidden');
+      const a = b.dataset.a;
+      try {
+        if (a === 'pin') { await api('/api/pl/pin', { id: m.id, pinned: !m.pinned }); await loadJobs(); }
+        if (a === 'rerun') await rerun(m.id);
+        if (a === 'rename') rename(m);
+        if (a === 'del') {
+          const kidsN = sub ? 0 : S.jobs.filter((x) => x.parentId === m.id).length;
+          if (!await uiConfirm(`'${sub ? subName(m) : m.name}' 분석을 삭제할까요? 순위 결과와 캡처가 같이 지워져요.${kidsN ? `\n이 분석의 재분석 ${kidsN}개도 함께 지워져요.` : ''}`)) return;
+          const r = await api('/api/pl/delete', { id: m.id });
+          const gone = S.cur === m.id || (!sub && S.jobs.some((x) => x.parentId === m.id && x.id === S.cur));
+          if (gone) { clearTimeout(S.timer); S.cur = null; S.job = null; localStorage.setItem('plCur', ''); }
+          await loadJobs(); draw();
+          toast(r.deleted > 1 ? `${r.deleted}개(재분석 포함)를 지웠어요` : '지웠어요', 'ok');
+        }
+      } catch (x) { toast(x.message, 'warn'); }
+    }));
+  }
+  // 이름 변경: 다른 분석기처럼 목록에서 바로 고쳐 쓰기 (Enter 저장 · Esc 취소)
+  function rename(m) {
+    const el = $(`#pSide .sit[data-pid="${m.id}"] .sn span:last-child`);
+    if (!el) return;
+    const inp = document.createElement('input');
+    inp.value = m.parentId ? subName(m) : m.name;
+    el.replaceWith(inp);
+    inp.focus(); inp.select();
+    let fin = false;
+    const finish = async (ok) => {
+      if (fin) return; fin = true;
+      const v = inp.value.trim();
+      if (ok && v && v !== m.name) { try { await api('/api/pl/rename', { id: m.id, name: v }); if (S.job?.id === m.id) S.job.name = v; } catch (x) { toast(x.message, 'warn'); } await loadJobs(); if (S.job) draw(); }
+      else drawSide();
+    };
+    inp.onkeydown = (e) => { if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); };
+    inp.onblur = () => finish(true);
+    inp.onclick = (e) => e.stopPropagation();
+  }
+  async function rerun(id) {
+    const j = await api('/api/pl/rerun', { id });
+    await loadJobs(); await openJob(j.id);
+    toast('같은 키워드로 다시 분석해요. 첫 분석 아래에 붙어 있어요', 'ok');
   }
 
   function draw() {
@@ -254,8 +309,9 @@
     const nSel = `<select id="plN" class="hsel" style="height:26px;padding:0 22px 0 6px">${Array.from({ length: MAXN[dev] }, (_, i) => `<option value="${i + 1}" ${n === i + 1 ? 'selected' : ''}>${i + 1}위</option>`).join('')}</select>`;
     return `<div class="card">
       <div class="pl-bar"><b style="font-size:15px">${e2(j.name)}</b><span class="muted">${new Date(j.createdAt).toLocaleString('ko-KR')} · URL ${j.urls.map(e2).join(', ')} · ${j.runs}회 평균</span><span style="flex:1"></span>
-        ${run ? '<button class="btn" id="plStop">중지</button>' : j.status !== 'done' ? '<button class="btn pri" id="plResume">이어서 하기</button>' : ''}
+        ${run ? '<button class="btn" id="plStop">중지</button>' : `${j.status !== 'done' ? '<button class="btn pri" id="plResume">이어서 하기</button>' : ''}<button class="btn" id="plRerun" title="같은 키워드 · URL · 기기로 다시 검사해서 이 분석 아래(스레드)에 붙여요">같은 키워드로 재분석</button>`}
         <button class="btn pri" id="plXlsx">엑셀 다운로드 (캡처 포함)</button></div>
+      ${S.thread.length > 1 ? `<div class="pl-thread"><span class="muted">스레드</span>${S.thread.map((m, i) => `<button class="${m.id === j.id ? 'on' : ''}" data-th="${e2(m.id)}">${i === 0 ? '첫 분석' : e2(m.custom ? m.name : '재분석 ' + (m.thread || i))} <small>${fmtD(m.createdAt)}${m.status === 'running' ? ' · 진행 중' : ''}</small></button>`).join('<span class="muted">›</span>')}</div>` : ''}
       <div class="prog ${run ? '' : j.status === 'done' ? 'done' : 'fail'}" style="margin-top:10px"><div class="prog-top"><b>${run ? `검사 중 · ${e2(S.running?.cur || '')}` : ST[j.status]}${j.error ? ' · ' + e2(j.error) : ''}</b><span>${done.toLocaleString('ko-KR')} / ${all.length.toLocaleString('ko-KR')}개${run && left ? ` · 남은 시간 약 ${eta < 3600 ? Math.max(1, Math.round(eta / 60)) + '분' : Math.floor(eta / 3600) + '시간 ' + Math.round((eta % 3600) / 60) + '분'}` : ''}</span></div>
         <div class="bar"><div style="width:${all.length ? (done / all.length) * 100 : 0}%"></div></div>
         ${run && S.running?.note ? `<div class="muted" style="font-size:12px;margin-top:4px">${e2(S.running.note)}</div>` : ''}
@@ -277,11 +333,13 @@
       <div class="tbl-wrap" style="margin-top:10px" id="plTblWrap"><table class="rel pl-tbl"><thead><tr><th>#</th>${th('kw', '키워드', 1)}${th('rank', '순위')}<th>순위 캡처</th>${th('bid', '현재 입찰가')}<th data-k="nbid" style="cursor:pointer">${nSel} 입찰가 ${S.sort.key === 'nbid' ? (S.sort.dir > 0 ? '▲' : '▼') : '<span class="muted">↕</span>'}</th>${th('clk', `${n}위 예상 (월)`)}</tr></thead>
       <tbody>${view.map((r) => {
         const x = r.res?.[dev], nb = j.bids?.[r.key]?.[dev]?.[n - 1], p = P[r.key];
+        const pv = S.prev?.ranks?.[r.key]?.[dev];
+        const chg = !x || !x.n || pv == null ? '' : !x.seen && pv ? '<span class="pl-chg dn">빠짐</span>' : x.seen && !pv ? '<span class="pl-chg up">새로 노출</span>' : x.seen && pv ? (Math.abs(pv - x.avg) < 0.05 ? '<span class="pl-chg">변화 없음</span>' : `<span class="pl-chg ${x.avg < pv ? 'up' : 'dn'}">${x.avg < pv ? '▲' : '▼'}${Math.round(Math.abs(pv - x.avg) * 10) / 10}</span>`) : '';
         const rank = !x ? `<span class="muted">${run ? '대기' : '-'}</span>` : x.seen ? `<b class="pl-rk ${x.avg <= 3 ? 'pl-top' : ''}">${x.avg}위</b><div class="muted" style="font-size:11px">${x.min === x.max ? '' : `${x.min}~${x.max}위 · `}${x.seen}/${x.n}회 노출${x.mainCount != null && x.avg > x.mainCount ? ' · 통합검색 밖' : ''}</div>${x.match && x.match.score < 3 ? `<div class="pl-warn" title="${e2(x.match.display)}">${x.match.score === 1 ? '도메인만 일치' : '경로 다름'}</div>` : ''}`
           : `<span class="pl-miss">미노출</span><div class="muted" style="font-size:11px">${x.n}회 모두 · 광고 ${x.total || 0}개 중</div>`;
         const cap = x?.cap ? `<img class="pl-th" loading="lazy" src="/api/pl/img?id=${e2(j.id)}&f=${e2(x.cap.focus || x.cap.thumb)}" data-full="/api/pl/img?id=${e2(j.id)}&f=${e2(x.cap.file)}" data-t="${e2(r.kw)} · ${DEVN[dev]} · 캡처 당시 ${x.cap.rank ? x.cap.rank + '위' : '미노출'}${x.cap.where === 'more' ? ' (광고 더보기)' : ''}" alt=""><div class="muted" style="font-size:11px">캡처 당시 ${x.cap.rank ? x.cap.rank + '위' : '미노출'}${x.cap.where === 'more' ? ' · 더보기' : ''}</div>` : x?.capErr ? `<span class="muted" title="${e2(x.capErr)}">캡처 실패</span>` : '';
         const diff = r.bid != null && nb != null ? nb - r.bid : null;
-        return `<tr><td class="muted">${r.i}</td><td class="l"><b>${e2(r.kw)}</b></td><td>${rank}</td><td class="pl-cap">${cap}</td>
+        return `<tr><td class="muted">${r.i}</td><td class="l"><b>${e2(r.kw)}</b></td><td>${rank}${chg ? `<div title="앞 분석(${e2(S.prev?.name || '')}) ${pv ? pv + '위' : '미노출'} 대비">${chg}</div>` : ''}</td><td class="pl-cap">${cap}</td>
           <td>${r.bid == null ? '<span class="muted">-</span>' : n0(r.bid) + '원'}</td>
           <td>${nb == null ? `<span class="muted" title="${e2(j.bids?.[r.key]?.[dev + 'Err'] || '')}">-</span>` : `${n0(nb)}원${diff ? `<div class="${diff > 0 ? 'pl-up' : 'pl-dn'}" style="font-size:11px">${diff > 0 ? '+' : ''}${n0(diff)}원</div>` : ''}`}</td>
           <td>${!p ? '<span class="muted">-</span>' : p.err ? `<span class="muted" title="${e2(p.err)}">조회 실패</span>` : `클릭 ${n0(p.clk)}회<div class="muted" style="font-size:11px">노출 ${n0(p.imp)} · 비용 ${n0(p.cost)}원</div>`}</td></tr>`;
@@ -293,6 +351,8 @@
   function bindJob() {
     const j = S.job;
     $('#plStop')?.addEventListener('click', async () => { await api('/api/pl/stop', { id: j.id }).catch(() => {}); toast('중지할게요 (지금 키워드까지 마치고 멈춰요)', 'ok'); });
+    $('#plRerun')?.addEventListener('click', () => rerun(j.id).catch((e) => toast(e.message, 'warn')));
+    $$('[data-th]').forEach((b) => (b.onclick = () => openJob(b.dataset.th)));
     $('#plResume')?.addEventListener('click', async () => { try { await api('/api/pl/resume', { id: j.id }); await openJob(j.id); loadJobs(); } catch (e) { toast(e.message, 'warn'); } });
     $('#plXlsx').onclick = () => { toast('엑셀을 만드는 중이에요 (캡처가 많으면 조금 걸려요)', 'ok'); location.href = `/api/pl/xlsx?id=${encodeURIComponent(j.id)}&nPc=${S.nPc}&nMo=${S.nMo}`; };
     $$('[data-sd]').forEach((b) => (b.onclick = () => { S.dev = b.dataset.sd; localStorage.setItem('plDev', S.dev); S.page = 1; draw(); ensurePerf(); }));
