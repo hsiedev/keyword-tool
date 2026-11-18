@@ -379,7 +379,7 @@
 
   // ---------------------------------------------------------------- 키워드 찾기 (작은 창)
   const nk = (v) => String(v || '').replace(/\s+/g, '').toUpperCase();
-  const Finder = (() => {
+  var Finder = (() => {
     const box = document.createElement('div');
     box.className = 'pl-find hidden';
     box.innerHTML = '<span class="pl-find-ic">⌕</span><input id="plFindQ" placeholder="찾을 키워드 · Enter" autocomplete="off"><span class="muted" id="plFindN"></span><button title="이전 (Shift+Enter)" data-fd="-1">▲</button><button title="다음 (Enter)" data-fd="1">▼</button><button title="닫기 (Esc)" data-fd="x">✕</button>';
@@ -415,8 +415,13 @@
       tr.classList.add('pl-hit');
       tr.scrollIntoView({ block: 'center', behavior: 'instant' });
       // 위쪽 캡처 그림이 늦게 뜨면 줄이 밀려남 → 잠깐 동안 다시 가운데로 (사용자가 스크롤하면 멈춤)
-      const y0 = { v: scrollY }, again = () => { if (Math.abs(scrollY - y0.v) > 2) return; tr.scrollIntoView({ block: 'center', behavior: 'instant' }); y0.v = scrollY; };
-      [150, 400, 900].forEach((ms) => setTimeout(again, ms));
+      const job = (Finder._job = (Finder._job || 0) + 1);
+      let stop = false;
+      const halt = () => { stop = true; ['wheel', 'mousedown', 'touchstart'].forEach((ev) => removeEventListener(ev, halt)); };
+      ['wheel', 'mousedown', 'touchstart'].forEach((ev) => addEventListener(ev, halt, { passive: true, once: true }));
+      const again = () => { if (stop || job !== Finder._job) return; const r = tr.getBoundingClientRect(); if (Math.abs(r.top + r.height / 2 - innerHeight / 2) > 4) tr.scrollIntoView({ block: 'center', behavior: 'instant' }); };
+      [120, 300, 600, 1000, 1600].forEach((ms) => setTimeout(again, ms));
+      setTimeout(halt, 1700);
       clearTimeout(tr._hl); tr._hl = setTimeout(() => tr.classList.remove('pl-hit'), 3000);
     }
     inp.addEventListener('keydown', (e) => {
