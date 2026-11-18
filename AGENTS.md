@@ -181,3 +181,11 @@ AI 제공자는 서버의 `PROVIDERS`에 정의돼 있어요.
 - **구글 트렌드**는 비공식이라 언제든 막힐 수 있어요. explore → widgetdata(multiline · relatedsearches · comparedgeo) 순서, 요청 사이 0.9초, 429면 쿠키 새로 받아 최대 3번. 실패한 부분만 errors에 넣고 CSV 가져온 값으로 채움. 관련 검색어가 원래 없는 키워드도 있어요(예: 상조회사).
 - **플래너 CSV**는 UTF-16(탭)인 경우가 많아 화면(google.js decode)에서 글자를 풀어 텍스트로 보내요. 머리글은 '키워드/Keyword' 칸이 있는 줄, 월별 칸은 '검색:/Searches:'로 시작.
 - 테스트: tests\run.mjs '3-2. 구글 모드' (가짜 응답으로 429 재시도 · CSV · 유튜브).
+## 10. 파워링크 분석기 (2026-11-18 추가)
+- 서버: `powerlink-core.mjs` (createPowerlink). 화면: `public/pl.js` (#plView, 사이드 #pSide), 라우트 `/api/pl/*` (jobs · job · start · resume · stop · perf · xlsx · img · rename · delete).
+- 순위: `ad.search.naver.com/search.naver?where=ad` (PC) · `m.ad.search.naver.com/search.naver?where=m_expd` (모바일) HTML의 `data-nlog-params` → `cr_rank_legacy`(순위) · `display_url` · `ad_id`(nad-a001-01 = 파워링크, -03 = 파워컨텐츠 제외). 쿠키 없이 = 로그아웃 상태.
+- 내 광고 찾기(findMine): 표시 URL과 사용자 URL 비교. 3 주소+경로 · 2 같은 주소 · 1 같은 도메인(하위 주소 다름, 화면에 '도메인만 일치' 경고).
+- 캡처: Edge/Chrome headless를 CDP(Node 내장 WebSocket)로 직접 제어, 추가 설치 없음. 프로필 `data/powerlink/.browser`. 통합검색 블록 `[id^=pcPowerLink]`/`[id^=mobilePowerLink]`. 원본 `NNNN_pc.jpg` + 내 광고 주변 `NNNN_pc_f.jpg`(표·엑셀용).
+- 속도: 모든 네이버 요청은 gate()로 간격(rules.powerlink.gapMs, 기본 1200ms + 랜덤 0~300ms). '검색 서비스 이용이 제한' 감지 시 60·120·240…초 쉼.
+- 입찰가: `/estimate/average-position-bid/keyword` (PC 1~10 · 모바일 1~5, 묶음 실패 시 하나씩), `/estimate/performance/keyword` (bids 1개, 동시 3). ad-guard 허용 목록 안.
+- 엑셀: `buildXlsx` (그림 포함, 서버에서 zip 직접 작성). 작업 데이터는 `data/powerlink/` → GitHub 업로드 제외(data/*).
