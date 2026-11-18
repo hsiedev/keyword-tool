@@ -489,7 +489,7 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
     const out = {};
     for (const r of p.rows) {
       if (r.on === false || !r.res) continue;
-      out[r.key] = {};
+      out[r.key] = { bid: r.bid };
       for (const d of ['pc', 'mo']) { const x = r.res[d]; if (x && x.n) out[r.key][d] = x.seen ? x.avg : 0; }
     }
     return { id: p.id, name: p.name, at: p.createdAt, ranks: out };
@@ -559,9 +559,26 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
         const src = load(b.id); if (!src) return send(res, 404, { error: '없는 작업이에요' });
         const root = load(src.parentId || src.id) || src;
         const k = threadOf(root).length; // 첫 분석 = 1 → 재분석 1, 2, …
-        const j = create({ urls: src.urls, devices: src.devices, nPc: src.nPc, nMo: src.nMo, rows: src.rows.map((r) => ({ kw: r.kw, bid: r.bid, state: r.state, acctPc: r.acctPc, acctMo: r.acctMo, on: r.on })), name: `${root.name} · 재분석 ${k}`, parentId: root.id, thread: k });
+        // 새 파일을 넣었으면 같은 키워드의 입찰가 · 상태 · 평균노출순위를 새 값으로 (키워드 목록과 체크는 그대로)
+        const nk = (v) => String(v || '').replace(/\s+/g, '').toUpperCase();
+        const upd = Array.isArray(b.rows) && b.rows.length ? new Map(b.rows.filter((x) => x && x.kw).map((x) => [nk(x.kw), x])) : null;
+        const num = (v) => { const n = Number(String(v ?? '').replace(/[^\d.]/g, '')); return String(v ?? '').trim() !== '' && isFinite(n) ? n : null; };
+        let changed = 0, missing = 0;
+        const rows = src.rows.map((r) => {
+          const base = { kw: r.kw, bid: r.bid, state: r.state, acctPc: r.acctPc, acctMo: r.acctMo, on: r.on };
+          if (!upd) return base;
+          const x = upd.get(nk(r.kw));
+          if (!x) { if (r.on !== false) missing++; return base; }
+          const nb = num(x.bid);
+          if (r.on !== false && nb != null && nb !== r.bid) changed++;
+          return { ...base, bid: nb ?? r.bid, state: x.state != null && String(x.state).trim() ? String(x.state).slice(0, 30) : r.state, acctPc: num(x.acctPc) ?? r.acctPc, acctMo: num(x.acctMo) ?? r.acctMo };
+        });
+        const known = new Set(src.rows.map((r) => nk(r.kw)));
+        const extra = upd ? [...upd.keys()].filter((k2) => !known.has(k2)).length : 0;
+        const j = create({ urls: src.urls, devices: src.devices, nPc: src.nPc, nMo: src.nMo, rows, name: `${root.name} · 재분석 ${k}`, parentId: root.id, thread: k });
+        if (upd) { j.source = { file: String(b.file || '새 파일').slice(0, 80), changed, missing, extra }; save(j, true); }
         await runJob(j);
-        return send(res, 200, { id: j.id });
+        return send(res, 200, { id: j.id, changed, missing, extra, updated: !!upd });
       }
       if (p === '/api/pl/pin') { const j = load(b.id); if (!j) return send(res, 404, { error: '없는 작업이에요' }); j.pinned = !!b.pinned; save(j, true); return send(res, 200, { ok: true }); }
       if (p === '/api/pl/rename') { const j = load(b.id); if (!j) return send(res, 404, { error: '없는 작업이에요' }); const v = String(b.name || '').trim().slice(0, 60); if (v) { j.name = v; j.custom = true; } save(j, true); return send(res, 200, { ok: true }); }

@@ -193,10 +193,54 @@
     inp.onblur = () => finish(true);
     inp.onclick = (e) => e.stopPropagation();
   }
+  // 재분석: 새 엑셀(입찰가 바꾼 뒤 다시 받은 파일)을 넣으면 그 입찰가로, 안 넣으면 이전 값 그대로
   async function rerun(id) {
-    const j = await api('/api/pl/rerun', { id });
-    await loadJobs(); await openJob(j.id);
-    toast('같은 키워드로 다시 분석해요. 첫 분석 아래에 붙어 있어요', 'ok');
+    let src = S.job?.id === id ? S.job : null;
+    if (!src) { try { src = (await api('/api/pl/job?id=' + encodeURIComponent(id))).job; } catch (e) { return toast(e.message, 'warn'); } }
+    const on = src.rows.filter((r) => r.on !== false);
+    const bg = document.createElement('div');
+    bg.className = 'cfm-bg';
+    bg.innerHTML = `<div class="cfm pl-rr" role="dialog" aria-modal="true">
+      <div class="cfm-msg"><b>같은 키워드로 재분석</b> <span class="muted">키워드 ${on.length.toLocaleString('ko-KR')}개 · ${src.devices.map((d) => DEVN[d]).join('·')}</span></div>
+      <div class="muted" style="font-size:12.5px;line-height:1.6;margin-top:6px">입찰가를 바꿨다면 광고관리에서 <b>키워드 다운로드 엑셀을 새로 받아</b> 넣어 주세요. 같은 키워드의 입찰가 · 상태 · 평균노출순위만 새 값으로 바뀌고, 키워드 목록과 체크는 그대로예요. 안 넣으면 이전 값으로 재분석해요.</div>
+      <div class="drop" id="rrDrop" style="margin-top:10px;padding:14px">새 엑셀을 끌어다 놓거나 <label class="ext" style="cursor:pointer">파일 선택<input type="file" id="rrFile" accept=".xlsx,.xlsm,.csv,.txt" hidden></label></div>
+      <textarea id="rrPaste" class="inp" rows="2" style="margin-top:8px" placeholder="또는 엑셀에서 머리글 줄부터 복사해서 여기에 Ctrl+V"></textarea>
+      <div id="rrInfo" class="muted" style="font-size:12.5px;margin-top:8px;min-height:18px"></div>
+      <div class="cfm-btns"><button type="button" class="btn" data-v="x">취소</button><button type="button" class="btn" data-v="old">이전 입찰가로 재분석</button><button type="button" class="btn pri" data-v="new" disabled>새 입찰가로 재분석</button></div></div>`;
+    document.body.appendChild(bg);
+    let got = null, fname = '';
+    const info = bg.querySelector('#rrInfo'), btnNew = bg.querySelector('[data-v="new"]');
+    const take = (rows, name) => {
+      if (!rows.length) { info.innerHTML = '<span style="color:#b91c1c">키워드를 찾지 못했어요. 머리글(키워드 · 입찰가 …) 줄까지 넣어 주세요</span>'; return; }
+      const m = new Map(rows.map((r) => [r.kw.replace(/\s+/g, '').toUpperCase(), r]));
+      let changed = 0, missing = 0;
+      for (const r of on) { const x = m.get(r.kw.replace(/\s+/g, '').toUpperCase()); if (!x) missing++; else if (x.bid != null && x.bid !== r.bid) changed++; }
+      got = rows; fname = name;
+      info.innerHTML = `<b>${e2(name)}</b>: ${rows.length.toLocaleString('ko-KR')}개 읽음 · 이번 키워드 중 <b style="color:var(--accent)">입찰가 바뀜 ${changed.toLocaleString('ko-KR')}개</b>${missing ? ` · 파일에 없음 ${missing.toLocaleString('ko-KR')}개(이전 값 유지)` : ''}`;
+      btnNew.disabled = false;
+    };
+    const readFiles = async (files) => { const f = files[0]; if (!f) return; try { const sh = await window.XlsxLite.readFile(f); take(fromSheet(sh[0]?.rows || []), f.name); } catch (e) { info.textContent = e.message; } };
+    const dz = bg.querySelector('#rrDrop');
+    dz.ondragover = (e) => { e.preventDefault(); dz.classList.add('over'); };
+    dz.ondragleave = () => dz.classList.remove('over');
+    dz.ondrop = (e) => { e.preventDefault(); dz.classList.remove('over'); readFiles([...e.dataTransfer.files]); };
+    bg.querySelector('#rrFile').onchange = (e) => readFiles([...e.target.files]);
+    bg.querySelector('#rrPaste').addEventListener('paste', (e) => { const rows = window.XlsxLite?.clipRows(e.clipboardData); if (!rows) return; e.preventDefault(); take(fromSheet(rows), '붙여넣은 표'); });
+    const close = () => { removeEventListener('keydown', onKey, true); bg.remove(); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
+    addEventListener('keydown', onKey, true);
+    bg.addEventListener('mousedown', (e) => { if (e.target === bg) close(); });
+    bg.querySelectorAll('[data-v]').forEach((b) => (b.onclick = async () => {
+      const v = b.dataset.v;
+      if (v === 'x') return close();
+      b.disabled = true;
+      try {
+        const j = await api('/api/pl/rerun', v === 'new' && got ? { id, rows: got, file: fname } : { id });
+        close();
+        await loadJobs(); await openJob(j.id);
+        toast(j.updated ? `새 입찰가로 재분석해요 (입찰가 바뀐 키워드 ${j.changed}개). 첫 분석 아래에 붙어 있어요` : '이전 입찰가로 다시 분석해요. 첫 분석 아래에 붙어 있어요', 'ok');
+      } catch (e) { b.disabled = false; info.innerHTML = `<span style="color:#b91c1c">${e2(e.message)}</span>`; }
+    }));
   }
 
   function draw() {
@@ -314,7 +358,7 @@
     const th = (k, label, l) => `<th class="${l ? 'l' : ''}" data-k="${k}" style="cursor:pointer">${label} ${S.sort.key === k ? (S.sort.dir > 0 ? '▲' : '▼') : '<span class="muted">↕</span>'}</th>`;
     const nSel = `<select id="plN" class="hsel" style="height:26px;padding:0 22px 0 6px">${Array.from({ length: MAXN[dev] }, (_, i) => `<option value="${i + 1}" ${n === i + 1 ? 'selected' : ''}>${i + 1}위</option>`).join('')}</select>`;
     return `<div class="card">
-      <div class="pl-bar"><b style="font-size:15px">${e2(j.name)}</b><span class="muted">${new Date(j.createdAt).toLocaleString('ko-KR')} · URL ${j.urls.map(e2).join(', ')} · ${j.runs}회 평균</span><span style="flex:1"></span>
+      <div class="pl-bar"><b style="font-size:15px">${e2(j.name)}</b><span class="muted">${new Date(j.createdAt).toLocaleString('ko-KR')} · URL ${j.urls.map(e2).join(', ')} · ${j.runs}회 평균${j.source ? ` · <span title="재분석 때 넣은 파일">새 입찰가: ${e2(j.source.file)} (바뀜 ${j.source.changed}개)</span>` : ''}</span><span style="flex:1"></span>
         ${run ? '<button class="btn" id="plStop">중지</button>' : `${j.status !== 'done' ? '<button class="btn pri" id="plResume">이어서 하기</button>' : ''}<button class="btn" id="plRerun" title="같은 키워드 · URL · 기기로 다시 검사해서 이 분석 아래(스레드)에 붙여요">같은 키워드로 재분석</button>`}
         <button class="btn pri" id="plXlsx">엑셀 다운로드 (캡처 포함)</button></div>
       ${S.thread.length > 1 ? `<div class="pl-thread">${S.thread.map((m, i) => { const pct = m.total ? Math.round((m.done / m.total) * 100) : 0, run2 = m.status === 'running'; return `<button class="${m.id === j.id ? 'on' : ''} ${run2 ? 'run' : ''}" data-th="${e2(m.id)}" style="--p:${run2 ? pct : 100}%" title="${run2 ? `진행 중 ${pct}%` : ST[m.status] || ''}"><span>${i === 0 ? '첫 분석' : e2(m.custom ? m.name : '재분석 ' + (m.thread || i))} <small>${run2 ? pct + '%' : fmtD(m.createdAt)}</small></span></button>`; }).join('<span class="muted">›</span>')}</div>` : ''}
@@ -347,7 +391,7 @@
         const cap = x?.cap ? `<img class="pl-th" loading="lazy" src="/api/pl/img?id=${e2(j.id)}&f=${e2(x.cap.focus || x.cap.thumb)}" data-full="/api/pl/img?id=${e2(j.id)}&f=${e2(x.cap.file)}" data-t="${e2(r.kw)} · ${DEVN[dev]} · 캡처 당시 ${x.cap.rank ? x.cap.rank + '위' : '미노출'}${x.cap.where === 'more' ? ' (광고 더보기)' : ''}" alt=""><div class="muted" style="font-size:11px">캡처 당시 ${x.cap.rank ? x.cap.rank + '위' : '미노출'}${x.cap.where === 'more' ? ' · 더보기' : ''}</div>` : x?.capErr ? `<span class="muted" title="${e2(x.capErr)}">캡처 실패</span>` : '';
         const diff = r.bid != null && nb != null ? nb - r.bid : null;
         return `<tr data-kw="${e2(r.kw)}"><td class="muted">${r.i}</td><td class="l"><b>${e2(r.kw)}</b></td><td>${rank}${chg ? `<div title="앞 분석(${e2(S.prev?.name || '')}) ${pv ? pv + '위' : '미노출'} 대비">${chg}</div>` : ''}</td><td class="pl-cap">${cap}</td>
-          <td>${r.bid == null ? '<span class="muted">-</span>' : n0(r.bid) + '원'}</td>
+          <td>${r.bid == null ? '<span class="muted">-</span>' : n0(r.bid) + '원'}${(() => { const ob = S.prev?.ranks?.[r.key]?.bid; return ob != null && r.bid != null && ob !== r.bid ? `<div class="pl-chg ${r.bid > ob ? 'dn' : 'up'}" title="앞 분석의 입찰가" style="font-weight:500">전 ${n0(ob)}원</div>` : ''; })()}</td>
           <td>${nb == null ? `<span class="muted" title="${e2(j.bids?.[r.key]?.[dev + 'Err'] || '')}">-</span>` : `${n0(nb)}원${diff ? `<div class="${diff > 0 ? 'pl-up' : 'pl-dn'}" style="font-size:11px">${diff > 0 ? '+' : ''}${n0(diff)}원</div>` : ''}`}</td>
           <td>${!p ? '<span class="muted">-</span>' : p.err ? `<span class="muted" title="${e2(p.err)}">조회 실패</span>` : `클릭 ${n0(p.clk)}회<div class="muted" style="font-size:11px">노출 ${n0(p.imp)} · 비용 ${n0(p.cost)}원</div>`}</td></tr>`;
       }).join('')}</tbody></table></div>

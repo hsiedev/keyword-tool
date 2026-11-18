@@ -647,3 +647,4 @@ html.dark #plBody tr.pl-hit>td{background:#422006!important}
 
 .pl-band button small{opacity:.7;font-size:11px;margin-left:2px}
 .pl-nk{color:var(--accent);font-weight:600}
+.cfm.pl-rr{max-width:560px;width:min(560px,94vw)}
