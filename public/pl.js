@@ -260,12 +260,9 @@
     $('#plPasteAdd').onclick = () => { const r = fromPaste($('#plPaste').value); if (!r.length) return; mergeRows(r); draw(); };
     // 엑셀 표를 붙여넣으면 바로 표로 읽어서 목록에 추가 (머리글 '키워드'가 있으면 입찰가·상태·평균노출순위 열도 읽음)
     $('#plPaste').addEventListener('paste', (e) => {
-      // 표든 한 열이든 붙여넣는 즉시 목록에 추가 ([목록에 추가]를 안 눌러도 됨)
-      const dt = e.clipboardData, txt = dt?.getData('text/plain') || '', html = dt?.getData('text/html') || '';
+      const rows = window.XlsxLite?.clipRows(e.clipboardData);
+      if (!rows || Math.max(...rows.map((r) => r.length)) < 2) return;
       e.preventDefault();
-      if (!txt.trim() && !html.trim()) return toast('붙여넣은 내용에 글자가 없어요. 엑셀 보안(DRM) 프로그램이 복사를 막았을 수 있어요', 'warn');
-      let rows = window.XlsxLite?.clipRows(dt);
-      if (!rows) rows = txt.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => (/,/.test(l) ? l.split(',').map((x) => x.trim()) : [l]));
       const got = fromSheet(rows);
       if (!got.length) return toast('붙여넣은 표에서 키워드를 찾지 못했어요', 'warn');
       const before = S.draft.rows.length;
