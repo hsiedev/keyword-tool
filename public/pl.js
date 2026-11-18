@@ -1,0 +1,328 @@
+// 파워링크 분석기: 내 파워링크가 네이버 PC·모바일에서 몇 위인지 실제 검색 화면으로 확인하고 캡처 (AI 안 씀)
+// - 서버(powerlink-core.mjs)가 로그아웃 상태 네이버를 여러 번(설정, 기본 4회) 검색해 평균 순위를 내고, 화면 없는 Edge로 캡처
+// - 키워드는 네이버 광고관리 '키워드 다운로드' 엑셀을 그대로 넣으면 키워드·입찰가·상태를 알아서 읽음 (붙여넣기도 가능)
+// - n위 입찰가 = 네이버 검색광고 API 순위별 평균 입찰가(최근 4주), n위 예상 = 그 입찰가로 냈을 때 네이버 예상 실적(월)
+(function () {
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const e2 = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const n0 = (v) => (v == null || v === '' ? '' : Math.round(+v).toLocaleString('ko-KR'));
+  const DEVN = { pc: 'PC', mo: '모바일' };
+  const MAXN = { pc: 10, mo: 5 };
+  const S = {
+    jobs: [], running: null, job: null, cur: null, // cur = 열린 작업 id (null = 새 분석)
+    draft: { rows: [], file: '', paste: '' },
+    urls: localStorage.getItem('plUrls') || '',
+    devices: JSON.parse(localStorage.getItem('plDevs') || '["pc","mo"]'),
+    nPc: +localStorage.getItem('plNPc') || 3, nMo: +localStorage.getItem('plNMo') || 3,
+    dev: localStorage.getItem('plDev') === 'mo' ? 'mo' : 'pc',
+    q: '', onlyMiss: false, sort: { key: 'i', dir: 1 }, page: 1, timer: 0, perfBusy: false,
+  };
+  const PG = 100;
+  const runs = () => window.SETTINGS?.rules?.powerlink?.runs || 4;
+  const gapS = () => (window.SETTINGS?.rules?.powerlink?.gapMs || 1200) / 1000;
+
+  // ---------------------------------------------------------------- 키워드 읽기 (네이버 광고관리 엑셀 · CSV · 붙여넣기)
+  const numOf = (v) => { const s = String(v ?? '').replace(/[^\d.]/g, ''); return s === '' ? null : Number(s); };
+  function fromSheet(rows) {
+    const hi = rows.findIndex((r) => (r || []).some((c) => String(c).trim() === '키워드'));
+    if (hi < 0) return rows.map((r) => (r || []).map((c) => String(c).trim())).filter((r) => r[0]).map((r) => ({ kw: r[0], bid: numOf(r[1]), state: '', on: true }));
+    const h = rows[hi].map((c) => String(c).replace(/\s+/g, ''));
+    const at = (name) => h.findIndex((c) => c === name);
+    const iK = at('키워드'), iB = at('입찰가'), iS = at('상태'), iP = h.findIndex((c) => /^PC통검평균노출순위/.test(c)), iM = h.findIndex((c) => /^모바일통검평균노출순위/.test(c));
+    const out = [];
+    for (const r of rows.slice(hi + 1)) {
+      const kw = String(r?.[iK] ?? '').trim();
+      if (!kw || /^키워드 [\d,]+개 결과/.test(kw)) continue; // 맨 위 합계 줄
+      const state = iS >= 0 ? String(r[iS] ?? '').trim() : '';
+      out.push({ kw, bid: iB >= 0 ? numOf(r[iB]) : null, state, acctPc: iP >= 0 ? numOf(r[iP]) : null, acctMo: iM >= 0 ? numOf(r[iM]) : null, on: !state || state === '노출가능' });
+    }
+    return out;
+  }
+  function fromPaste(t) {
+    return String(t || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => { const [kw, bid] = l.split(/\t|,/); return { kw: kw.trim(), bid: numOf(bid), state: '', on: true }; });
+  }
+  function mergeRows(list) {
+    const seen = new Map(S.draft.rows.map((r) => [r.kw.replace(/\s+/g, '').toUpperCase(), r]));
+    for (const r of list) { const k = r.kw.replace(/\s+/g, '').toUpperCase(); if (k && !seen.has(k)) { seen.set(k, r); S.draft.rows.push(r); } }
+  }
+  async function addFiles(files) {
+    for (const f of files) {
+      try {
+        const sheets = await window.XlsxLite.readFile(f);
+        const rows = fromSheet(sheets[0]?.rows || []);
+        mergeRows(rows);
+        S.draft.file = f.name;
+        toast(`${f.name}: 키워드 ${rows.length.toLocaleString('ko-KR')}개 (노출가능 ${rows.filter((r) => r.on).length.toLocaleString('ko-KR')}개 체크)`, 'ok');
+      } catch (e) { toast(`${f.name}: ${e.message}`, 'warn'); }
+    }
+    draw();
+  }
+
+  // ---------------------------------------------------------------- 서버
+  const api = async (p, body) => {
+    const r = await fetch(p, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.error) throw new Error(j.error || '서버 오류 ' + r.status);
+    return j;
+  };
+  async function loadJobs() { try { const j = await api('/api/pl/jobs'); S.jobs = j.jobs; S.running = j.running; } catch {} drawSide(); }
+  async function openJob(id) {
+    try { const j = await api('/api/pl/job?id=' + encodeURIComponent(id)); S.job = j.job; S.cur = id; S.running = j.running ? { id, ...j.running } : (S.running?.id === id ? null : S.running); }
+    catch (e) { toast(e.message, 'warn'); S.cur = null; S.job = null; }
+    localStorage.setItem('plCur', S.cur || '');
+    S.page = 1;
+    draw(); poll();
+  }
+  function poll() {
+    clearTimeout(S.timer);
+    if (!S.job || S.job.status !== 'running') return;
+    S.timer = setTimeout(async () => {
+      if (!$('#plView') || $('#plView').classList.contains('hidden')) { S.timer = setTimeout(poll, 3000); return; }
+      await openJob(S.cur);
+      if (S.job?.status !== 'running') { loadJobs(); if (S.job?.status === 'done') toast(`'${S.job.name}' 분석이 끝났어요`, 'ok'); }
+    }, 2500);
+  }
+  async function start() {
+    const urls = S.urls.split(/[\s,]+/).filter(Boolean);
+    const rows = S.draft.rows;
+    if (!urls.length) return toast('내 파워링크 URL을 넣어주세요', 'warn');
+    if (!rows.some((r) => r.on)) return toast('검사할 키워드를 체크하세요', 'warn');
+    if (!S.devices.length) return toast('PC나 모바일 중 하나는 골라주세요', 'warn');
+    try {
+      const j = await api('/api/pl/start', { urls, rows, devices: S.devices, nPc: S.nPc, nMo: S.nMo, name: $('#plName')?.value || '' });
+      S.draft = { rows: [], file: '', paste: '' };
+      await loadJobs(); await openJob(j.id);
+    } catch (e) { toast(e.message, 'warn'); }
+  }
+
+  // ---------------------------------------------------------------- 화면
+  function mount() {
+    const v = document.createElement('div');
+    v.id = 'plView'; v.className = 'hidden';
+    v.innerHTML = `<div class="ai-wrap"><aside class="side" id="pSide"></aside><main class="ai-main" style="max-width:1400px"><div id="plBody"></div></main></div>`;
+    $('#main').after(v);
+    const im = document.createElement('div');
+    im.id = 'plImg'; im.className = 'pl-img hidden';
+    im.innerHTML = '<div class="pl-img-in"><div class="pl-img-top"><b id="plImgT"></b><a class="ext" id="plImgO" target="_blank">새 창으로</a><button class="btn" id="plImgX">닫기</button></div><img id="plImgI" alt="캡처"></div>';
+    document.body.appendChild(im);
+    im.onclick = (e) => { if (e.target === im || e.target.id === 'plImgX') im.classList.add('hidden'); };
+    addEventListener('keydown', (e) => { if (e.key === 'Escape') im.classList.add('hidden'); });
+  }
+  function showImg(src, title) { $('#plImgI').src = src; $('#plImgO').href = src; $('#plImgT').textContent = title; $('#plImg').classList.remove('hidden'); }
+
+  const fmtD = (t) => { const d = new Date(t); return new Date().toDateString() === d.toDateString() ? d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : `${d.getMonth() + 1}.${d.getDate()}`; };
+  const ST = { running: '진행 중', done: '완료', stopped: '중지됨', error: '오류', ready: '대기' };
+  function drawSide() {
+    const side = $('#pSide');
+    if (!side) return;
+    side.innerHTML = `<button class="btn pri newbtn" id="pSideNew">+ 새 분석</button>
+      <div class="side-h">내역</div>
+      ${S.jobs.map((m) => `<div class="sit ${S.cur === m.id ? 'on' : ''}" data-pid="${e2(m.id)}" title="${e2(m.name)} (우클릭: 이름 변경·삭제)">
+        <div class="sn"><span>${e2(m.name)}</span></div>
+        <div class="sm">${ST[m.status] || ''} · ${m.done.toLocaleString('ko-KR')}/${m.total.toLocaleString('ko-KR')}개 · ${fmtD(m.createdAt)}</div></div>`).join('') || '<div class="muted" style="padding:6px 10px;font-size:12px">분석할 때마다 여기 쌓여요</div>'}`;
+    $('#pSideNew').onclick = () => { clearTimeout(S.timer); S.cur = null; S.job = null; localStorage.setItem('plCur', ''); draw(); };
+    $$('[data-pid]', side).forEach((el) => {
+      el.onclick = () => openJob(el.dataset.pid);
+      el.oncontextmenu = async (e) => {
+        e.preventDefault();
+        const id = el.dataset.pid, m = S.jobs.find((x) => x.id === id);
+        const v = await uiChoice(`'${m.name}'`, [['rename', '이름 변경'], ['del', '삭제']]);
+        if (v === 'rename') { const n = await uiPrompt('새 이름', m.name); if (n) { await api('/api/pl/rename', { id, name: n }).catch((x) => toast(x.message, 'warn')); loadJobs(); } }
+        if (v === 'del' && await uiConfirm(`'${m.name}' 분석과 캡처를 모두 지울까요?`)) {
+          try { await api('/api/pl/delete', { id }); if (S.cur === id) { S.cur = null; S.job = null; } loadJobs(); draw(); } catch (x) { toast(x.message, 'warn'); }
+        }
+      };
+    });
+  }
+
+  function draw() {
+    const box = $('#plBody');
+    if (!box) return;
+    drawSide();
+    box.innerHTML = `<div class="sec"><h2>파워링크 분석기 <span class="muted" style="font-size:13px;font-weight:500">내 파워링크가 실제 네이버 검색 화면(로그아웃 상태)에서 몇 위인지 · AI 없이 이 PC에서 직접 검색</span></h2>
+      ${S.job ? jobHTML() : newHTML()}</div>`;
+    S.job ? bindJob() : bindNew();
+  }
+
+  // ---- 새 분석
+  function newHTML() {
+    const rows = S.draft.rows, on = rows.filter((r) => r.on).length;
+    const per = S.devices.length * (runs() + 1.3) * gapS();
+    const eta = on * per;
+    const etaTxt = eta < 60 ? `약 ${Math.ceil(eta)}초` : eta < 3600 ? `약 ${Math.round(eta / 60)}분` : `약 ${Math.floor(eta / 3600)}시간 ${Math.round((eta % 3600) / 60)}분`;
+    const view = rows.slice(0, 300);
+    return `<div class="grid g2">
+      <div class="card"><h3>① 내 광고 · 조건</h3>
+        <label class="muted" style="display:block">내 파워링크 URL <span style="font-size:12px">(고유번호·추적값 없어도 돼요. PC·모바일 주소가 다르면 둘 다, 한 줄에 하나)</span></label>
+        <textarea id="plUrls" class="inp" rows="2" placeholder="https://www.example.com/event">${e2(S.urls)}</textarea>
+        <div class="pl-opts">
+          <span class="muted">기기</span>
+          <label class="inl"><input type="checkbox" data-dev="pc" ${S.devices.includes('pc') ? 'checked' : ''}> PC</label>
+          <label class="inl"><input type="checkbox" data-dev="mo" ${S.devices.includes('mo') ? 'checked' : ''}> 모바일</label>
+          <span class="muted" style="margin-left:10px">n위 입찰가</span>
+          PC <select id="plNPc" class="hsel">${Array.from({ length: 10 }, (_, i) => `<option ${S.nPc === i + 1 ? 'selected' : ''} value="${i + 1}">${i + 1}위</option>`).join('')}</select>
+          모바일 <select id="plNMo" class="hsel">${Array.from({ length: 5 }, (_, i) => `<option ${S.nMo === i + 1 ? 'selected' : ''} value="${i + 1}">${i + 1}위</option>`).join('')}</select>
+        </div>
+        <div class="muted" style="font-size:12px;margin-top:8px;line-height:1.7">키워드마다 <b>${runs()}번</b> 검색해서 평균 순위를 내요 (<a href="#" class="ext" id="plSet">설정 › ⑥ 파워링크 분석기</a>에서 1~5회). 검색 사이 ${gapS()}초씩 쉬고, 네이버 검색 제한에 걸리면 자동으로 쉬었다 이어가요.<br>순위는 '광고 더보기'까지 봐요 (PC 최대 25위 · 모바일 최대 15위). 캡처는 통합검색 파워링크 영역, 그 밖이면 광고 더보기 화면이에요.</div>
+      </div>
+      <div class="card"><h3>② 키워드 <span class="muted" style="font-size:13px">${rows.length ? `${rows.length.toLocaleString('ko-KR')}개 중 ${on.toLocaleString('ko-KR')}개 체크` : ''}</span></h3>
+        <div class="drop" id="plDrop">네이버 광고관리 <b>키워드 다운로드 엑셀</b>을 끌어다 놓거나 <label class="ext" style="cursor:pointer">파일 선택<input type="file" id="plFile" accept=".xlsx,.xlsm,.csv,.txt" hidden></label>
+          <div class="muted" style="margin-top:4px">키워드 · 입찰가 · 상태 · 통검 평균노출순위를 알아서 읽어요. '노출가능'만 체크돼요${S.draft.file ? ` · 넣은 파일: ${e2(S.draft.file)}` : ''}</div></div>
+        <details style="margin-top:8px"><summary class="muted">직접 붙여넣기 (한 줄에 "키워드" 또는 "키워드, 입찰가")</summary>
+          <textarea id="plPaste" class="inp" rows="3" placeholder="운전자보험, 600&#10;운전자보험추천"></textarea>
+          <button class="btn" id="plPasteAdd" style="margin-top:6px">목록에 추가</button></details>
+      </div>
+    </div>
+    ${rows.length ? `<div class="card" style="margin-top:14px">
+      <div class="pl-bar"><button class="btn" data-pick="ok">노출가능만</button><button class="btn" data-pick="all">전체</button><button class="btn" data-pick="none">모두 해제</button>
+        <span class="muted">체크한 ${on.toLocaleString('ko-KR')}개 × ${S.devices.map((d) => DEVN[d]).join('·')} · 예상 ${etaTxt}</span><span style="flex:1"></span>
+        <input id="plName" class="inp" style="width:220px" placeholder="분석 이름 (비우면 자동)">
+        <button class="btn" id="plClr">목록 비우기</button><button class="btn pri" id="plGo">분석 시작</button></div>
+      <div class="tbl-wrap" style="max-height:420px;margin-top:10px"><table class="rel"><thead><tr><th style="width:34px"><input type="checkbox" id="plAll" ${rows.every((r) => r.on) ? 'checked' : ''}></th><th>#</th><th class="l">키워드</th><th class="l">상태</th><th>현재 입찰가</th><th>계정 PC 평균순위</th><th>계정 모바일 평균순위</th></tr></thead>
+      <tbody>${view.map((r, i) => `<tr><td><input type="checkbox" data-on="${i}" ${r.on ? 'checked' : ''}></td><td class="muted">${i + 1}</td><td class="l"><b>${e2(r.kw)}</b></td><td class="l ${r.state && r.state !== '노출가능' ? 'muted' : ''}">${e2(r.state || '')}</td><td>${r.bid == null ? '' : n0(r.bid) + '원'}</td><td>${r.acctPc || ''}</td><td>${r.acctMo || ''}</td></tr>`).join('')}</tbody></table>
+      ${rows.length > view.length ? `<div class="muted" style="padding:8px">… 나머지 ${(rows.length - view.length).toLocaleString('ko-KR')}개는 표에서 생략 (체크 상태는 그대로 반영)</div>` : ''}</div></div>` : ''}`;
+  }
+  function bindNew() {
+    $('#plUrls').oninput = (e) => { S.urls = e.target.value; localStorage.setItem('plUrls', S.urls); };
+    $$('[data-dev]').forEach((c) => (c.onchange = () => { S.devices = $$('[data-dev]').filter((x) => x.checked).map((x) => x.dataset.dev); localStorage.setItem('plDevs', JSON.stringify(S.devices)); draw(); }));
+    $('#plNPc').onchange = (e) => { S.nPc = +e.target.value; localStorage.setItem('plNPc', S.nPc); };
+    $('#plNMo').onchange = (e) => { S.nMo = +e.target.value; localStorage.setItem('plNMo', S.nMo); };
+    $('#plSet').onclick = (e) => { e.preventDefault(); window.openSettings?.('rules'); };
+    const dz = $('#plDrop');
+    dz.ondragover = (e) => { e.preventDefault(); dz.classList.add('over'); };
+    dz.ondragleave = () => dz.classList.remove('over');
+    dz.ondrop = (e) => { e.preventDefault(); dz.classList.remove('over'); addFiles([...e.dataTransfer.files]); };
+    $('#plFile').onchange = (e) => addFiles([...e.target.files]);
+    $('#plPasteAdd').onclick = () => { const r = fromPaste($('#plPaste').value); if (!r.length) return; mergeRows(r); draw(); };
+    if (!$('#plGo')) return;
+    $$('[data-pick]').forEach((b) => (b.onclick = () => { const k = b.dataset.pick; S.draft.rows.forEach((r) => (r.on = k === 'all' ? true : k === 'none' ? false : !r.state || r.state === '노출가능')); draw(); }));
+    $('#plAll').onchange = () => { const on = !S.draft.rows.every((r) => r.on); S.draft.rows.forEach((r) => (r.on = on)); draw(); };
+    $$('[data-on]').forEach((c) => (c.onchange = () => { S.draft.rows[+c.dataset.on].on = c.checked; draw(); }));
+    $('#plClr').onclick = () => { S.draft = { rows: [], file: '', paste: '' }; draw(); };
+    $('#plGo').onclick = start;
+  }
+
+  // ---- 작업 결과
+  const nOf = (dev) => (dev === 'pc' ? S.nPc : S.nMo);
+  function rowsView() {
+    const j = S.job, dev = S.dev, n = nOf(dev);
+    let rows = j.rows.filter((r) => r.on !== false);
+    if (S.q) { const ws = S.q.split(/\s+/).filter(Boolean); rows = rows.filter((r) => ws.every((w) => r.kw.includes(w))); }
+    if (S.onlyMiss) rows = rows.filter((r) => r.res?.[dev] && !r.res[dev].seen);
+    const val = (r) => {
+      const x = r.res?.[dev] || {};
+      switch (S.sort.key) {
+        case 'kw': return r.kw;
+        case 'rank': return x.seen ? x.avg : x.seen === 0 ? 999 : 9999;
+        case 'bid': return r.bid ?? -1;
+        case 'nbid': return j.bids?.[r.key]?.[dev]?.[n - 1] ?? -1;
+        case 'clk': return j.perf?.[`${dev}:${n}`]?.[r.key]?.clk ?? -1;
+        default: return r.i;
+      }
+    };
+    return rows.slice().sort((a, b) => { const x = val(a), y = val(b); return (typeof x === 'string' ? x.localeCompare(y, 'ko') : x - y) * S.sort.dir; });
+  }
+  function jobHTML() {
+    const j = S.job, dev = j.devices.includes(S.dev) ? S.dev : j.devices[0], n = nOf(dev);
+    S.dev = dev;
+    const all = j.rows.filter((r) => r.on !== false), done = all.filter((r) => r.done).length;
+    const run = j.status === 'running';
+    const P = j.perf?.[`${dev}:${n}`] || {};
+    const stats = (() => { const xs = all.map((r) => r.res?.[dev]).filter((x) => x && x.n); const seen = xs.filter((x) => x.seen); return { n: xs.length, seen: seen.length, top3: seen.filter((x) => x.avg <= 3).length, avg: seen.length ? (seen.reduce((a, x) => a + x.avg, 0) / seen.length).toFixed(1) : '-' }; })();
+    const left = all.length - done, per = j.devices.length * (j.runs + 1.3) * gapS(), eta = left * per;
+    const rows = rowsView(), pages = Math.max(1, Math.ceil(rows.length / PG));
+    S.page = Math.min(S.page, pages);
+    const view = rows.slice((S.page - 1) * PG, S.page * PG);
+    const th = (k, label, l) => `<th class="${l ? 'l' : ''}" data-k="${k}" style="cursor:pointer">${label} ${S.sort.key === k ? (S.sort.dir > 0 ? '▲' : '▼') : '<span class="muted">↕</span>'}</th>`;
+    const nSel = `<select id="plN" class="hsel" style="height:26px;padding:0 22px 0 6px">${Array.from({ length: MAXN[dev] }, (_, i) => `<option value="${i + 1}" ${n === i + 1 ? 'selected' : ''}>${i + 1}위</option>`).join('')}</select>`;
+    return `<div class="card">
+      <div class="pl-bar"><b style="font-size:15px">${e2(j.name)}</b><span class="muted">${new Date(j.createdAt).toLocaleString('ko-KR')} · URL ${j.urls.map(e2).join(', ')} · ${j.runs}회 평균</span><span style="flex:1"></span>
+        ${run ? '<button class="btn" id="plStop">중지</button>' : j.status !== 'done' ? '<button class="btn pri" id="plResume">이어서 하기</button>' : ''}
+        <button class="btn pri" id="plXlsx">엑셀 다운로드 (캡처 포함)</button></div>
+      <div class="prog ${run ? '' : j.status === 'done' ? 'done' : 'fail'}" style="margin-top:10px"><div class="prog-top"><b>${run ? `검사 중 · ${e2(S.running?.cur || '')}` : ST[j.status]}${j.error ? ' · ' + e2(j.error) : ''}</b><span>${done.toLocaleString('ko-KR')} / ${all.length.toLocaleString('ko-KR')}개${run && left ? ` · 남은 시간 약 ${eta < 3600 ? Math.max(1, Math.round(eta / 60)) + '분' : Math.floor(eta / 3600) + '시간 ' + Math.round((eta % 3600) / 60) + '분'}` : ''}</span></div>
+        <div class="bar"><div style="width:${all.length ? (done / all.length) * 100 : 0}%"></div></div>
+        ${run && S.running?.note ? `<div class="muted" style="font-size:12px;margin-top:4px">${e2(S.running.note)}</div>` : ''}
+        ${j.bidErr ? `<div style="font-size:12px;margin-top:4px;color:#b45309">${e2(j.bidErr)}</div>` : ''}</div>
+    </div>
+    <div class="grid g4 pl-stats" style="margin-top:14px">
+      <div class="card"><div class="muted">${DEVN[dev]} 검사한 키워드</div><div class="big">${stats.n.toLocaleString('ko-KR')}</div></div>
+      <div class="card"><div class="muted">노출됨</div><div class="big">${stats.seen.toLocaleString('ko-KR')}</div><div class="muted">미노출 ${(stats.n - stats.seen).toLocaleString('ko-KR')}개</div></div>
+      <div class="card"><div class="muted">평균 3위 이내</div><div class="big">${stats.top3.toLocaleString('ko-KR')}</div></div>
+      <div class="card"><div class="muted">노출된 키워드 평균 순위</div><div class="big">${stats.avg}</div></div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <div class="pl-bar">
+        <div class="seg">${j.devices.map((d) => `<button class="${d === dev ? 'on' : ''}" data-sd="${d}">${DEVN[d]}</button>`).join('')}</div>
+        <input id="plQ" class="inp" style="width:220px" placeholder="키워드 검색" value="${e2(S.q)}">
+        <label class="inl"><input type="checkbox" id="plMiss" ${S.onlyMiss ? 'checked' : ''}> 미노출만</label>
+        <span style="flex:1"></span><span class="muted">${rows.length.toLocaleString('ko-KR')}개 표시</span>
+      </div>
+      <div class="tbl-wrap" style="margin-top:10px" id="plTblWrap"><table class="rel pl-tbl"><thead><tr><th>#</th>${th('kw', '키워드', 1)}${th('rank', '순위')}<th>순위 캡처</th>${th('bid', '현재 입찰가')}<th data-k="nbid" style="cursor:pointer">${nSel} 입찰가 ${S.sort.key === 'nbid' ? (S.sort.dir > 0 ? '▲' : '▼') : '<span class="muted">↕</span>'}</th>${th('clk', `${n}위 예상 (월)`)}</tr></thead>
+      <tbody>${view.map((r) => {
+        const x = r.res?.[dev], nb = j.bids?.[r.key]?.[dev]?.[n - 1], p = P[r.key];
+        const rank = !x ? `<span class="muted">${run ? '대기' : '-'}</span>` : x.seen ? `<b class="pl-rk ${x.avg <= 3 ? 'top' : ''}">${x.avg}위</b><div class="muted" style="font-size:11px">${x.min === x.max ? '' : `${x.min}~${x.max}위 · `}${x.seen}/${x.n}회 노출${x.mainCount != null && x.avg > x.mainCount ? ' · 통합검색 밖' : ''}</div>${x.match && x.match.score < 3 ? `<div class="pl-warn" title="${e2(x.match.display)}">${x.match.score === 1 ? '도메인만 일치' : '경로 다름'}</div>` : ''}`
+          : `<span class="pl-miss">미노출</span><div class="muted" style="font-size:11px">${x.n}회 모두 · 광고 ${x.total || 0}개 중</div>`;
+        const cap = x?.cap ? `<img class="pl-th" loading="lazy" src="/api/pl/img?id=${e2(j.id)}&f=${e2(x.cap.thumb)}" data-full="/api/pl/img?id=${e2(j.id)}&f=${e2(x.cap.file)}" data-t="${e2(r.kw)} · ${DEVN[dev]} · 캡처 당시 ${x.cap.rank ? x.cap.rank + '위' : '미노출'}${x.cap.where === 'more' ? ' (광고 더보기)' : ''}" alt=""><div class="muted" style="font-size:11px">캡처 당시 ${x.cap.rank ? x.cap.rank + '위' : '미노출'}${x.cap.where === 'more' ? ' · 더보기' : ''}</div>` : x?.capErr ? `<span class="muted" title="${e2(x.capErr)}">캡처 실패</span>` : '';
+        const diff = r.bid != null && nb != null ? nb - r.bid : null;
+        return `<tr><td class="muted">${r.i}</td><td class="l"><b>${e2(r.kw)}</b></td><td>${rank}</td><td class="pl-cap">${cap}</td>
+          <td>${r.bid == null ? '<span class="muted">-</span>' : n0(r.bid) + '원'}</td>
+          <td>${nb == null ? `<span class="muted" title="${e2(j.bids?.[r.key]?.[dev + 'Err'] || '')}">-</span>` : `${n0(nb)}원${diff ? `<div class="${diff > 0 ? 'pl-up' : 'pl-dn'}" style="font-size:11px">${diff > 0 ? '+' : ''}${n0(diff)}원</div>` : ''}`}</td>
+          <td>${!p ? '<span class="muted">-</span>' : p.err ? `<span class="muted" title="${e2(p.err)}">조회 실패</span>` : `클릭 ${n0(p.clk)}회<div class="muted" style="font-size:11px">노출 ${n0(p.imp)} · 비용 ${n0(p.cost)}원</div>`}</td></tr>`;
+      }).join('')}</tbody></table></div>
+      ${pages > 1 ? `<div class="pager">${Array.from({ length: pages }, (_, i) => `<button class="${S.page === i + 1 ? 'on' : ''}" data-pg="${i + 1}">${i + 1}</button>`).join('')}</div>` : ''}
+      <div class="muted" style="font-size:12px;margin-top:8px;line-height:1.7">순위 = 키워드마다 ${j.runs}번 검색한 평균 (노출된 회차만). 캡처는 순위 검색과 별도로 한 번 더 열어서 찍어서 순위가 조금 다를 수 있어요. ${n}위 입찰가 = 네이버 검색광고 API '순위별 평균 입찰가'(최근 4주), 아래 +/− 는 현재 입찰가와의 차이. ${n}위 예상 = 그 입찰가로 냈을 때 네이버 예상 실적(월). 로그인 여부·지역·시간대에 따라 실제 화면과 다를 수 있어요.</div>
+    </div>`;
+  }
+  function bindJob() {
+    const j = S.job;
+    $('#plStop')?.addEventListener('click', async () => { await api('/api/pl/stop', { id: j.id }).catch(() => {}); toast('중지할게요 (지금 키워드까지 마치고 멈춰요)', 'ok'); });
+    $('#plResume')?.addEventListener('click', async () => { try { await api('/api/pl/resume', { id: j.id }); await openJob(j.id); loadJobs(); } catch (e) { toast(e.message, 'warn'); } });
+    $('#plXlsx').onclick = () => { toast('엑셀을 만드는 중이에요 (캡처가 많으면 조금 걸려요)', 'ok'); location.href = `/api/pl/xlsx?id=${encodeURIComponent(j.id)}&nPc=${S.nPc}&nMo=${S.nMo}`; };
+    $$('[data-sd]').forEach((b) => (b.onclick = () => { S.dev = b.dataset.sd; localStorage.setItem('plDev', S.dev); S.page = 1; draw(); ensurePerf(); }));
+    $('#plQ').oninput = (e) => { S.q = e.target.value.trim(); S.page = 1; const p = e.target.selectionStart; draw(); const q = $('#plQ'); q.focus(); q.setSelectionRange(p, p); };
+    $('#plMiss').onchange = (e) => { S.onlyMiss = e.target.checked; S.page = 1; draw(); };
+    $('#plN').onclick = (e) => e.stopPropagation();
+    $('#plN').onchange = (e) => { const v = +e.target.value; if (S.dev === 'pc') { S.nPc = v; localStorage.setItem('plNPc', v); } else { S.nMo = v; localStorage.setItem('plNMo', v); } draw(); ensurePerf(); };
+    $$('#plTblWrap th[data-k]').forEach((t) => (t.onclick = () => { const k = t.dataset.k; S.sort = { key: k, dir: S.sort.key === k ? -S.sort.dir : k === 'kw' || k === 'rank' ? 1 : -1 }; draw(); }));
+    $$('.pl-th').forEach((im) => (im.onclick = () => showImg(im.dataset.full, im.dataset.t)));
+    $$('[data-pg]').forEach((b) => (b.onclick = () => { S.page = +b.dataset.pg; draw(); $('#plTblWrap').scrollIntoView({ block: 'start' }); }));
+  }
+  // n을 바꾸면 그 순위 입찰가의 예상 실적을 가져옴 (한 번 가져온 건 저장)
+  async function ensurePerf() {
+    const j = S.job, dev = S.dev, n = nOf(dev);
+    if (!j || S.perfBusy || !j.bids || j.perf?.[`${dev}:${n}`] && Object.keys(j.perf[`${dev}:${n}`]).length) return;
+    S.perfBusy = true;
+    try { const r = await api('/api/pl/perf', { id: j.id, dev, n }); j.perf = j.perf || {}; j.perf[`${dev}:${n}`] = r.perf || {}; } catch (e) { toast('예상 실적: ' + e.message, 'warn'); }
+    S.perfBusy = false;
+    if (S.job === j) draw();
+  }
+
+  // ---------------------------------------------------------------- 메뉴 열기·닫기
+  window.__RESET_pl = () => { clearTimeout(S.timer); S.cur = null; S.job = null; S.draft = { rows: [], file: '', paste: '' }; localStorage.setItem('plCur', ''); draw(); scrollTo(0, 0); return '초기화했어요 (지난 분석은 왼쪽 내역에 있어요)'; };
+  function showPl(on) {
+    if (on) { $('#aiView')?.classList.add('hidden'); window.__hideDup?.(); window.__hideBulk?.(); window.__hideCopy?.(); window.__hideMock?.(); window.__hidePerf?.(); }
+    $('#plView').classList.toggle('hidden', !on);
+    if (on) {
+      $('#main').classList.add('hidden'); $('#banners')?.classList.add('hidden'); $('#tabs')?.classList.add('hidden');
+      history.replaceState(null, '', location.pathname + location.search + '#pl');
+      loadJobs();
+      const last = localStorage.getItem('plCur');
+      if (last && !S.job) openJob(last); else { draw(); poll(); }
+    }
+  }
+  window.showPl = showPl;
+  window.__hidePl = () => {
+    if ($('#plView').classList.contains('hidden')) return;
+    $('#plView').classList.add('hidden');
+    $('#main').classList.remove('hidden'); $('#banners')?.classList.remove('hidden');
+    try { $('#tabs').classList.toggle('hidden', !STATE); } catch {}
+    if (location.hash === '#pl') history.replaceState(null, '', location.pathname + location.search);
+  };
+  mount();
+  draw();
+  const others = ['aiView', 'dupView', 'bulkView', 'copyView', 'mockView', 'perfView', 'main'];
+  const watch = new MutationObserver(() => { if (!$('#plView').classList.contains('hidden') && others.some((id) => { const el = document.getElementById(id); return el && !el.classList.contains('hidden'); })) $('#plView').classList.add('hidden'); });
+  others.forEach((id) => { const el = document.getElementById(id); if (el) watch.observe(el, { attributes: true, attributeFilter: ['class'] }); });
+  if (location.hash === '#pl') setTimeout(() => (window.__LAYOUT?.go ? window.__LAYOUT.go('pl') : showPl(true)), 0);
+})();
