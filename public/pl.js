@@ -146,11 +146,10 @@
   }
 
   // ---- 새 분석
+  const etaOf = (sec) => (sec < 60 ? `약 ${Math.ceil(sec)}초` : sec < 3600 ? `약 ${Math.round(sec / 60)}분` : `약 ${Math.floor(sec / 3600)}시간 ${Math.round((sec % 3600) / 60)}분`);
+  const cntTxt = () => { const rows = S.draft.rows, on = rows.filter((r) => r.on).length; return { head: rows.length ? `${rows.length.toLocaleString('ko-KR')}개 중 ${on.toLocaleString('ko-KR')}개 체크` : '', bar: `체크한 ${on.toLocaleString('ko-KR')}개 × ${S.devices.map((d) => DEVN[d]).join('·')} · 예상 ${etaOf(on * S.devices.length * (runs() + 1.3) * gapS())}` }; };
   function newHTML() {
-    const rows = S.draft.rows, on = rows.filter((r) => r.on).length;
-    const per = S.devices.length * (runs() + 1.3) * gapS();
-    const eta = on * per;
-    const etaTxt = eta < 60 ? `약 ${Math.ceil(eta)}초` : eta < 3600 ? `약 ${Math.round(eta / 60)}분` : `약 ${Math.floor(eta / 3600)}시간 ${Math.round((eta % 3600) / 60)}분`;
+    const rows = S.draft.rows, on = rows.filter((r) => r.on).length, C = cntTxt();
     const view = rows.slice(0, 300);
     return `<div class="grid g2">
       <div class="card"><h3>① 내 광고 · 조건</h3>
@@ -166,7 +165,7 @@
         </div>
         <div class="muted" style="font-size:12px;margin-top:8px;line-height:1.7">키워드마다 <b>${runs()}번</b> 검색해서 평균 순위를 내요 (<a href="#" class="ext" id="plSet">설정 › ⑥ 파워링크 분석기</a>에서 1~5회). 검색 사이 ${gapS()}초씩 쉬고, 네이버 검색 제한에 걸리면 자동으로 쉬었다 이어가요.<br>순위는 '광고 더보기'까지 봐요 (PC 최대 25위 · 모바일 최대 15위). 캡처는 통합검색 파워링크 영역, 그 밖이면 광고 더보기 화면이에요.</div>
       </div>
-      <div class="card"><h3>② 키워드 <span class="muted" style="font-size:13px">${rows.length ? `${rows.length.toLocaleString('ko-KR')}개 중 ${on.toLocaleString('ko-KR')}개 체크` : ''}</span></h3>
+      <div class="card"><h3>② 키워드 <span class="muted" style="font-size:13px" id="plCnt">${C.head}</span></h3>
         <div class="drop" id="plDrop">네이버 광고관리 <b>키워드 다운로드 엑셀</b>을 끌어다 놓거나 <label class="ext" style="cursor:pointer">파일 선택<input type="file" id="plFile" accept=".xlsx,.xlsm,.csv,.txt" hidden></label>
           <div class="muted" style="margin-top:4px">키워드 · 입찰가 · 상태 · 통검 평균노출순위를 알아서 읽어요. '노출가능'만 체크돼요${S.draft.file ? ` · 넣은 파일: ${e2(S.draft.file)}` : ''}</div></div>
         <details style="margin-top:8px"><summary class="muted">직접 붙여넣기 (한 줄에 "키워드" 또는 "키워드, 입찰가")</summary>
@@ -176,7 +175,7 @@
     </div>
     ${rows.length ? `<div class="card" style="margin-top:14px">
       <div class="pl-bar"><button class="btn" data-pick="ok">노출가능만</button><button class="btn" data-pick="all">전체</button><button class="btn" data-pick="none">모두 해제</button>
-        <span class="muted">체크한 ${on.toLocaleString('ko-KR')}개 × ${S.devices.map((d) => DEVN[d]).join('·')} · 예상 ${etaTxt}</span><span style="flex:1"></span>
+        <span class="muted" id="plEta">${C.bar}</span><span style="flex:1"></span>
         <input id="plName" class="inp" style="width:220px" placeholder="분석 이름 (비우면 자동)">
         <button class="btn" id="plClr">목록 비우기</button><button class="btn pri" id="plGo">분석 시작</button></div>
       <div class="tbl-wrap" style="max-height:420px;margin-top:10px"><table class="rel"><thead><tr><th style="width:34px"><input type="checkbox" id="plAll" ${rows.every((r) => r.on) ? 'checked' : ''}></th><th>#</th><th class="l">키워드</th><th class="l">상태</th><th>현재 입찰가</th><th>계정 PC 평균순위</th><th>계정 모바일 평균순위</th></tr></thead>
@@ -198,7 +197,7 @@
     if (!$('#plGo')) return;
     $$('[data-pick]').forEach((b) => (b.onclick = () => { const k = b.dataset.pick; S.draft.rows.forEach((r) => (r.on = k === 'all' ? true : k === 'none' ? false : !r.state || r.state === '노출가능')); draw(); }));
     $('#plAll').onchange = () => { const on = !S.draft.rows.every((r) => r.on); S.draft.rows.forEach((r) => (r.on = on)); draw(); };
-    $$('[data-on]').forEach((c) => (c.onchange = () => { S.draft.rows[+c.dataset.on].on = c.checked; draw(); }));
+    $$('[data-on]').forEach((c) => (c.onchange = () => { S.draft.rows[+c.dataset.on].on = c.checked; const C = cntTxt(); $('#plCnt').textContent = C.head; $('#plEta').textContent = C.bar; $('#plAll').checked = S.draft.rows.every((r) => r.on); }));
     $('#plClr').onclick = () => { S.draft = { rows: [], file: '', paste: '' }; draw(); };
     $('#plGo').onclick = start;
   }
