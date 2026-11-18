@@ -16,10 +16,12 @@
     devices: JSON.parse(localStorage.getItem('plDevs') || '["pc","mo"]'),
     nPc: +localStorage.getItem('plNPc') || 3, nMo: +localStorage.getItem('plNMo') || 3,
     dev: localStorage.getItem('plDev') === 'mo' ? 'mo' : 'pc',
-    thread: [], prev: null,
+    thread: [], prev: null, band: 0,
     q: '', onlyMiss: false, sort: { key: 'i', dir: 1 }, page: 1, timer: 0, perfBusy: false,
   };
   const PG = 100;
+  const BANDS = { pc: [['', '전체'], ['1-3', '1~3위'], ['4-10', '4~10위'], ['11-', '11위~']], mo: [['', '전체'], ['1-3', '1~3위'], ['4-5', '4~5위'], ['6-', '6위~']] };
+  const inBand = (x, band) => { if (!band) return true; if (!x?.seen) return false; const v = Math.round(x.avg), [a, b] = band.split('-').map((n) => (n === '' ? Infinity : +n)); return v >= a && v <= b; };
   const runs = () => window.SETTINGS?.rules?.powerlink?.runs || 4;
   const gapS = () => (window.SETTINGS?.rules?.powerlink?.gapMs || 1200) / 1000;
 
@@ -280,7 +282,8 @@
   function rowsView() {
     const j = S.job, dev = S.dev, n = nOf(dev);
     let rows = j.rows.filter((r) => r.on !== false);
-    if (S.q) { const ws = S.q.split(/\s+/).filter(Boolean); rows = rows.filter((r) => ws.every((w) => r.kw.includes(w))); }
+    const band = (BANDS[dev][S.band] || BANDS[dev][0])[0];
+    if (band) rows = rows.filter((r) => inBand(r.res?.[dev], band));
     if (S.onlyMiss) rows = rows.filter((r) => r.res?.[dev] && !r.res[dev].seen);
     const val = (r) => {
       const x = r.res?.[dev] || {};
@@ -327,7 +330,7 @@
     <div class="card" style="margin-top:14px">
       <div class="pl-bar">
         <div class="seg">${j.devices.map((d) => `<button class="${d === dev ? 'on' : ''}" data-sd="${d}">${DEVN[d]}</button>`).join('')}</div>
-        <input id="plQ" class="inp" style="width:220px" placeholder="키워드 검색" value="${e2(S.q)}">
+        <div class="seg pl-band">${BANDS[dev].map(([b, l], i) => { const c = all.filter((r) => r.res?.[dev]?.n && inBand(r.res[dev], b)).length; return `<button class="${S.band === i ? 'on' : ''}" data-band="${i}">${l} <small>${c.toLocaleString('ko-KR')}</small></button>`; }).join('')}</div>
         <label class="inl"><input type="checkbox" id="plMiss" ${S.onlyMiss ? 'checked' : ''}> 미노출만</label>
         <button class="btn" data-find title="키워드 찾기 (Ctrl+F) · 치고 Enter → 그 줄로 이동">⌕ 키워드 찾기</button>
         <span style="flex:1"></span><span class="muted">${rows.length.toLocaleString('ko-KR')}개 표시</span>
@@ -359,7 +362,7 @@
     $('#plResume')?.addEventListener('click', async () => { try { await api('/api/pl/resume', { id: j.id }); await openJob(j.id); loadJobs(); } catch (e) { toast(e.message, 'warn'); } });
     $('#plXlsx').onclick = () => { toast('엑셀을 만드는 중이에요 (캡처가 많으면 조금 걸려요)', 'ok'); location.href = `/api/pl/xlsx?id=${encodeURIComponent(j.id)}&nPc=${S.nPc}&nMo=${S.nMo}`; };
     $$('[data-sd]').forEach((b) => (b.onclick = () => { S.dev = b.dataset.sd; localStorage.setItem('plDev', S.dev); S.page = 1; draw(); ensurePerf(); }));
-    $('#plQ').oninput = (e) => { S.q = e.target.value.trim(); S.page = 1; const p = e.target.selectionStart; draw(); const q = $('#plQ'); q.focus(); q.setSelectionRange(p, p); };
+    $$('[data-band]').forEach((b) => (b.onclick = () => { S.band = +b.dataset.band; S.page = 1; draw(); }));
     $('#plMiss').onchange = (e) => { S.onlyMiss = e.target.checked; S.page = 1; draw(); };
     $('#plN').onclick = (e) => e.stopPropagation();
     $('#plN').onchange = (e) => { const v = +e.target.value; if (S.dev === 'pc') { S.nPc = v; localStorage.setItem('plNPc', v); } else { S.nMo = v; localStorage.setItem('plNMo', v); } draw(); ensurePerf(); };
