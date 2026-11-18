@@ -640,7 +640,11 @@ html.dark .btn.ok-btn{color:#4ade80;border-color:rgba(74,222,128,.45)}
 .sit.pl-sub .sn{font-weight:500;font-size:12.5px}
 .pl-br{color:var(--muted-fg);flex:none}
 .pl-thread{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:10px;font-size:12px}
-.pl-thread button{border:1px solid var(--border);background:var(--background);border-radius:99px;padding:3px 10px;font-size:12px;color:var(--foreground)}
+.pl-thread button{position:relative;overflow:hidden;border:1px solid var(--border);background:var(--background);border-radius:99px;padding:3px 10px;font-size:12px;color:var(--foreground)}
+.pl-thread button>span{position:relative;z-index:1}
+.pl-thread button.run::before{content:'';position:absolute;inset:0;width:var(--p);background:color-mix(in oklab,#16a34a 28%,transparent);transition:width .6s ease;z-index:0}
+.pl-thread button.run.on::before{background:color-mix(in oklab,#22c55e 55%,transparent)}
+.pl-thread button.run{border-color:color-mix(in oklab,#16a34a 50%,var(--border))}
 .pl-thread button small{color:var(--muted-fg);font-size:11px}
 .pl-thread button.on{background:var(--primary);color:var(--primary-fg);border-color:var(--primary)}
 .pl-thread button.on small{color:inherit;opacity:.75}
@@ -660,3 +664,4 @@ html.dark .btn.ok-btn{color:#4ade80;border-color:rgba(74,222,128,.45)}
 html.dark #plBody tr.pl-hit>td{background:#422006!important}
 
 .pl-band button small{opacity:.7;font-size:11px;margin-left:2px}
+.pl-nk{color:var(--accent);font-weight:600}

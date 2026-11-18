@@ -83,11 +83,11 @@
   }
   function poll() {
     clearTimeout(S.timer);
-    if (!S.job || S.job.status !== 'running') return;
+    if (!S.job || (S.job.status !== 'running' && !S.thread.some((m) => m.status === 'running'))) return;
     S.timer = setTimeout(async () => {
       if (!$('#plView') || $('#plView').classList.contains('hidden')) { S.timer = setTimeout(poll, 3000); return; }
       await openJob(S.cur);
-      if (S.job?.status !== 'running') { loadJobs(); if (S.job?.status === 'done') toast(`'${S.job.name}' 분석이 끝났어요`, 'ok'); }
+      if (S.job?.status !== 'running' && !S.thread.some((m) => m.status === 'running')) { loadJobs(); if (S.job?.status === 'done') toast(`'${S.job.name}' 분석이 끝났어요`, 'ok'); }
     }, 2500);
   }
   async function start() {
@@ -131,10 +131,11 @@
     const roots = S.jobs.filter((m) => !m.parentId || !S.jobs.some((x) => x.id === m.parentId));
     const kids = (r) => S.jobs.filter((m) => m.parentId === r.id).sort((x, y) => x.createdAt - y.createdAt);
     const meta = (m) => `${ST[m.status] || ''} · ${m.done.toLocaleString('ko-KR')}/${m.total.toLocaleString('ko-KR')}개 · ${fmtD(m.createdAt)}`;
-    const item = (m, sub) => `<div class="sit ${sub ? 'pl-sub' : ''} ${S.cur === m.id ? 'on' : ''}" data-pid="${e2(m.id)}" title="${e2(m.name)} (우클릭: ${sub ? '' : '고정·'}재분석·이름 변경·삭제)">
+    const item = (m, sub, nk = 0, openT = false) => `<div class="sit ${sub ? 'pl-sub' : ''} ${S.cur === m.id ? 'on' : ''}" data-pid="${e2(m.id)}" title="${e2(m.name)} (우클릭: ${sub ? '' : '고정·'}재분석·이름 변경·삭제)">
         <div class="sn">${sub ? '<span class="pl-br">↳</span>' : m.pinned ? PIN : ''}<span>${e2(sub ? subName(m) : m.name)}</span></div>
-        <div class="sm">${meta(m)}</div></div>`;
-    const group = (r) => item(r) + kids(r).map((k) => item(k, true)).join('');
+        <div class="sm">${meta(m)}${nk ? ` · <span class="pl-nk">${openT ? '▾' : '▸'} 재분석 ${nk}</span>` : ''}</div></div>`;
+    const curRoot = (() => { const c = S.jobs.find((m) => m.id === S.cur); return c ? c.parentId || c.id : null; })();
+    const group = (r) => { const ks = kids(r), openT = r.id === curRoot; return item(r, false, ks.length, openT) + (openT ? ks.map((k) => item(k, true)).join('') : ''); };
     const last = (r) => Math.max(r.createdAt, ...kids(r).map((k) => k.createdAt));
     const pinned = roots.filter((r) => r.pinned).sort((x, y) => last(y) - last(x)), rest = roots.filter((r) => !r.pinned).sort((x, y) => last(y) - last(x));
     side.innerHTML = `<button class="btn pri newbtn" id="pSideNew">+ 새 분석</button>
@@ -315,7 +316,7 @@
       <div class="pl-bar"><b style="font-size:15px">${e2(j.name)}</b><span class="muted">${new Date(j.createdAt).toLocaleString('ko-KR')} · URL ${j.urls.map(e2).join(', ')} · ${j.runs}회 평균</span><span style="flex:1"></span>
         ${run ? '<button class="btn" id="plStop">중지</button>' : `${j.status !== 'done' ? '<button class="btn pri" id="plResume">이어서 하기</button>' : ''}<button class="btn" id="plRerun" title="같은 키워드 · URL · 기기로 다시 검사해서 이 분석 아래(스레드)에 붙여요">같은 키워드로 재분석</button>`}
         <button class="btn pri" id="plXlsx">엑셀 다운로드 (캡처 포함)</button></div>
-      ${S.thread.length > 1 ? `<div class="pl-thread"><span class="muted">스레드</span>${S.thread.map((m, i) => `<button class="${m.id === j.id ? 'on' : ''}" data-th="${e2(m.id)}">${i === 0 ? '첫 분석' : e2(m.custom ? m.name : '재분석 ' + (m.thread || i))} <small>${fmtD(m.createdAt)}${m.status === 'running' ? ' · 진행 중' : ''}</small></button>`).join('<span class="muted">›</span>')}</div>` : ''}
+      ${S.thread.length > 1 ? `<div class="pl-thread">${S.thread.map((m, i) => { const pct = m.total ? Math.round((m.done / m.total) * 100) : 0, run2 = m.status === 'running'; return `<button class="${m.id === j.id ? 'on' : ''} ${run2 ? 'run' : ''}" data-th="${e2(m.id)}" style="--p:${run2 ? pct : 100}%" title="${run2 ? `진행 중 ${pct}%` : ST[m.status] || ''}"><span>${i === 0 ? '첫 분석' : e2(m.custom ? m.name : '재분석 ' + (m.thread || i))} <small>${run2 ? pct + '%' : fmtD(m.createdAt)}</small></span></button>`; }).join('<span class="muted">›</span>')}</div>` : ''}
       <div class="prog ${run ? '' : j.status === 'done' ? 'done' : 'fail'}" style="margin-top:10px"><div class="prog-top"><b>${run ? `검사 중 · ${e2(S.running?.cur || '')}` : ST[j.status]}${j.error ? ' · ' + e2(j.error) : ''}</b><span>${done.toLocaleString('ko-KR')} / ${all.length.toLocaleString('ko-KR')}개${run && left ? ` · 남은 시간 약 ${eta < 3600 ? Math.max(1, Math.round(eta / 60)) + '분' : Math.floor(eta / 3600) + '시간 ' + Math.round((eta % 3600) / 60) + '분'}` : ''}</span></div>
         <div class="bar"><div style="width:${all.length ? (done / all.length) * 100 : 0}%"></div></div>
         ${run && S.running?.note ? `<div class="muted" style="font-size:12px;margin-top:4px">${e2(S.running.note)}</div>` : ''}
