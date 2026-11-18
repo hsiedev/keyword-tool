@@ -487,7 +487,7 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
         if (x.cap) {
           try {
             const data = fs.readFileSync(path.join(jobDir(j.id), x.cap.focus));
-            const maxW = 360, sc = Math.min(1, maxW / (x.cap.fw || maxW));
+            const sc = Math.min(1, 360 / (x.cap.fw || 360), 300 / (x.cap.fh || 300)); // 폭 360px · 높이 300px 안으로
             const w = Math.round((x.cap.fw || 360) * sc), h = Math.round((x.cap.fh || 240) * sc);
             images.push({ row: ri, col: 4, data, w, h });
             heights[ri] = Math.max(heights[ri] || 0, Math.ceil((h + 10) * 0.75));

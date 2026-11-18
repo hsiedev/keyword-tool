@@ -380,6 +380,29 @@ await test('급등 원인 진단: 그날 vs 평소 하루 평균, 순위 상승�
   ok(globalThis.__adCalls.every((x) => x.startsWith('GET ')), globalThis.__adCalls.join(', '));
   eq((await post('/api/ads/diagnose', { campaigns: ['cmp-1'], date: 'x' }, H)).status, 502);
 });
+// ---------------------------------------------------------------- 파워링크 분석기: 광고 순서 읽기 · 내 광고 찾기 · 그림 넣은 엑셀
+{
+  const PLM = await import(pathToFileURL(path.join(TMP, 'powerlink-core.mjs')).href);
+  const p = (rank, url, id = 'nad-a001-01-0000' + rank) => `<li><a data-nlog-params='{"gdid":"${id}","ad_id":"${id}","cr_rank_legacy":"${rank}","display_url":"${url}"}'>x</a><a data-nlog-params="{&quot;ad_id&quot;:&quot;${id}&quot;,&quot;cr_rank_legacy&quot;:&quot;${rank}&quot;,&quot;display_url&quot;:&quot;${url}&quot;}">y</a></li>`;
+  const html = p(1, 'http://direct.samsungfire.com') + p(2, 'https://www.carrotins.com/long-term/driver') + p(3, 'http://www.hi.co.kr') + p(1, 'https://blog.naver.com/x', 'nad-a001-03-1') + p(4, 'http://direct.hi.co.kr');
+  await test('파워링크: 광고 순서 읽기 (파워컨텐츠·중복 제외)', () => {
+    const ads = PLM.parseAds(html);
+    eq(ads.map((a) => a.rank + ':' + a.display), ['1:direct.samsungfire.com', '2:www.carrotins.com/long-term/driver', '3:www.hi.co.kr', '4:direct.hi.co.kr']);
+  });
+  await test('파워링크: 고유번호 없는 URL로 내 광고 찾기', () => {
+    const ads = PLM.parseAds(html);
+    const f = (u) => { const m = PLM.findMine(ads, [u]); return m ? m.rank + '/' + m.score : '-'; };
+    eq([f('https://www.carrotins.com/long-term/driver?NaPm=ct%3Dabc'), f('carrotins.com/car'), f('https://direct.hi.co.kr/a.do?x=1'), f('https://m.hi.co.kr'), f('https://samsungfire.com'), f('https://example.com')],
+      ['2/3', '2/2', '4/3', '3/3', '1/1', '-']);
+  });
+  await test('파워링크: 그림 넣은 엑셀 파일 구조', () => {
+    const jpg = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+    const buf = PLM.buildXlsx([{ name: 'PC', rows: [['키워드', '순위'], ['운전자보험', 3]], images: [{ row: 1, col: 1, data: jpg, w: 100, h: 50 }], heights: { 1: 45 } }]);
+    const t = buf.toString('latin1');
+    ok(buf.readUInt32LE(0) === 0x04034b50, 'zip 시작');
+    for (const n of ['xl/drawings/drawing1.xml', 'xl/media/image1.jpeg', 'xl/worksheets/_rels/sheet1.xml.rels', '[Content_Types].xml']) ok(t.includes(n), n + ' 없음');
+  });
+}
 // ---------------------------------------------------------------- 결과
 console.log('\n키워드 분석기 자동 테스트\n' + results.join('\n'));
 console.log(`\n통과 ${pass} · 실패 ${fail}`);
