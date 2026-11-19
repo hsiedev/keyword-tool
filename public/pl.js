@@ -361,7 +361,7 @@
     return `<div class="card">
       <div class="pl-bar"><b style="font-size:15px">${e2(j.name)}</b><span class="muted">${new Date(j.createdAt).toLocaleString('ko-KR')} · URL ${j.urls.map(e2).join(', ')} · ${j.runs}회 평균${j.source ? ` · <span title="재분석 때 넣은 파일">새 입찰가: ${e2(j.source.file)} (바뀜 ${j.source.changed}개)</span>` : ''}</span><span style="flex:1"></span>
         ${run ? '<button class="btn" id="plStop">중지</button>' : `${j.status !== 'done' ? '<button class="btn pri" id="plResume">이어서 하기</button>' : ''}<button class="btn" id="plRerun" title="같은 키워드 · URL · 기기로 다시 검사해서 이 분석 아래(스레드)에 붙여요">같은 키워드로 재분석</button>`}
-        <button class="btn pri" id="plXlsx">엑셀 다운로드 (캡처 포함)</button></div>
+        <button class="btn pri" id="plXlsx">엑셀 다운로드</button></div>
       ${S.thread.length > 1 ? `<div class="pl-thread">${S.thread.map((m, i) => { const pct = m.total ? Math.round((m.done / m.total) * 100) : 0, run2 = m.status === 'running'; return `<button class="${m.id === j.id ? 'on' : ''} ${run2 ? 'run' : ''}" data-th="${e2(m.id)}" style="--p:${run2 ? pct : 100}%" title="${run2 ? `진행 중 ${pct}%` : ST[m.status] || ''}"><span>${i === 0 ? '첫 분석' : e2(m.custom ? m.name : '재분석 ' + (m.thread || i))} <small>${run2 ? pct + '%' : fmtD(m.createdAt)}</small></span></button>`; }).join('<span class="muted">›</span>')}</div>` : ''}
       <div class="prog ${run ? '' : j.status === 'done' ? 'done' : 'fail'}" style="margin-top:10px"><div class="prog-top"><b>${run ? `검사 중 · ${e2(S.running?.cur || '')}` : ST[j.status]}${j.error ? ' · ' + e2(j.error) : ''}</b><span>${done.toLocaleString('ko-KR')} / ${all.length.toLocaleString('ko-KR')}개${run && left ? ` · 남은 시간 약 ${eta < 3600 ? Math.max(1, Math.round(eta / 60)) + '분' : Math.floor(eta / 3600) + '시간 ' + Math.round((eta % 3600) / 60) + '분'}` : ''}</span></div>
         <div class="bar"><div style="width:${all.length ? (done / all.length) * 100 : 0}%"></div></div>
@@ -407,7 +407,7 @@
     $('#plRerun')?.addEventListener('click', () => rerun(j.id).catch((e) => toast(e.message, 'warn')));
     $$('[data-th]').forEach((b) => (b.onclick = () => openJob(b.dataset.th)));
     $('#plResume')?.addEventListener('click', async () => { try { await api('/api/pl/resume', { id: j.id }); await openJob(j.id); loadJobs(); } catch (e) { toast(e.message, 'warn'); } });
-    $('#plXlsx').onclick = () => { toast('엑셀을 만드는 중이에요 (캡처가 많으면 조금 걸려요)', 'ok'); location.href = `/api/pl/xlsx?id=${encodeURIComponent(j.id)}&nPc=${S.nPc}&nMo=${S.nMo}`; };
+    $('#plXlsx').onclick = () => { toast('엑셀을 만드는 중이에요', 'ok'); location.href = `/api/pl/xlsx?id=${encodeURIComponent(j.id)}&nPc=${S.nPc}&nMo=${S.nMo}`; };
     $$('[data-sd]').forEach((b) => (b.onclick = () => { S.dev = b.dataset.sd; localStorage.setItem('plDev', S.dev); S.page = 1; draw(); ensurePerf(); }));
     $$('[data-band]').forEach((b) => (b.onclick = () => { S.band = +b.dataset.band; S.page = 1; draw(); }));
     $('#plMiss').onchange = (e) => { S.onlyMiss = e.target.checked; S.page = 1; draw(); };
