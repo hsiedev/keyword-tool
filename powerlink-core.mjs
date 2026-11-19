@@ -575,7 +575,7 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
         });
         const known = new Set(src.rows.map((r) => nk(r.kw)));
         const extra = upd ? [...upd.keys()].filter((k2) => !known.has(k2)).length : 0;
-        const j = create({ urls: src.urls, devices: src.devices, nPc: src.nPc, nMo: src.nMo, rows, name: `${root.name} · 재분석 ${k}`, parentId: root.id, thread: k });
+        const j = create({ urls: src.urls, devices: src.devices, nPc: b.nPc || src.nPc, nMo: b.nMo || src.nMo, rows, name: `${root.name} · 재분석 ${k}`, parentId: root.id, thread: k });
         if (upd) { j.source = { file: String(b.file || '새 파일').slice(0, 80), changed, missing, extra }; save(j, true); }
         await runJob(j);
         return send(res, 200, { id: j.id, changed, missing, extra, updated: !!upd });

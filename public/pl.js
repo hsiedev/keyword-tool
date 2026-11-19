@@ -80,6 +80,7 @@
     localStorage.setItem('plCur', S.cur || '');
     S.page = 1;
     draw(); poll();
+    ensurePerf(); // 지금 고른 n위의 예상 실적이 아직 없으면 (예: 재분석은 첫 분석 때의 n위로만 받아 둠)
   }
   function poll() {
     clearTimeout(S.timer);
@@ -235,7 +236,7 @@
       if (v === 'x') return close();
       b.disabled = true;
       try {
-        const j = await api('/api/pl/rerun', v === 'new' && got ? { id, rows: got, file: fname } : { id });
+        const j = await api('/api/pl/rerun', { id, nPc: S.nPc, nMo: S.nMo, ...(v === 'new' && got ? { rows: got, file: fname } : {}) });
         close();
         await loadJobs(); await openJob(j.id);
         toast(j.updated ? `새 입찰가로 재분석해요 (입찰가 바뀐 키워드 ${j.changed}개). 첫 분석 아래에 붙어 있어요` : '이전 입찰가로 다시 분석해요. 첫 분석 아래에 붙어 있어요', 'ok');
