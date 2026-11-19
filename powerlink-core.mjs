@@ -499,15 +499,15 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
     const won = (v) => (v == null ? '' : v);
     const sheets = j.devices.map((dev) => {
       const n = dev === 'pc' ? nPc : nMo, P = j.perf?.[`${dev}:${n}`] || {};
-      const head = ['키워드', '순위 (평균)', '노출', '최고~최저', '현재 입찰가', `${n}위 입찰가 (4주 평균)`, `${n}위 예상 노출수 (월)`, `${n}위 예상 클릭수 (월)`, `${n}위 예상 비용 (월)`, '찾은 방식', '통합검색 광고 수', '계정 평균노출순위', '캡처 파일', '키워드 상태'];
+      const head = ['키워드', '순위 (평균)', '노출', '최고~최저', '현재 입찰가', `${n}위 입찰가 (4주 평균)`, `${n}위 예상 노출수 (월)`, `${n}위 예상 클릭수 (월)`, `${n}위 예상 비용 (월)`, '통합검색 광고 수', '계정 평균노출순위'];
       const rows = [head], heights = { 0: 30 };
       for (const r of j.rows.filter((x) => x.on !== false)) {
         const x = r.res?.[dev] || {}, p = P[r.key] || {};
         const rank = x.seen ? x.avg : x.seen === 0 ? '미노출' : '';
         rows.push([r.kw, rank, x.n ? `${x.seen}/${x.n}회` : '', x.seen ? (x.min === x.max ? `${x.min}위` : `${x.min}~${x.max}위`) : '', won(r.bid), won(j.bids?.[r.key]?.[dev]?.[n - 1]), won(p.imp), won(p.clk), won(p.cost),
-          x.match ? MATCH_LABEL[x.match.score] + ` (${x.match.display})` : '', x.mainCount ?? '', won(dev === 'pc' ? r.acctPc : r.acctMo), x.cap ? path.join(jobDir(j.id), x.cap.file) : x.capErr || '', r.state]);
+          x.mainCount ?? '', won(dev === 'pc' ? r.acctPc : r.acctMo)]);
       }
-      return { name: dev === 'pc' ? 'PC' : '모바일', rows, heights, widths: [22, 10, 8, 10, 11, 13, 13, 13, 13, 28, 10, 11, 30, 14] }; // 캡처 그림은 넣지 않음 (원본은 '캡처 파일' 경로)
+      return { name: dev === 'pc' ? 'PC' : '모바일', rows, heights, widths: [22, 10, 8, 10, 11, 13, 13, 13, 13, 10, 11] };
     });
     return buildXlsx(sheets);
   }
