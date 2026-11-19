@@ -648,3 +648,8 @@ html.dark #plBody tr.pl-hit>td{background:#422006!important}
 .pl-band button small{opacity:.7;font-size:11px;margin-left:2px}
 .pl-nk{color:var(--accent);font-weight:600}
 .cfm.pl-rr{max-width:560px;width:min(560px,94vw)}
+/* 설정 창 스위치: 입력칸 규칙에 눌려 작아지던 문제 */
+.modal .set-sec input.sw.sw{width:34px;min-width:34px;height:20px;padding:0;border:0;border-radius:999px;box-sizing:border-box}
+.modal .set-sec input.sw.sw:not(:checked){background:#c9c9c9}
+html.dark .modal .set-sec input.sw.sw:not(:checked){background:#4b4b4b}
+.modal .set-sec input.sw.sw:checked{background:var(--accent,#16a34a)}
