@@ -351,7 +351,7 @@ ul.sig{margin:8px 0 0;padding-left:18px;color:var(--foreground);font-size:13px}
 .set-sec .how b{color:var(--foreground)}
 .set-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0;font-size:13px}
 .set-row>span:first-child{min-width:170px;color:var(--foreground)}
-.modal .set-row input,.modal .set-row select,.modal .set-sec textarea{border:1px solid var(--input);border-radius:6px;padding:5px 8px;font:inherit;font-size:13px;width:auto;background:var(--background)}
+.modal .set-row input:not(.sw),.modal .set-row select,.modal .set-sec textarea{border:1px solid var(--input);border-radius:6px;padding:5px 8px;font:inherit;font-size:13px;width:auto;background:var(--background)}
 .modal .set-row input[type=number]{width:84px}
 .modal .set-row input[type=text]{width:260px}
 .modal .set-row input[type=color]{width:44px;height:30px;padding:2px}
