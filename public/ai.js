@@ -318,6 +318,12 @@
                   <textarea id="aiNeg" class="inp" rows="3" placeholder="빼야 할 단어·방향 (쉼표나 줄바꿈)&#10;예: 해지, 분실, 삼성카드, 고객센터, 기존 회원 대상"></textarea></div>
               </div>
               <div class="muted" style="font-size:11px;margin-top:4px">Negative에 쓴 짧은 단어(띄어쓰기 없는 15자 이하)는 AI 판단과 상관없이 결과에서 바로 빼요. 문장으로 쓴 것은 AI가 판단해요.</div>
+              <div class="ban-row" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:12.5px">
+                <span class="muted">금지 키워드 자동 제외</span>
+                <label class="inl"><input type="checkbox" class="sw" id="aiBanN"> 네이버 <span class="muted" id="aiBanNc"></span></label>
+                <label class="inl"><input type="checkbox" class="sw" id="aiBanG"> 구글 <span class="muted" id="aiBanGc"></span></label>
+                <a href="#" class="ext" id="aiBanEdit">목록 편집 (설정)</a>
+              </div>
               <div style="display:flex;gap:10px;margin-top:10px;align-items:end;flex-wrap:wrap">
                 <div><label class="muted">개수</label><br><select id="aiCount" class="inp" style="width:110px">${[30, 50, 80, 100, 150].map((n) => `<option>${n}</option>`).join('')}</select></div>
               </div>
@@ -412,7 +418,7 @@
     let typeT = null;
     const saveSoon = () => { clearTimeout(typeT); typeT = setTimeout(save, 500); };
     const saveNow = () => { clearTimeout(typeT); save(); };
-    ['aiTopic', 'aiExamples', 'aiCount', 'aiRefMode', 'aiPos', 'aiNeg', 'aiMinVol'].forEach((id) => { $('#' + id).addEventListener('input', saveSoon); $('#' + id).onchange = saveNow; });
+    ['aiTopic', 'aiExamples', 'aiCount', 'aiRefMode', 'aiPos', 'aiNeg', 'aiMinVol', 'aiBanN', 'aiBanG'].forEach((id) => { $('#' + id).addEventListener('input', saveSoon); $('#' + id).onchange = saveNow; });
     addEventListener('pagehide', saveNow);
     addEventListener('beforeunload', saveNow);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveNow(); });
@@ -544,13 +550,30 @@
     $('#aiRefMode').value = f.refMode === 'expand' ? 'expand' : 'ref';
     $('#aiPos').value = f.pos || '';
     $('#aiNeg').value = f.neg || '';
+    { const B = window.SETTINGS?.rules?.banned || {}; $('#aiBanN').checked = f.banN ?? B.naverOn !== false; $('#aiBanG').checked = f.banG ?? B.googleOn !== false; banCount(); }
     $('#aiLenMin').value = f.minLen;
     $('#aiLenMax').value = f.maxLen;
     $('#aiMinVol').value = f.minVol; $('#aiMinVol2').value = f.minVol;
     lenUI();
   }
+  // 설정의 금지 키워드 (켠 것만)
+  function bannedList(f) {
+    const B = window.SETTINGS?.rules?.banned || {};
+    const on = (v, d) => (v ?? d !== false);
+    return [...new Set([...(on(f?.banN, B.naverOn) ? splitList(B.naver || '') : []), ...(on(f?.banG, B.googleOn) ? splitList(B.google || '') : [])].map((x) => x.trim()).filter(Boolean))];
+  }
+  // AI에 보내는 Negative = 직접 쓴 것 + 금지 키워드 (AI 지시가 너무 길어지지 않게 금지 키워드는 300개까지)
+  const negAll = (f) => [...splitList(f.neg), ...bannedList(f).slice(0, 300)];
+  function banCount() {
+    const B = window.SETTINGS?.rules?.banned || {};
+    const c = (t) => splitList(t || '').length;
+    const n = c(B.naver), g = c(B.google);
+    $('#aiBanNc').textContent = n ? n.toLocaleString('ko-KR') + '개' : '(비어 있음)';
+    $('#aiBanGc').textContent = g ? g.toLocaleString('ko-KR') + '개' : '(비어 있음)';
+  }
+  window.__AI_banCount = () => { try { banCount(); } catch {} };
   function readForm() {
-    return { topic: $('#aiTopic').value, examples: $('#aiExamples').value, count: $('#aiCount').value, extra: '', refMode: $('#aiRefMode').value, pos: $('#aiPos').value, neg: $('#aiNeg').value, minLen: +$('#aiLenMin').value, maxLen: +$('#aiLenMax').value, minVol: Math.max(0, Math.round(+$('#aiMinVol').value || 0)) };
+    return { topic: $('#aiTopic').value, examples: $('#aiExamples').value, count: $('#aiCount').value, extra: '', refMode: $('#aiRefMode').value, pos: $('#aiPos').value, neg: $('#aiNeg').value, banN: $('#aiBanN').checked, banG: $('#aiBanG').checked, minLen: +$('#aiLenMin').value, maxLen: +$('#aiLenMax').value, minVol: Math.max(0, Math.round(+$('#aiMinVol').value || 0)) };
   }
 
   // ---------------------------------------------------------------- 탭 (왼쪽 사이드바)
@@ -774,14 +797,14 @@
       if (!plan && useWeb) {
         P.stage(0, 16, 1, '웹 조사');
         P.phase('AI가 웹에서 브리프 주제를 조사하는 중 (1~3분)', 20);
-        try { web = await postJson('/api/ai/web-research', { brief: form.topic, refs, pos: splitList(form.pos), neg: splitList(form.neg), webProvider: '' }, ctrl.signal); }
+        try { web = await postJson('/api/ai/web-research', { brief: form.topic, refs, pos: splitList(form.pos), neg: negAll(form), webProvider: '' }, ctrl.signal); }
         catch (e) { if (isAbort(e)) throw e; webFail = e.message; }
       }
       if (!plan) {
         P.stage(useWeb ? 16 : 0, useWeb ? 22 : 10, 1, '브리프 해석');
         P.phase('AI가 브리프를 읽고 탐색 계획을 세우는 중', 30);
         try {
-          plan = await postJson('/api/ai/plan', { brief: form.topic, refs, refMode, pos: splitList(form.pos), neg: splitList(form.neg), web: web ? { findings: web.findings, terms: web.terms } : null }, ctrl.signal);
+          plan = await postJson('/api/ai/plan', { brief: form.topic, refs, refMode, pos: splitList(form.pos), neg: negAll(form), web: web ? { findings: web.findings, terms: web.terms } : null }, ctrl.signal);
           if (web) Object.assign(plan, { webFindings: web.findings, webSources: web.sources, webBy: web.by, webTerms: web.terms });
           AI.cur.plan = plan; save(); drawPlan();
         } catch (e) { if (isAbort(e)) throw e; planFail = e.message; }
@@ -797,7 +820,7 @@
       }
       // ③ 발굴
       P.stage(useData ? (useWeb ? 32 : 22) : (useWeb ? 22 : 10), auto ? 60 : 100, Number(form.count), '키워드 작성 중');
-      const j = await streamPost('/api/ai/generate-stream', { topic: form.topic, examples: refs, refMode, pos: splitList(form.pos), neg: splitList(form.neg), plan: plan ? { intent: plan.intent, audience: plan.audience, angles: plan.angles, avoid: plan.avoid, web: plan.webFindings || [] } : null, count: Number(form.count), avoid, existing, rejected, minLen: form.minLen, maxLen: form.maxLen, seeds: (data?.list || []).slice(0, 300).map((x) => ({ keyword: x.keyword, total: x.total })), suggest: (data?.suggest || []).slice(0, 200).map((x) => ({ keyword: x.keyword, total: x.total })) }, (ev) => P.event(ev), ctrl.signal, holder);
+      const j = await streamPost('/api/ai/generate-stream', { topic: form.topic, examples: refs, refMode, pos: splitList(form.pos), neg: negAll(form), plan: plan ? { intent: plan.intent, audience: plan.audience, angles: plan.angles, avoid: plan.avoid, web: plan.webFindings || [] } : null, count: Number(form.count), avoid, existing, rejected, minLen: form.minLen, maxLen: form.maxLen, seeds: (data?.list || []).slice(0, 300).map((x) => ({ keyword: x.keyword, total: x.total })), suggest: (data?.suggest || []).slice(0, 200).map((x) => ({ keyword: x.keyword, total: x.total })) }, (ev) => P.event(ev), ctrl.signal, holder);
       const exN = new Set(refs.map(norm));
       const inLen = j.items.filter((x) => { const L = charLen(x.keyword); return L >= form.minLen && L <= form.maxLen; });
       const outLen = j.items.length - inLen.length;
@@ -807,7 +830,7 @@
       // 기존 키워드(②)와 띄어쓰기·대소문자·기호만 다른 동일 키워드는 결과에 넣지 않음
       const notSame = notRej.filter((x) => !IDX.exact.has(norm(x.keyword)));
       const sameN = notRej.length - notSame.length;
-      const negW = splitList(form.neg).map(norm).filter((w) => w && w.length <= 15 && !/\s/.test(w));
+      const negW = [...splitList(form.neg).map(norm).filter((w) => w && w.length <= 15 && !/\s/.test(w)), ...bannedList(form).map(norm).filter(Boolean)];
       const notNeg = notSame.filter((x) => !negW.some((w) => norm(x.keyword).includes(w)));
       const negN = notSame.length - notNeg.length;
       const got = notNeg.filter((x) => !exN.has(norm(x.keyword)));
@@ -898,7 +921,7 @@
     const targets = inGen ? opts.items : sel.length ? sel : AI.items.filter((it) => !it.decision);
     if (!targets.length) return vmsg('직접 판정한 키워드만 남았어요. 다시 판정하려면 체크해서 누르세요.', true);
     const form = readForm();
-    const conditions = { topic: form.topic, examples: form.refMode === 'expand' ? splitList(form.examples) : [], extra: '', brief: true, pos: splitList(form.pos), neg: splitList(form.neg), judged: MixedReview.judged(AI.items) };
+    const conditions = { topic: form.topic, examples: form.refMode === 'expand' ? splitList(form.examples) : [], extra: '', brief: true, pos: splitList(form.pos), neg: negAll(form), judged: MixedReview.judged(AI.items) };
     if (!conditions.topic.trim() && !conditions.examples.length && !conditions.extra.trim()) { vmsg('이 탭에 주제·예시·요청 사항이 없어서 판정 기준이 없어요', true); return { error: '판정 기준 없음' }; }
     const btn = $('#aiVerify'), stop = opts.stop || $('#aiVStop');
     btn.disabled = true;
@@ -1317,3 +1340,10 @@
   window.__AI = { AI, norm, checkOne, buildIndex, recheckAll, addItems, draw, refreshModel, handleFiles, vsum, openTab, newDraft, streamPost, progress, progHTML };
   mount();
 })();
+
+// 금지 키워드: 설정 열기 링크 · 설정 저장 후 개수 갱신
+document.addEventListener('click', (e) => {
+  if (e.target?.id !== 'aiBanEdit') return;
+  e.preventDefault();
+  Promise.resolve(window.openSettings?.('rules')).then(() => setTimeout(() => document.querySelector('[data-sec="banned"]')?.scrollIntoView({ block: 'start' }), 150));
+});

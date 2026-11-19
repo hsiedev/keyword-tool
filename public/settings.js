@@ -90,6 +90,11 @@
         row('띄어쓰기', chk(`${G}.noSpace`, '모든 키워드를 띄어쓰기 없이 붙이기 (AI 지시 + PC에서 한 번 더)')) +
         row('창의성 (temperature)', num(`${G}.temperature`, { min: 0, max: 2, step: 0.1 }), 'Gemini에만 적용, 높을수록 다양함'))}
 
+      ${sec('banned', '금지 키워드', '네이버 · 구글 광고에서 검수 거절되거나 쓰면 안 되는 단어를 적어 두세요. AI 키워드 생성기에서 켜 둔 목록은 <b>제외할 것(Negative)</b>에 자동으로 더해져요: AI에게 쓰지 말라고 알려주고, 이 단어가 들어간 키워드는 결과에서 PC가 바로 빼요. 생성기 화면에서 탭마다 네이버 · 구글을 켜고 끌 수 있어요.',
+        row('네이버 금지 키워드', '<span class="muted" style="font-size:12px">쉼표나 줄바꿈으로 구분</span>') + area('rules.banned.naver', 5, '예: 도박, 카지노, 불법대출') +
+        row('구글 금지 키워드', '<span class="muted" style="font-size:12px">쉼표나 줄바꿈으로 구분</span>') + area('rules.banned.google', 5, '예: 도박, 카지노') +
+        row('새 탭 기본값', chk('rules.banned.naverOn', '네이버 켜기') + ' ' + chk('rules.banned.googleOn', '구글 켜기'), 'AI 생성기에서 새 탭을 만들 때'))}
+
       <h3 class="set-h">③ 조건 재검증 <span class="muted" style="font-size:12px;font-weight:500">AI 생성기 · 대량 분석 공통</span></h3>
       ${sec('verify', '판정 방식', `누를 때마다 AI가 <b>이전 판정을 모른 채</b> 탭의 주제·예시·요청 사항으로 다시 판정해요. 키워드마다 월간 검색량을 같이 보여주고(아래 설정), <b>최소 월간 검색량 미만은 PC가 정확히 계산해 부적합으로 덮어써요.</b> 글자 수 범위도 PC가 따로 확인해요. 판정은 쌓이고, 정해진 횟수 이상 모두 적합이면 "일관 적합", 모두 부적합이면 "일관 부적합", 섞이면 "엇갈림"이에요. 부적합으로 지운 키워드는 탭의 제외 목록에 들어가 다음 생성에서 빠져요.`,
         row('판정 기준 (한 줄에 하나, 하나라도 어기면 부적합)', '') + area(`${V}.criteria`, 4) +
@@ -153,6 +158,7 @@
       if (id === 'grade') { DRAFT.rules.analysis.gradeMinVol = d.rules.analysis.gradeMinVol; DRAFT.rules.analysis.gradeBands = clone(d.rules.analysis.gradeBands); }
       if (id === 'issue') DRAFT.rules.analysis.issueBands = clone(d.rules.analysis.issueBands);
       if (id === 'powerlink') DRAFT.rules.powerlink = clone(d.rules.powerlink);
+    if (id === 'banned') DRAFT.rules.banned = clone(d.rules.banned);
       if (id === 'comm') for (const k of ['commercialWords', 'infoWords', 'commercialBonus', 'infoPenalty', 'commercialBands']) DRAFT.rules.analysis[k] = clone(d.rules.analysis[k]);
       if (id === 'gen') DRAFT.rules.generate = clone(d.rules.generate);
       if (id === 'verify') DRAFT.rules.verify = clone(d.rules.verify);
@@ -188,7 +194,7 @@
       window.SETTINGS = r.settings; DRAFT = clone(r.settings); dirty = false;
       applyUI();
       // 바뀐 규칙을 열려 있는 화면에 반영
-      window.__AI?.recheckAll?.(); window.__AI?.draw?.();
+      window.__AI?.recheckAll?.(); window.__AI?.draw?.(); window.__AI_banCount?.();
       if (window.__DUP?.D?.result) window.__DUP.run();
       if (typeof STATE !== 'undefined' && STATE && !$('#main').classList.contains('hidden')) run(STATE.keyword, false);
       $('#testOut').innerHTML = `<b style="color:#16a34a">저장했어요.</b> 화면과 규칙이 바로 적용됐어요.`;

@@ -54,6 +54,12 @@ export const DEFAULT_SETTINGS = {
       temperature: 0.9,
       system: '', // 비우면 기본 지시문
     },
+    banned: {
+      naver: '', // 네이버 금지 키워드 (쉼표·줄바꿈 구분)
+      google: '', // 구글 금지 키워드
+      naverOn: true, // 새 AI 생성기 탭에서 기본으로 켤지
+      googleOn: true,
+    },
     powerlink: {
       runs: 4, // 키워드마다 몇 번 검색해서 평균 순위를 낼지 (1~5)
       gapMs: 1200, // 네이버 검색 사이 간격(ms). 너무 짧으면 검색 제한에 걸려요
