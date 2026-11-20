@@ -189,7 +189,7 @@
         if (a === 'rerun') await rerun(m.id);
         if (a === 'rename') rename(m);
         if (a === 'purge') {
-          if (!await uiConfirm(`'${sub ? subName(m) : m.name}'의 캡처 그림만 지울까요?\n순위 · 입찰가 · 예상 실적 결과는 그대로 남아요. 지운 캡처는 되돌릴 수 없어요.`)) return;
+          if (!await uiConfirm(`'${sub ? subName(m) : m.name}'의 캡처 그림만 지울까요?\n순위 · 입찰가 · 예상 실적 결과는 그대로 남아요. 지운 캡처는 되돌릴 수 없어요.`, { ok: '캡처 지우기' })) return;
           const r = await api('/api/pl/purge', { id: m.id });
           toast(`캡처 ${MB(r.freed)}를 지웠어요`, 'ok');
           if (S.job?.id === m.id) S.job.purged = Date.now();
