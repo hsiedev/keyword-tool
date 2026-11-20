@@ -6,6 +6,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
+// 외부 요청 시간 제한: 응답이 없으면 끝없이 기다리지 않고 쉬운 말로 알려줌
+function tfetch(url, opt = {}, ms = 30000) {
+  const t = AbortSignal.timeout(ms);
+  return fetch(url, { ...opt, signal: opt.signal ? AbortSignal.any([opt.signal, t]) : t }).catch((e) => {
+    if (e?.name === 'TimeoutError' || (e?.name === 'AbortError' && t.aborted)) { let h = ''; try { h = new URL(url).host; } catch {} throw new Error(`${h || '외부 서버'}에서 ${Math.round(ms / 1000)}초 동안 응답이 없어 멈췄어요. 잠시 뒤 다시 해 주세요`); }
+    throw e;
+  });
+}
+
 export function createGitSync(root) {
   const CFG = path.join(root, 'data', 'github.json');
   const STATE = path.join(root, 'data', 'github-state.json');
@@ -37,7 +46,7 @@ export function createGitSync(root) {
   const blobSha = (buf) => crypto.createHash('sha1').update(`blob ${buf.length}\0`).update(buf).digest('hex');
 
   async function api(c, method, p, body) {
-    const r = await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}${p}`, {
+    const r = await tfetch(`https://api.github.com/repos/${c.owner}/${c.repo}${p}`, {
       method,
       headers: { Authorization: `Bearer ${c.token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'keyword-tool', ...(body ? { 'Content-Type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined,

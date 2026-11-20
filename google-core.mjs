@@ -139,7 +139,7 @@ export function parseTrendsCsv(text) {
 }
 
 // ---------------------------------------------------------------- 실행부
-export function createGoogle({ dataDir, cached, getConfig, fetchFn = (...a) => fetch(...a), wait = sleep }) {
+export function createGoogle({ dataDir, cached, getConfig, fetchFn = (url, opt = {}) => fetch(url, { ...opt, signal: opt.signal ? AbortSignal.any([opt.signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000) }), wait = sleep }) {
   const F = (...a) => fetchFn(...a);
   const DIR = path.join(dataDir, 'google');
   const PLANNER = path.join(DIR, 'planner.json');

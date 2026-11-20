@@ -89,7 +89,7 @@ class Headless {
     let port = 0;
     for (let i = 0; i < 100 && !port; i++) { await sleep(150); try { port = Number(fs.readFileSync(portFile, 'utf8').split(/\r?\n/)[0]) || 0; } catch {} }
     if (!port) { this.close(); throw new Error('캡처용 브라우저를 띄우지 못했어요'); }
-    const ver = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
+    const ver = await (await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(10000) })).json();
     this.ws = new WebSocket(ver.webSocketDebuggerUrl);
     await new Promise((ok, no) => { this.ws.onopen = ok; this.ws.onerror = () => no(new Error('브라우저 연결 실패')); });
     this.ws.onmessage = (e) => {
@@ -248,12 +248,22 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
   function load(id) {
     if (!okId(id)) return null;
     if (jobs.has(id)) return jobs.get(id);
-    try { const j = JSON.parse(fs.readFileSync(path.join(jobDir(id), 'job.json'), 'utf8')); if (j.status === 'running') j.status = 'stopped'; jobs.set(id, j); return j; } catch { return null; }
+    try { const j = JSON.parse(fs.readFileSync(path.join(jobDir(id), 'job.json'), 'utf8')); jobs.set(id, j); if (j.status === 'running' && RUN?.id !== id) { j.status = 'stopped'; save(j, true); } return j; } catch { return null; }
   }
   let saveT = new Map();
+  const flushAll = () => { for (const id of [...saveT.keys()]) { const j = jobs.get(id); if (j) save(j, true); } };
+  process.once('exit', flushAll);
   function save(j, now = false) {
     j.updatedAt = Date.now();
-    const w = () => { saveT.delete(j.id); fs.mkdirSync(jobDir(j.id), { recursive: true }); fs.writeFileSync(path.join(jobDir(j.id), 'job.json'), JSON.stringify(j)); };
+    const w = () => {
+      saveT.delete(j.id);
+      try {
+        fs.mkdirSync(jobDir(j.id), { recursive: true });
+        const f = path.join(jobDir(j.id), 'job.json');
+        fs.writeFileSync(f + '.tmp', JSON.stringify(j)); fs.renameSync(f + '.tmp', f);
+        j.saveErr = '';
+      } catch (e) { j.saveErr = '결과 저장 실패: ' + e.message; console.error('[파워링크] ' + j.saveErr); }
+    };
     clearTimeout(saveT.get(j.id));
     if (now) w(); else saveT.set(j.id, setTimeout(w, 1500));
   }
@@ -287,7 +297,7 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
     for (let a = 0; a < 6; a++) {
       await gate();
       let r, h;
-      try { r = await fetch(url, { headers: { 'User-Agent': ua, 'Accept-Language': 'ko-KR,ko;q=0.9', Accept: 'text/html,application/xhtml+xml', Referer: 'https://www.naver.com/' } }); h = await r.text(); }
+      try { r = await fetch(url, { signal: AbortSignal.timeout(20000), headers: { 'User-Agent': ua, 'Accept-Language': 'ko-KR,ko;q=0.9', Accept: 'text/html,application/xhtml+xml', Referer: 'https://www.naver.com/' } }); h = await r.text(); }
       catch (e) { if (a === 5) throw e; await sleep(2000); continue; }
       if (isBlocked(r.status, h)) { blocked(); continue; }
       if (blockN && RUN) RUN.note = '';
@@ -301,8 +311,10 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
   async function posBids(j) {
     if (!hasAd()) { j.bidErr = '검색광고 API 키가 없어 순위별 입찰가를 못 가져와요 (설정 › 네이버 API)'; return; }
     j.bids = j.bids || {};
-    const keys = [...new Set(j.rows.filter((r) => r.on !== false).map((r) => r.key))].filter((k) => !j.bids[k]);
+    const all = [...new Set(j.rows.filter((r) => r.on !== false).map((r) => r.key))];
+    const has = (k, dev) => Array.isArray(j.bids[k]?.[dev]) && j.bids[k][dev].some((x) => x != null);
     for (const dev of j.devices) {
+      const keys = all.filter((k) => !has(k, dev)); // 아직 없거나 지난번에 실패한 키워드만
       const N = DEV[dev].maxN, per = Math.max(1, Math.floor(100 / N));
       for (let i = 0; i < keys.length; i += per) {
         if (RUN?.stop) return;
@@ -313,14 +325,14 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
           (r.estimate || []).forEach((e, idx) => {
             const k = e.keyword && chunk.includes(e.keyword) ? e.keyword : items[idx]?.key;
             const b = (j.bids[k] = j.bids[k] || {});
-            (b[dev] = b[dev] || [])[(e.position ?? items[idx]?.position) - 1] = e.bid;
+            (b[dev] = b[dev] || [])[(e.position ?? items[idx]?.position) - 1] = e.bid; delete b[dev + 'Err'];
           });
         } catch (e) {
           // 묶음이 통째로 실패하면 하나씩 (네이버가 모르는 키워드가 섞인 경우)
           for (const key of chunk) {
             try {
               const r = await adRequest('POST', '/estimate/average-position-bid/keyword', { body: { device: DEV[dev].api, items: Array.from({ length: N }, (_, p) => ({ key, position: p + 1 })) } });
-              const b = (j.bids[key] = j.bids[key] || {}); b[dev] = (r.estimate || []).map((x) => x.bid);
+              const b = (j.bids[key] = j.bids[key] || {}); b[dev] = (r.estimate || []).map((x) => x.bid); delete b[dev + 'Err'];
             } catch (e2) { const b = (j.bids[key] = j.bids[key] || {}); b[dev + 'Err'] = String(e2.message).slice(0, 120); }
           }
         }
@@ -334,7 +346,7 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
     if (!hasAd()) return { error: '검색광고 API 키가 없어요' };
     j.perf = j.perf || {};
     const tag = `${dev}:${n}`, P = (j.perf[tag] = j.perf[tag] || {});
-    const todo = j.rows.filter((r) => r.on !== false && !P[r.key] && j.bids?.[r.key]?.[dev]?.[n - 1]);
+    const todo = j.rows.filter((r) => r.on !== false && (!P[r.key] || P[r.key].err || P[r.key].bid !== j.bids?.[r.key]?.[dev]?.[n - 1]) && j.bids?.[r.key]?.[dev]?.[n - 1]); // 실패했거나 입찰가가 새로 생긴 것도 다시
     let i = 0;
     const worker = async () => {
       while (i < todo.length) {
@@ -439,7 +451,7 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
             if (row.res?.[dev]?.cap || (row.res?.[dev]?.seen != null && row.res?.[dev]?.capErr)) continue;
             await measure(j, row, dev);
           }
-          row.done = true; save(j);
+          row.done = true; save(j, true); // 키워드 하나 끝날 때마다 바로 저장
         }
         j.status = 'done';
       } catch (e) {

@@ -13,6 +13,15 @@ import { CLI, CLI_MODELS, cliPath, runCli, cliStatus, cliTest, openConsole, cliJ
 import { createGitSync } from './github-sync.mjs';
 import { createGoogle } from './google-core.mjs';
 import { assertAdAllowed } from './ad-guard.mjs';
+
+// 외부 요청 시간 제한: 응답이 없으면 끝없이 기다리지 않고 쉬운 말로 알려줌
+function tfetch(url, opt = {}, ms = 30000) {
+  const t = AbortSignal.timeout(ms);
+  return fetch(url, { ...opt, signal: opt.signal ? AbortSignal.any([opt.signal, t]) : t }).catch((e) => {
+    if (e?.name === 'TimeoutError' || (e?.name === 'AbortError' && t.aborted)) { let h = ''; try { h = new URL(url).host; } catch {} throw new Error(`${h || '외부 서버'}에서 ${Math.round(ms / 1000)}초 동안 응답이 없어 멈췄어요. 잠시 뒤 다시 해 주세요`); }
+    throw e;
+  });
+}
 import { createPowerlink } from './powerlink-core.mjs';
 import { parsePowerlinks, copyGenerateRequest, cleanCopyItems, copyVerifyRequest, cleanVerifyItems, createStore, copyMeta, mockMeta } from './copy-core.mjs';
 
@@ -88,7 +97,7 @@ async function adRequest(method, uri, { query, body } = {}) {
   for (let attempt = 0; attempt < 4; attempt++) {
     const ts = String(Date.now());
     const sig = crypto.createHmac('sha256', config.adSecret).update(`${ts}.${method}.${uri}`).digest('base64');
-    const res = await fetch(url, {
+    const res = await tfetch(url, {
       method,
       headers: {
         'X-Timestamp': ts,
@@ -255,7 +264,7 @@ async function openApi(p, body) {
     ? { 'X-NCP-APIGW-API-KEY-ID': config.clientId, 'X-NCP-APIGW-API-KEY': config.clientSecret }
     : { 'X-Naver-Client-Id': config.clientId, 'X-Naver-Client-Secret': config.clientSecret };
   for (let attempt = 0; attempt < 3; attempt++) {
-    const res = await fetch(url, {
+    const res = await tfetch(url, {
       method: body ? 'POST' : 'GET',
       headers: {
         ...auth,
@@ -570,7 +579,7 @@ const UA_MO = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKi
 async function sections(keyword) {
   return cached('sec:' + keyword, 1 * HOUR, async () => {
     const get = async (url, ua) => {
-      const r = await fetch(url, { headers: { 'User-Agent': ua, 'Accept-Language': 'ko-KR,ko;q=0.9', Accept: 'text/html' } });
+      const r = await tfetch(url, { headers: { 'User-Agent': ua, 'Accept-Language': 'ko-KR,ko;q=0.9', Accept: 'text/html' } }, 15000);
       if (!r.ok) throw new Error('네이버 검색 응답 ' + r.status);
       return r.text();
     };
@@ -587,7 +596,7 @@ async function sections(keyword) {
 // 경쟁 파워링크: 통합검색 PC 화면의 광고 문구 (사이트 이름 · 제목 · 설명 · 홍보문구 · 서브링크)
 async function competitorAds(keyword) {
   return cached('pl:' + keyword, 1 * HOUR, async () => {
-    const r = await fetch(`https://search.naver.com/search.naver?where=nexearch&query=${encodeURIComponent(keyword)}`, { headers: { 'User-Agent': UA_PC, 'Accept-Language': 'ko-KR,ko;q=0.9', Accept: 'text/html' } });
+    const r = await tfetch(`https://search.naver.com/search.naver?where=nexearch&query=${encodeURIComponent(keyword)}`, { headers: { 'User-Agent': UA_PC, 'Accept-Language': 'ko-KR,ko;q=0.9', Accept: 'text/html' } }, 15000);
     if (!r.ok) throw new Error('네이버 검색 응답 ' + r.status);
     const html = await r.text();
     return { keyword, fetchedAt: new Date().toISOString(), ads: parsePowerlinks(html), brandSearch: /class="[^"]*brand_search/.test(html) };
@@ -614,25 +623,25 @@ async function copyVerifyStream(b, emit, signal) {
 // - deep: 키워드 뒤에 자음(ㄱ~ㅎ)을 붙여 자동완성을 한 번 더 넓게 수집
 const CONSONANTS = ['ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
 async function naverAc(q) {
-  const r = await fetch(`https://ac.search.naver.com/nx/ac?q=${encodeURIComponent(q)}&con=1&frm=nv&ans=2&r_format=json&r_enc=UTF-8&r_unicode=0&t_koreng=1&run=2&rev=4&q_enc=UTF-8&st=100`, { headers: { 'User-Agent': UA_PC, Referer: 'https://www.naver.com/' } });
+  const r = await tfetch(`https://ac.search.naver.com/nx/ac?q=${encodeURIComponent(q)}&con=1&frm=nv&ans=2&r_format=json&r_enc=UTF-8&r_unicode=0&t_koreng=1&run=2&rev=4&q_enc=UTF-8&st=100`, { headers: { 'User-Agent': UA_PC, Referer: 'https://www.naver.com/' } }, 15000);
   if (!r.ok) throw new Error('네이버 자동완성 ' + r.status);
   const j = await r.json();
   return (j.items?.[0] || []).map((x) => String(x[0] || '').trim()).filter(Boolean);
 }
 async function googleAc(q) {
-  const r = await fetch(`https://suggestqueries.google.com/complete/search?client=firefox&hl=ko&gl=kr&q=${encodeURIComponent(q)}`, { headers: { 'User-Agent': UA_PC } });
+  const r = await tfetch(`https://suggestqueries.google.com/complete/search?client=firefox&hl=ko&gl=kr&q=${encodeURIComponent(q)}`, { headers: { 'User-Agent': UA_PC } }, 15000);
   if (!r.ok) throw new Error('구글 자동완성 ' + r.status);
   const j = JSON.parse(Buffer.from(await r.arrayBuffer()).toString('utf8'));
   return (j[1] || []).map((x) => String(x).trim()).filter(Boolean);
 }
 async function naverRelated(q) {
-  const r = await fetch(`https://search.naver.com/search.naver?where=nexearch&query=${encodeURIComponent(q)}`, { headers: { 'User-Agent': UA_PC, 'Accept-Language': 'ko-KR,ko;q=0.9', Accept: 'text/html' } });
+  const r = await tfetch(`https://search.naver.com/search.naver?where=nexearch&query=${encodeURIComponent(q)}`, { headers: { 'User-Agent': UA_PC, 'Accept-Language': 'ko-KR,ko;q=0.9', Accept: 'text/html' } }, 15000);
   if (!r.ok) throw new Error('네이버 검색 응답 ' + r.status);
   const html = await r.text();
   const m = html.match(/"apiURL":"(https:\/\/s\.search\.naver\.com\/p\/qra\/[^"]+)"/);
   if (!m) return [];
   const url = m[1].replace(/\\u0026/g, '&').replace(/&amp;/g, '&');
-  const r2 = await fetch(url, { headers: { 'User-Agent': UA_PC, Referer: 'https://search.naver.com/' } });
+  const r2 = await tfetch(url, { headers: { 'User-Agent': UA_PC, Referer: 'https://search.naver.com/' } }, 15000);
   if (!r2.ok) throw new Error('네이버 관련 검색어 응답 ' + r2.status);
   const j = await r2.json();
   return (j.result?.contents || []).map((c) => ({ keyword: String(c.query || '').trim(), badge: c.badge?.text || '' })).filter((x) => x.keyword);
@@ -748,7 +757,7 @@ async function geminiCall(model, body) {
   const plan = retryPlan();
   let waited = 0, waited429 = false;
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': config.geminiKey }, body: JSON.stringify(body) });
+    const res = await tfetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': config.geminiKey }, body: JSON.stringify(body) }, 180000); // AI 생성은 오래 걸릴 수 있어 3분
     const text = await res.text();
     if ((res.status === 503 || res.status === 500) && attempt < plan.length) { await sleep(plan[attempt] * 1000); waited += plan[attempt]; continue; }
     if (res.status === 429 && pinned() && !waited429) { const d = retryDelaySec(text); if (d && d <= 60) { waited429 = true; await sleep(d * 1000); waited += d; continue; } }
@@ -863,7 +872,7 @@ async function providerModels(p) {
 
 async function geminiModels() {
   if (!hasGemini()) throw new Error('Gemini API 키를 먼저 저장하세요');
-  const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': config.geminiKey } });
+  const res = await tfetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': config.geminiKey } }, 20000);
   const text = await res.text();
   if (!res.ok) throw new Error(`Gemini 모델 목록 오류 ${res.status}: ${text.slice(0, 200)}`);
   return (JSON.parse(text).models || [])
