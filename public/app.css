@@ -653,3 +653,7 @@ html.dark #plBody tr.pl-hit>td{background:#422006!important}
 .modal .set-sec input.sw.sw:not(:checked){background:#c9c9c9}
 html.dark .modal .set-sec input.sw.sw:not(:checked){background:#4b4b4b}
 .modal .set-sec input.sw.sw:checked{background:var(--accent,#16a34a)}
+/* 파워링크 저장 공간 */
+.pl-usage{margin-top:14px;padding:10px 10px 4px;border-top:1px solid var(--border);font-size:12px;line-height:1.6}
+.pl-usage-btns{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:2px}
+.pl-usage .ext{background:none;border:0;padding:0;font:inherit;cursor:pointer}

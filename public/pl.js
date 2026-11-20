@@ -143,16 +143,41 @@
     side.innerHTML = `<button class="btn pri newbtn" id="pSideNew">+ 새 분석</button>
       ${pinned.length ? `<div class="side-h">고정됨</div>${pinned.map(group).join('')}` : ''}
       <div class="side-h">내역</div>
-      ${rest.map(group).join('') || '<div class="muted" style="padding:6px 10px;font-size:12px">분석할 때마다 여기 쌓여요</div>'}`;
+      ${rest.map(group).join('') || '<div class="muted" style="padding:6px 10px;font-size:12px">분석할 때마다 여기 쌓여요</div>'}
+      <div class="pl-usage" id="plUsage">${usageHTML()}</div>`;
+    bindUsage();
     $('#pSideNew').onclick = () => { clearTimeout(S.timer); S.cur = null; S.job = null; S.thread = []; S.prev = null; localStorage.setItem('plCur', ''); draw(); };
     $$('[data-pid]', side).forEach((el) => {
       el.onclick = () => openJob(el.dataset.pid);
       el.oncontextmenu = (e) => { e.preventDefault(); const m = S.jobs.find((x) => x.id === el.dataset.pid); if (m) showCtx(e, m); };
     });
   }
+  // 저장 공간 (캡처 · 캡처용 브라우저 캐시)
+  const MB = (b) => (b >= 1024 ** 3 ? (b / 1024 ** 3).toFixed(1) + 'GB' : Math.max(0.1, b / 1024 ** 2).toFixed(b < 10 * 1024 ** 2 ? 1 : 0) + 'MB');
+  function usageHTML() {
+    const U = S.usage;
+    if (!U) return '<span class="muted">저장 공간 계산 중…</span>';
+    const caps = Object.values(U.jobs).reduce((a, x) => a + x.caps, 0);
+    return `<div><b>저장 공간 ${MB(U.total)}</b></div><div class="muted">분석 결과 ${MB(U.jobsTotal)} (그중 캡처 ${MB(caps)}) · 캡처용 브라우저 ${MB(U.browser)}</div>
+      <div class="pl-usage-btns"><button type="button" class="ext" id="plCleanB" title="캡처용 브라우저의 캐시를 지워요. 분석 결과는 그대로예요">브라우저 캐시 비우기</button><span class="muted">· 캡처만 지우기는 내역 우클릭</span></div>`;
+  }
+  let usageAt = 0;
+  async function loadUsage(force) {
+    if (!force && Date.now() - usageAt < 60000) return;
+    usageAt = Date.now();
+    try { S.usage = await api('/api/pl/usage', {}); } catch { return; }
+    const el = $('#plUsage'); if (el) { el.innerHTML = usageHTML(); bindUsage(); }
+  }
+  function bindUsage() {
+    loadUsage();
+    const b = $('#plCleanB');
+    if (b) b.onclick = async () => {
+      try { const r = await api('/api/pl/clean-browser', {}); toast(`브라우저 캐시 ${MB(r.freed)}를 비웠어요`, 'ok'); loadUsage(true); } catch (e) { toast(e.message, 'warn'); }
+    };
+  }
   function showCtx(e, m) {
     const box = $('#pCtx'), sub = !!m.parentId;
-    box.innerHTML = `${sub ? '' : `<button data-a="pin">${m.pinned ? '고정 해제' : '상단에 고정'}</button>`}<button data-a="rerun">같은 키워드로 재분석</button><button data-a="rename">이름 변경</button><button data-a="del" class="danger">삭제</button>`;
+    box.innerHTML = `${sub ? '' : `<button data-a="pin">${m.pinned ? '고정 해제' : '상단에 고정'}</button>`}<button data-a="rerun">같은 키워드로 재분석</button><button data-a="rename">이름 변경</button>${m.purged ? '' : `<button data-a="purge">캡처만 지우기${S.usage?.jobs?.[m.id] ? ` (${MB(S.usage.jobs[m.id].caps)})` : ''}</button>`}<button data-a="del" class="danger">삭제</button>`;
     box.classList.remove('hidden');
     box.style.left = Math.min(e.clientX, innerWidth - 190) + 'px';
     box.style.top = Math.min(e.clientY, innerHeight - 160) + 'px';
@@ -163,6 +188,13 @@
         if (a === 'pin') { await api('/api/pl/pin', { id: m.id, pinned: !m.pinned }); await loadJobs(); }
         if (a === 'rerun') await rerun(m.id);
         if (a === 'rename') rename(m);
+        if (a === 'purge') {
+          if (!await uiConfirm(`'${sub ? subName(m) : m.name}'의 캡처 그림만 지울까요?\n순위 · 입찰가 · 예상 실적 결과는 그대로 남아요. 지운 캡처는 되돌릴 수 없어요.`)) return;
+          const r = await api('/api/pl/purge', { id: m.id });
+          toast(`캡처 ${MB(r.freed)}를 지웠어요`, 'ok');
+          if (S.job?.id === m.id) S.job.purged = Date.now();
+          await loadJobs(); loadUsage(true); if (S.job?.id === m.id) draw();
+        }
         if (a === 'del') {
           const kidsN = sub ? 0 : S.jobs.filter((x) => x.parentId === m.id).length;
           if (!await uiConfirm(`'${sub ? subName(m) : m.name}' 분석을 삭제할까요? 순위 결과와 캡처가 같이 지워져요.${kidsN ? `\n이 분석의 재분석 ${kidsN}개도 함께 지워져요.` : ''}`)) return;
@@ -389,7 +421,7 @@
         const chg = !x || !x.n || pv == null ? '' : !x.seen && pv ? '<span class="pl-chg dn">빠짐</span>' : x.seen && !pv ? '<span class="pl-chg up">새로 노출</span>' : x.seen && pv ? (Math.abs(pv - x.avg) < 0.05 ? '<span class="pl-chg">변화 없음</span>' : `<span class="pl-chg ${x.avg < pv ? 'up' : 'dn'}">${x.avg < pv ? '▲' : '▼'}${Math.round(Math.abs(pv - x.avg) * 10) / 10}</span>`) : '';
         const rank = !x ? `<span class="muted">${run ? '대기' : '-'}</span>` : x.seen ? `<b class="pl-rk ${x.avg <= 3 ? 'pl-top' : ''}">${x.avg}위</b><div class="muted" style="font-size:11px">${x.min === x.max ? '' : `${x.min}~${x.max}위 · `}${x.seen}/${x.n}회 노출${x.mainCount != null && x.avg > x.mainCount ? ' · 통합검색 밖' : ''}</div>${x.match && x.match.score < 3 ? `<div class="pl-warn" title="${e2(x.match.display)}">${x.match.score === 1 ? '도메인만 일치' : '경로 다름'}</div>` : ''}`
           : `<span class="pl-miss">미노출</span><div class="muted" style="font-size:11px">${x.n}회 모두 · 광고 ${x.total || 0}개 중</div>`;
-        const cap = x?.cap ? `<img class="pl-th" loading="lazy" src="/api/pl/img?id=${e2(j.id)}&f=${e2(x.cap.focus || x.cap.thumb)}" data-full="/api/pl/img?id=${e2(j.id)}&f=${e2(x.cap.file)}" data-t="${e2(r.kw)} · ${DEVN[dev]} · 캡처 당시 ${x.cap.rank ? x.cap.rank + '위' : '미노출'}${x.cap.where === 'more' ? ' (광고 더보기)' : ''}" alt=""><div class="muted" style="font-size:11px">캡처 당시 ${x.cap.rank ? x.cap.rank + '위' : '미노출'}${x.cap.where === 'more' ? ' · 더보기' : ''}</div>` : x?.capErr ? `<span class="muted" title="${e2(x.capErr)}">캡처 실패</span>` : '';
+        const cap = x?.cap && j.purged ? '<span class="muted" style="font-size:12px">캡처 지움</span>' : x?.cap ? `<img class="pl-th" loading="lazy" src="/api/pl/img?id=${e2(j.id)}&f=${e2(x.cap.focus || x.cap.thumb)}" data-full="/api/pl/img?id=${e2(j.id)}&f=${e2(x.cap.file)}" data-t="${e2(r.kw)} · ${DEVN[dev]} · 캡처 당시 ${x.cap.rank ? x.cap.rank + '위' : '미노출'}${x.cap.where === 'more' ? ' (광고 더보기)' : ''}" alt=""><div class="muted" style="font-size:11px">캡처 당시 ${x.cap.rank ? x.cap.rank + '위' : '미노출'}${x.cap.where === 'more' ? ' · 더보기' : ''}</div>` : x?.capErr ? `<span class="muted" title="${e2(x.capErr)}">캡처 실패</span>` : '';
         const diff = r.bid != null && nb != null ? nb - r.bid : null;
         return `<tr data-kw="${e2(r.kw)}"><td class="muted">${r.i}</td><td class="l"><b>${e2(r.kw)}</b></td><td>${rank}${chg ? `<div title="앞 분석(${e2(S.prev?.name || '')}) ${pv ? pv + '위' : '미노출'} 대비">${chg}</div>` : ''}</td><td class="pl-cap">${cap}</td>
           <td>${r.bid == null ? '<span class="muted">-</span>' : n0(r.bid) + '원'}${(() => { const ob = S.prev?.ranks?.[r.key]?.bid; return ob != null && r.bid != null && ob !== r.bid ? `<div class="pl-chg ${r.bid > ob ? 'dn' : 'up'}" title="앞 분석의 입찰가" style="font-weight:500;display:block">전 ${n0(ob)}원</div>` : ''; })()}</td>

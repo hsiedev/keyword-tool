@@ -84,7 +84,7 @@ class Headless {
     const portFile = path.join(this.dir, 'DevToolsActivePort');
     try { fs.unlinkSync(portFile); } catch {}
     this.proc = spawn(exe, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${this.dir}`, '--no-first-run', '--no-default-browser-check', '--disable-extensions',
-      '--disable-background-networking', '--disable-sync', '--hide-scrollbars', '--mute-audio', '--lang=ko-KR', '--window-size=1280,2400', 'about:blank'], { stdio: 'ignore', windowsHide: true });
+      '--disable-background-networking', '--disable-sync', '--disable-component-update', '--disk-cache-size=1048576', '--media-cache-size=1048576', '--hide-scrollbars', '--mute-audio', '--lang=ko-KR', '--window-size=1280,2400', 'about:blank'], { stdio: 'ignore', windowsHide: true });
     this.proc.on('exit', () => { this.proc = null; this.ws = null; });
     let port = 0;
     for (let i = 0; i < 100 && !port; i++) { await sleep(150); try { port = Number(fs.readFileSync(portFile, 'utf8').split(/\r?\n/)[0]) || 0; } catch {} }
@@ -250,6 +250,19 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
     if (jobs.has(id)) return jobs.get(id);
     try { const j = JSON.parse(fs.readFileSync(path.join(jobDir(id), 'job.json'), 'utf8')); jobs.set(id, j); if (j.status === 'running' && RUN?.id !== id) { j.status = 'stopped'; save(j, true); } return j; } catch { return null; }
   }
+  // 저장 공간: 폴더 크기 (바이트)
+  function dirSize(dir) {
+    let n = 0;
+    try { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const p = path.join(dir, e.name); try { n += e.isDirectory() ? dirSize(p) : fs.statSync(p).size; } catch {} } } catch {}
+    return n;
+  }
+  const BROWSER_DIR = () => path.join(ROOT, '.browser');
+  // 캡처용 브라우저의 캐시 · 내려받은 부품만 지움 (설정은 매번 새로 만들어져서 통째로 지워도 됨)
+  function cleanBrowser(all = false) {
+    const b = BROWSER_DIR();
+    const parts = all ? [''] : ['Default/Cache', 'Default/Code Cache', 'Default/GPUCache', 'Default/Service Worker', 'component_crx_cache', 'ProvenanceData', 'GrShaderCache', 'ShaderCache', 'GraphiteDawnCache', 'Default/DawnGraphiteCache', 'Default/DawnWebGPUCache'];
+    for (const p of parts) { try { fs.rmSync(path.join(b, p), { recursive: true, force: true, maxRetries: 3, retryDelay: 300 }); } catch {} }
+  }
   let saveT = new Map();
   const flushAll = () => { for (const id of [...saveT.keys()]) { const j = jobs.get(id); if (j) save(j, true); } };
   process.once('exit', flushAll);
@@ -267,7 +280,7 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
     clearTimeout(saveT.get(j.id));
     if (now) w(); else saveT.set(j.id, setTimeout(w, 1500));
   }
-  const meta = (j) => ({ id: j.id, name: j.name, custom: !!j.custom, pinned: !!j.pinned, parentId: j.parentId || null, thread: j.thread || 0, createdAt: j.createdAt, updatedAt: j.updatedAt, status: j.status, total: j.rows.filter((r) => r.on !== false).length, done: j.rows.filter((r) => r.on !== false && r.done).length, devices: j.devices });
+  const meta = (j) => ({ id: j.id, name: j.name, custom: !!j.custom, pinned: !!j.pinned, parentId: j.parentId || null, thread: j.thread || 0, createdAt: j.createdAt, updatedAt: j.updatedAt, status: j.status, purged: !!j.purged, total: j.rows.filter((r) => r.on !== false).length, done: j.rows.filter((r) => r.on !== false && r.done).length, devices: j.devices });
   function list() {
     const out = [];
     for (const d of fs.readdirSync(ROOT)) { if (!okId(d)) continue; const j = load(d); if (j) out.push(meta(j)); }
@@ -461,6 +474,7 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
         RUN.browser?.close();
         RUN = null;
         save(j, true);
+        setTimeout(() => { if (!RUN) cleanBrowser(); }, 3000); // 캐시가 쌓이지 않게
       }
     })();
   }
@@ -584,6 +598,26 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
       }
       if (p === '/api/pl/pin') { const j = load(b.id); if (!j) return send(res, 404, { error: '없는 작업이에요' }); j.pinned = !!b.pinned; save(j, true); return send(res, 200, { ok: true }); }
       if (p === '/api/pl/rename') { const j = load(b.id); if (!j) return send(res, 404, { error: '없는 작업이에요' }); const v = String(b.name || '').trim().slice(0, 60); if (v) { j.name = v; j.custom = true; } save(j, true); return send(res, 200, { ok: true }); }
+      if (p === '/api/pl/usage') {
+        const per = {};
+        let jobsTotal = 0;
+        for (const m of list()) { const d = jobDir(m.id); let caps = 0; try { for (const f of fs.readdirSync(d)) if (/\.jpg$/i.test(f)) caps += fs.statSync(path.join(d, f)).size; } catch {} const all = dirSize(d); per[m.id] = { all, caps }; jobsTotal += all; }
+        const browser = dirSize(BROWSER_DIR());
+        return send(res, 200, { jobs: per, jobsTotal, browser, total: jobsTotal + browser });
+      }
+      if (p === '/api/pl/purge') { // 캡처 그림만 지우기 (순위 · 입찰가 결과는 그대로)
+        const j = load(b.id); if (!j) return send(res, 404, { error: '없는 작업이에요' });
+        if (RUN?.id === j.id) return send(res, 400, { error: '진행 중인 분석이에요. 끝나거나 중지한 뒤에 지울 수 있어요' });
+        let freed = 0;
+        try { for (const f of fs.readdirSync(jobDir(j.id))) if (/\.jpg$/i.test(f)) { const fp = path.join(jobDir(j.id), f); freed += fs.statSync(fp).size; fs.rmSync(fp, { force: true }); } } catch {}
+        j.purged = Date.now(); save(j, true);
+        return send(res, 200, { ok: true, freed });
+      }
+      if (p === '/api/pl/clean-browser') {
+        if (RUN) return send(res, 400, { error: '분석이 진행 중이에요. 끝난 뒤에 비울 수 있어요' });
+        const before = dirSize(BROWSER_DIR()); cleanBrowser(true);
+        return send(res, 200, { ok: true, freed: before - dirSize(BROWSER_DIR()) });
+      }
       if (p === '/api/pl/delete') {
         const j = load(b.id); if (!j) return send(res, 404, { error: '없는 작업이에요' });
         const ids = j.parentId ? [j.id] : threadOf(j).map((m) => m.id); // 첫 분석을 지우면 그 재분석도 같이
