@@ -36,7 +36,7 @@ export function createGitSync(root) {
     const walk = (dir) => { for (const f of fs.readdirSync(path.join(root, dir))) { const rel = path.join(dir, f); const st = fs.statSync(path.join(root, rel)); if (st.isDirectory()) walk(rel); else if (!/\.tmp$/i.test(f)) add(rel); } };
     try { walk('public'); } catch {}
     try { walk('tests'); } catch {}
-    add(path.join('data', 'settings.json'));
+    // data/settings.json(금지 키워드 · AI 지시문 등)은 공개 저장소라 올리지 않음
     if (includeData) {
       add(path.join('data', 'existing-keywords.json'));
       try { walk(path.join('data', 'bulk-history')); } catch {}

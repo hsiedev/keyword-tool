@@ -336,7 +336,7 @@
       save(XlsxLite.writeXlsx(sheets), 'xlsx');
     };
     $('#dTxt').onclick = () => save(new Blob(['\ufeff' + keptList(parts().kept).join('\r\n')], { type: 'text/plain;charset=utf-8' }), 'txt');
-    $('#dCsv').onclick = () => save(new Blob(['\ufeff키워드\r\n' + keptList(parts().kept).map((k) => `"${k.replace(/"/g, '""')}"`).join('\r\n')], { type: 'text/csv;charset=utf-8' }), 'csv');
+    $('#dCsv').onclick = () => save(new Blob(['\ufeff키워드\r\n' + keptList(parts().kept).map((k) => `"${k.replace(/^([=+\-@\t\r])(?![\d.,]+$)/, "'$1").replace(/"/g, '""')}"`).join('\r\n')], { type: 'text/csv;charset=utf-8' }), 'csv');
     $('#dCopy').onclick = async () => {
       const t = keptList(parts().kept).join('\n');
       try { await navigator.clipboard.writeText(t); $('#dCopy').textContent = '복사됨'; }

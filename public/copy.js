@@ -695,7 +695,7 @@
         sc ? `적합 ${sc.ok}/${sc.n} · ${sc.last.reason}` : '', it.why || ''];
     });
     if (kind === 'csv') {
-      const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const q = (v) => `"${String(v ?? '').replace(/^([=+\-@\t\r])(?![\d.,]+$)/, "'$1").replace(/"/g, '""')}"`;
       return dl(new Blob(['\ufeff' + [head, ...rows].map((r) => r.map(q).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' }), fileName('csv'));
     }
     const blob = window.XlsxLite.writeXlsx([{ name: '카피', rows: [head, ...rows], widths: [10, 22, 12, 7, ...fieldKeys.map(() => 30), 26, 40, 40, 30] }]);

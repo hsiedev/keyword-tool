@@ -90,9 +90,9 @@
         row('띄어쓰기', chk(`${G}.noSpace`, '모든 키워드를 띄어쓰기 없이 붙이기 (AI 지시 + PC에서 한 번 더)')) +
         row('창의성 (temperature)', num(`${G}.temperature`, { min: 0, max: 2, step: 0.1 }), 'Gemini에만 적용, 높을수록 다양함'))}
 
-      ${sec('banned', '금지 키워드', '네이버 · 구글 광고에서 검수 거절되거나 쓰면 안 되는 단어를 적어 두세요. AI 키워드 생성기에서 켜 둔 목록은 <b>제외할 것(Negative)</b>에 자동으로 더해져요: AI에게 쓰지 말라고 알려주고, 이 단어가 들어간 키워드는 결과에서 PC가 바로 빼요. 생성기 화면에서 탭마다 네이버 · 구글을 켜고 끌 수 있어요.',
-        row('네이버 금지 키워드', '<span class="muted" style="font-size:12px">쉼표나 줄바꿈으로 구분</span>') + area('rules.banned.naver', 5, '예: 도박, 카지노, 불법대출') +
-        row('구글 금지 키워드', '<span class="muted" style="font-size:12px">쉼표나 줄바꿈으로 구분</span>') + area('rules.banned.google', 5, '예: 도박, 카지노') +
+      ${sec('banned', '금지 키워드', '네이버 · 구글 광고에서 검수 거절되거나 쓰면 안 되는 단어를 적어 두세요. AI 키워드 생성기에서 켜 둔 목록은 <b>제외할 것(Negative)</b>에 자동으로 더해져요: AI에게 쓰지 말라고 알려주고, 이 단어가 <b>들어간</b> 키워드는 결과에서 PC가 바로 빼요. 짧은 단어처럼 정확히 같은 키워드만 빼고 싶으면 <b>"카드"</b>처럼 따옴표로 감싸세요. 엑셀에서 키워드 표를 복사해 붙여넣으면 키워드 열만 들어가요. 생성기 화면에서 탭마다 네이버 · 구글을 켜고 끌 수 있어요.',
+        row('네이버 금지 키워드', '<span class="muted" style="font-size:12px">쉼표나 줄바꿈으로 구분</span>') + area('rules.banned.naver', 5, '예: 도박, 카지노, "카드" (따옴표로 감싸면 정확히 같은 키워드만 제외)').replace('<textarea ', '<textarea data-kwpaste ') +
+        row('구글 금지 키워드', '<span class="muted" style="font-size:12px">쉼표나 줄바꿈으로 구분</span>') + area('rules.banned.google', 5, '예: 도박, 카지노').replace('<textarea ', '<textarea data-kwpaste ') +
         row('새 탭 기본값', chk('rules.banned.naverOn', '네이버 켜기') + ' ' + chk('rules.banned.googleOn', '구글 켜기'), 'AI 생성기에서 새 탭을 만들 때'))}
 
       <h3 class="set-h">③ 조건 재검증 <span class="muted" style="font-size:12px;font-weight:500">AI 생성기 · 대량 분석 공통</span></h3>

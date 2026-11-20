@@ -562,8 +562,10 @@
     const on = (v, d) => (v ?? d !== false);
     return [...new Set([...(on(f?.banN, B.naverOn) ? splitList(B.naver || '') : []), ...(on(f?.banG, B.googleOn) ? splitList(B.google || '') : [])].map((x) => x.trim()).filter(Boolean))];
   }
+  const isQuoted = (w) => /^["“”'‘’].+["“”'‘’]$/.test(w);
+  const unQ = (w) => (isQuoted(w) ? w.slice(1, -1).trim() : w);
   // AI에 보내는 Negative = 직접 쓴 것 + 금지 키워드 (AI 지시가 너무 길어지지 않게 금지 키워드는 300개까지)
-  const negAll = (f) => [...splitList(f.neg), ...bannedList(f).slice(0, 300)];
+  const negAll = (f) => [...splitList(f.neg), ...bannedList(f).map(unQ).slice(0, 300)];
   function banCount() {
     const B = window.SETTINGS?.rules?.banned || {};
     const c = (t) => splitList(t || '').length;
@@ -830,8 +832,9 @@
       // 기존 키워드(②)와 띄어쓰기·대소문자·기호만 다른 동일 키워드는 결과에 넣지 않음
       const notSame = notRej.filter((x) => !IDX.exact.has(norm(x.keyword)));
       const sameN = notRej.length - notSame.length;
-      const negW = [...splitList(form.neg).map(norm).filter((w) => w && w.length <= 15 && !/\s/.test(w)), ...bannedList(form).map(norm).filter(Boolean)];
-      const notNeg = notSame.filter((x) => !negW.some((w) => norm(x.keyword).includes(w)));
+      const negW = [...splitList(form.neg).map(norm).filter((w) => w && w.length <= 15 && !/\s/.test(w)), ...bannedList(form).filter((w) => !isQuoted(w)).map(norm).filter(Boolean)];
+      const banExact = new Set(bannedList(form).filter(isQuoted).map((w) => norm(unQ(w))).filter(Boolean)); // "따옴표" = 정확히 같을 때만
+      const notNeg = notSame.filter((x) => !banExact.has(norm(x.keyword)) && !negW.some((w) => norm(x.keyword).includes(w)));
       const negN = notSame.length - notNeg.length;
       const got = notNeg.filter((x) => !exN.has(norm(x.keyword)));
       // 실제 검색 데이터에 있던 키워드는 출처를 표시하고 검색량을 바로 붙임

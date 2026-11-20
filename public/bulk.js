@@ -649,7 +649,7 @@
       const num = data.map((row) => row.map((x) => (typeof x === 'string' && x !== '' && /^-?\d+(\.\d+)?$/.test(x) ? Number(x) : x)));
       blob = XlsxLite.writeXlsx([{ name: '대량 분석', rows: [head, ...num], widths: [26, ...(hasChecks ? [12, 10, 24] : []), 12, 10, 10, 10, 10, 9, 9, 8, 9, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 12, 10, 16] }]);
     } else {
-      blob = new Blob(['\ufeff' + [head, ...data].map((l) => l.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      blob = new Blob(['\ufeff' + [head, ...data].map((l) => l.map((x) => `"${String(x).replace(/^([=+\-@\t\r])(?![\d.,]+$)/, "'$1").replace(/"/g, '""')}"`).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
     }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);

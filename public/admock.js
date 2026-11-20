@@ -1,3 +1,5 @@
+// 그림 주소 안전하게: data:image · http(s) · 같은 사이트 경로만 허용
+function safeUrl(u) { u = String(u || '').trim(); if (!/^(data:image\/|https?:\/\/|\/(?!\/)|blob:)/i.test(u)) return ''; return u.replace(/["'<>\\()\s]/g, (c) => encodeURIComponent(c)); }
 // 광고 목업: 네이버 광고주센터처럼 캠페인 › 광고그룹 › 소재 · 확장 소재를 만들고, 네이버 검색 결과 모양으로 미리보기
 // - 파워링크: 단일형/반응형 소재, 확장 소재(추가제목·추가설명·홍보문구·서브링크·이미지형 서브링크·파워링크 이미지)
 // - 브랜드검색: PC 라이트형 · PC 프리미엄형(이미지) · 모바일 라이트형(베이직/리스팅) · 모바일 프리미엄형(스토리)
@@ -332,7 +334,7 @@
 
   const e2 = (s) => esc(s ?? '');
   const ph = (text, fallback) => (String(text ?? '').trim() ? e2(text) : `<span class="ph">${e2(fallback)}</span>`);
-  const bg = (im) => (im?.src ? ` style="background-image:url('${im.src}')"` : '');
+  const bg = (im) => (im?.src ? ` style="background-image:url('${safeUrl(im.src)}')"` : '');
   const thumb = (im, cls, label) => `<div class="th ${cls || ''}"${bg(im)}>${im?.src ? '' : e2(label || '')}</div>`;
   function hl(text, kw) {
     let s = e2(text);
@@ -347,12 +349,12 @@
   function plItem(a, kw, dev) {
     const right = dev === 'pc' && (a.isubs || a.image !== undefined && a.image !== null);
     const isubs = a.isubs ? `<div class="isubs">${a.isubs.map((x) => `<div class="isub">${thumb(x.img ? { src: x.img } : null, '', '이미지')}<div class="n">${ph(x.name, '이름')}</div></div>`).join('')}</div>` : '';
-    const img = !a.isubs && a.image !== undefined && a.image !== null ? `<div class="th plimg"${a.image ? ` style="background-image:url('${a.image}')"` : ''}>${a.image ? '' : '이미지'}</div>` : '';
+    const img = !a.isubs && a.image !== undefined && a.image !== null ? `<div class="th plimg"${a.image ? ` style="background-image:url('${safeUrl(a.image)}')"` : ''}>${a.image ? '' : '이미지'}</div>` : '';
     const promo = a.promo ? `<div class="promo ${a.promo.prefix ? 'red' : ''}"><span class="ic"></span>${a.promo.prefix ? `<span class="pf">${e2(a.promo.prefix)}</span>` : ''}<span>${ph(a.promo.text, '홍보문구')}</span><span class="chev">›</span></div>` : '';
     const subs = a.sublinks?.length && !a.isubs ? `<div class="subs">${a.sublinks.map((s) => `<span>${ph(s, '서브링크')}</span>`).join('')}</div>` : '';
     return `<div class="pl-li ${a.mine && M.mark ? 'me' : ''} ${img && dev === 'mo' ? 'hasimg' : ''}">${a.mine && M.mark ? '<span class="me-tag">내 광고</span>' : ''}
       <div class="pl-main ${a.isubs && dev === 'pc' ? 'narrow' : ''}">
-        <div class="pl-u"><span class="fav" style="background:${a.fav ? '#fff' : favColor(a.site)}">${a.fav ? `<img src="${a.fav}" alt="">` : e2([...String(a.site || '?')][0])}</span><div><div><span class="site">${ph(a.site, '사이트 이름')}</span><span class="adm">광고</span></div><div class="url">${ph(a.url, 'example.com')}</div></div></div>
+        <div class="pl-u"><span class="fav" style="background:${a.fav ? '#fff' : favColor(a.site)}">${a.fav ? `<img src="${safeUrl(a.fav)}" alt="">` : e2([...String(a.site || '?')][0])}</span><div><div><span class="site">${ph(a.site, '사이트 이름')}</span><span class="adm">광고</span></div><div class="url">${ph(a.url, 'example.com')}</div></div></div>
         <div class="tit">${(a.titles?.length ? a.titles : ['']).map((t) => (String(t).trim() ? hl(t, kw) : '<span class="ph">제목</span>')).join(' · ')}</div>
         <div class="dsc">${String(a.desc || '').trim() ? hl(a.desc, kw) : '<span class="ph">설명 문구</span>'}</div>
         ${promo}${subs}
@@ -363,7 +365,7 @@
 
   // 브랜드검색
   function bsHome(v, dev) {
-    return `<div class="bs-home">${v.logo?.src ? `<img src="${v.logo.src}" alt="">` : `<span class="bn">${ph(v.brandName, '브랜드명')}</span>`}<span class="sl">${e2(String(v.slogan || '').trim() || '홈페이지')}</span></div>
+    return `<div class="bs-home">${v.logo?.src ? `<img src="${safeUrl(v.logo.src)}" alt="">` : `<span class="bn">${ph(v.brandName, '브랜드명')}</span>`}<span class="sl">${e2(String(v.slogan || '').trim() || '홈페이지')}</span></div>
       ${v.newsPrefix && v.newsPrefix !== '사용 안 함' ? `<div class="bs-news"><span class="pf">${e2(v.newsPrefix)}</span><span>${ph(v.newsText, '브랜드소식')}</span></div>` : ''}`;
   }
   const legal = (v) => (String(v.legal || '').trim() ? `<div class="bs-legal">ⓘ ${e2(v.legal)}</div>` : '');
@@ -684,7 +686,7 @@
     live();
   }
   function imgPick(im, key, spec) {
-    return `<div class="mk-img"><label class="mk-img-btn">${im?.src ? `<img src="${im.src}" alt="">` : '<span>이미지 선택</span>'}<input type="file" accept="image/*" data-img="${e2(key)}" hidden></label>
+    return `<div class="mk-img"><label class="mk-img-btn">${im?.src ? `<img src="${safeUrl(im.src)}" alt="">` : '<span>이미지 선택</span>'}<input type="file" accept="image/*" data-img="${e2(key)}" hidden></label>
       <div class="mk-img-i">${im ? `${im.w}×${im.h}px` : ''}${spec ? `<div class="muted">${e2(spec)}</div>` : ''}${im ? `<button class="btn sm" data-imgdel="${e2(key)}">지우기</button>` : ''}</div></div>`;
   }
   function bindImg(box, set) {

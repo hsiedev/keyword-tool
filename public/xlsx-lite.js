@@ -238,7 +238,7 @@
     return { list, col: hi >= 0 ? String(rows[hi][ci]) : ci + 1 + '번째 열', cols: Math.max(...rows.map((r) => r.length)) };
   }
   // 키워드 입력 칸들: 여러 열짜리 표를 붙여넣으면 키워드 열만 골라서 한 줄에 하나씩 넣음 (한 열이면 원래대로)
-  const KW_BOXES = new Set(['aiPaste', 'aiExamples', 'bPaste', 'dp_new', 'dp_old', 'cpKw']);
+  const KW_BOXES = new Set(['aiPaste', 'aiExamples', 'aiNeg', 'bPaste', 'dp_new', 'dp_old', 'cpKw']);
   document.addEventListener('paste', (e) => {
     const ta = e.target;
     if (!ta || ta.tagName !== 'TEXTAREA' || !(KW_BOXES.has(ta.id) || ta.dataset.kwpaste != null)) return;

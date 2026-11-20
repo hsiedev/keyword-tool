@@ -299,7 +299,7 @@
       if (a === 'copy-ac') { try { await navigator.clipboard.writeText(acList.join('\n')); toast('복사했어요', 'ok'); } catch { toast('복사하지 못했어요', 'err'); } }
       if (a === 'nv-kp') attachNaver(kpList.map((r) => r.keyword));
       if (a === 'txt-kp') dl(kpList.map((r) => r.keyword).join('\n'), fname('키워드플래너', 'txt'));
-      if (a === 'csv-kp') { const q = (x) => `"${String(x ?? '').replace(/"/g, '""')}"`; dl([['키워드', '월평균 검색량', '경쟁', '입찰가 낮음', '입찰가 높음', '통화', '네이버 검색량'], ...kpList.map((r) => [r.keyword, vol(r.avg) || '', r.comp, r.bidLow ?? '', r.bidHigh ?? '', r.currency, S.nv[r.keyword]?.total ?? ''])].map((r) => r.map(q).join(',')).join('\r\n'), fname('키워드플래너', 'csv'), 'text/csv'); }
+      if (a === 'csv-kp') { const q = (x) => `"${String(x ?? '').replace(/^([=+\-@\t\r])(?![\d.,]+$)/, "'$1").replace(/"/g, '""')}"`; dl([['키워드', '월평균 검색량', '경쟁', '입찰가 낮음', '입찰가 높음', '통화', '네이버 검색량'], ...kpList.map((r) => [r.keyword, vol(r.avg) || '', r.comp, r.bidLow ?? '', r.bidHigh ?? '', r.currency, S.nv[r.keyword]?.total ?? ''])].map((r) => r.map(q).join(',')).join('\r\n'), fname('키워드플래너', 'csv'), 'text/csv'); }
       if (a === 'kp-clear') { if (!await uiConfirm('가져온 키워드 플래너 데이터를 모두 지울까요? (원래 CSV 파일은 그대로예요)')) return; await postJ('/api/google/planner', { clear: true }); S.d.kp = await getJ(`/api/google/planner?keyword=${enc(S.kw)}`); drawAll(); }
       if (a === 'tr-retry') { S.d.tr = null; drawAll(); S.d.tr = await getJ(`/api/google/trends?keyword=${enc(S.kw)}&force=1`).catch((e) => ({ error: e.message, errors: [e.message] })); drawAll(); }
       if (a === 'yt-save' || a === 'yt-key') {

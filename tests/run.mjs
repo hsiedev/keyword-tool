@@ -44,8 +44,8 @@ await test('GitHub 백업: 키·토큰·캐시·개인 데이터 제외, 코드�
   ['config.json', 'cache.json', 'data/github.json', 'data/github-state.json', 'data/next-commit.txt', 'data/existing-keywords.json', 'data/bulk-history/a.json', 'backup/old/index.html', 'x.tmp',
     'server.mjs', 'README.md', 'start.bat', '.gitignore', 'public/index.html', 'public/logo.png', 'data/settings.json', 'tests/run.mjs'].forEach((f) => w(f));
   const files = createGitSync(P).listFiles(false);
-  for (const bad of ['config.json', 'cache.json', 'data/github.json', 'data/github-state.json', 'data/next-commit.txt', 'data/existing-keywords.json', 'data/bulk-history/a.json', 'backup/old/index.html', 'x.tmp']) ok(!files.includes(bad), bad + ' 이(가) 올라가면 안 돼요');
-  for (const good of ['server.mjs', 'README.md', 'start.bat', '.gitignore', 'public/index.html', 'public/logo.png', 'data/settings.json', 'tests/run.mjs']) ok(files.includes(good), good + ' 이(가) 빠졌어요');
+  for (const bad of ['config.json', 'cache.json', 'data/github.json', 'data/github-state.json', 'data/next-commit.txt', 'data/existing-keywords.json', 'data/bulk-history/a.json', 'backup/old/index.html', 'x.tmp', 'data/settings.json']) ok(!files.includes(bad), bad + ' 이(가) 올라가면 안 돼요');
+  for (const good of ['server.mjs', 'README.md', 'start.bat', '.gitignore', 'public/index.html', 'public/logo.png', 'tests/run.mjs']) ok(files.includes(good), good + ' 이(가) 빠졌어요');
   const withData = createGitSync(P).listFiles(true);
   ok(withData.includes('data/existing-keywords.json') && withData.includes('data/bulk-history/a.json'), '옵션을 켜면 개인 데이터도 포함');
   ok(!withData.includes('data/github.json'), '옵션을 켜도 토큰은 제외');
