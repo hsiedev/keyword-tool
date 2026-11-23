@@ -35,7 +35,7 @@
     const t = getTheme();
     document.documentElement.classList.toggle('dark', t === 'dark' || (t === 'system' && media.matches));
     const b = document.getElementById('themeBtn');
-    if (b) { const dark = document.documentElement.classList.contains('dark'); b.textContent = dark ? '라이트 모드로' : '다크 모드로'; }
+    if (b) { const dark = document.documentElement.classList.contains('dark'); b.innerHTML = dark ? I.sun : I.moon; b.title = dark ? '라이트 모드로' : '다크 모드로'; b.setAttribute('aria-label', b.title); }
     document.querySelectorAll('[data-theme-opt]').forEach((x) => x.classList.toggle('on', x.dataset.themeOpt === t));
     // 그래프는 색을 그릴 때 정하므로 다시 그림
     window.dispatchEvent(new Event('themechange'));
@@ -109,7 +109,7 @@
   };
   acts.prepend(rb);
   const sb = document.getElementById('setBtn');
-  if (sb) { sb.className = 'btn sm'; sb.textContent = '설정'; }
+  if (sb) { sb.className = 'icon-btn'; sb.innerHTML = I.set; sb.title = '설정'; }
   const headerMenu = (id, label) => {
     const root = document.createElement('details'); root.className = 'header-menu'; root.id = id;
     const trigger = document.createElement('summary'); trigger.className = 'btn sm'; trigger.textContent = label;
@@ -117,15 +117,9 @@
     root.append(trigger, panel); acts.append(root);
     return { root, trigger, panel };
   };
-  const more = headerMenu('topMore', '더보기');
-  const work = headerMenu('activeWork', '작업'); work.root.hidden = true; acts.insertBefore(work.root, more.root);
-  rb.className = tb.className = 'btn sm'; rb.textContent = '현재 화면 초기화'; rb.setAttribute('aria-label', '현재 화면 초기화');
-  [sb, tb, rb].filter(Boolean).forEach(b => { more.panel.append(b); b.addEventListener('click', () => { const at = document.activeElement; more.root.open = false; if (at === b || at === document.body) more.trigger.focus({ preventScroll: true }); }); });
-  for (const menu of [more, work]) {
-    menu.root.addEventListener('toggle', () => { if (menu.root.open) (menu === more ? work : more).root.open = false; });
-    menu.root.addEventListener('keydown', e => { if (e.key === 'Escape' && menu.root.open) { e.preventDefault(); menu.root.open = false; menu.trigger.focus(); } });
-  }
-  document.addEventListener('click', e => { for (const menu of [more, work]) if (!menu.root.contains(e.target)) menu.root.open = false; });
+  const work = headerMenu('activeWork', '작업'); work.root.hidden = true; acts.prepend(work.root);
+  work.root.addEventListener('keydown', e => { if (e.key === 'Escape' && work.root.open) { e.preventDefault(); work.root.open = false; work.trigger.focus(); } });
+  document.addEventListener('click', e => { if (!work.root.contains(e.target)) work.root.open = false; });
 
   document.getElementById('sideBtn').onclick = () => {
     if (matchMedia('(max-width: 900px)').matches) { document.body.classList.toggle('side-open'); return; }

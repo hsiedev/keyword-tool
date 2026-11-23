@@ -172,7 +172,7 @@ AI 제공자는 서버의 `PROVIDERS`에 정의돼 있어요.
 - **저장**: `/api/copy-projects`, `/api/ad-mock` (GET ?id= / GET 목록 / POST {doc} / POST {doc, metaOnly} / POST {delete}). 데이터는 GitHub 백업 대상이 아니에요.
 - **미리보기 CSS(MOCK_CSS)는 .nvm 안에서만**: PNG 저장은 SVG foreignObject로 그려서, 바깥 이미지(경쟁사 파비콘 등)를 쓰면 안 돼요 (data URL만).
 - 브라우저 `prompt()`도 쓰지 말고 `await uiPrompt(msg, { value, placeholder })`.
-- **상단 작업 헤더 (2026-11-23)**: `layout.js`의 `#topTitle`은 현재 화면을, `#activeWork`는 다른 화면의 작업을, `#topMore`는 공통 조작을 표시해요. 기능 이동은 왼쪽 메뉴에서만 해요. 검색창 `#searchForm`은 `#empty` 또는 `#kwSearch`에 두고, `#histBtn`은 기존 참조용으로 남겨요.
+- **상단 작업 헤더 (2026-11-23)**: `layout.js`의 `#topTitle`은 현재 화면을, `#activeWork`는 다른 화면의 작업을, 초기화·테마 전환·설정은 상단 버튼으로 바로 열어요. 기능 이동은 왼쪽 메뉴에서만 해요. 검색창 `#searchForm`은 `#empty` 또는 `#kwSearch`에 두고, `#histBtn`은 기존 참조용으로 남겨요.
 
 ## 9. 구글 모드 (2026-11-13 추가)
 
