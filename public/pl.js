@@ -659,6 +659,9 @@
     }
   }
   window.showPl = showPl;
+  // 헤더는 알려진 작업 상태만 읽으며, 다른 화면에서는 진행 여부만 갱신한다.
+  window.__PL_WORK = { read: () => S.running, open: id => S.cur === id ? undefined : openJob(id) };
+  setInterval(() => { if (S.running && $('#plView').classList.contains('hidden') && !document.hidden) loadJobs(); }, 5000);
   window.__hidePl = () => {
     Finder.close();
     if ($('#plView').classList.contains('hidden')) return;

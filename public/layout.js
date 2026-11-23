@@ -35,7 +35,7 @@
     const t = getTheme();
     document.documentElement.classList.toggle('dark', t === 'dark' || (t === 'system' && media.matches));
     const b = document.getElementById('themeBtn');
-    if (b) { const dark = document.documentElement.classList.contains('dark'); b.innerHTML = dark ? I.sun : I.moon; b.title = dark ? '라이트 모드로' : '다크 모드로'; }
+    if (b) { const dark = document.documentElement.classList.contains('dark'); b.textContent = dark ? '라이트 모드로' : '다크 모드로'; }
     document.querySelectorAll('[data-theme-opt]').forEach((x) => x.classList.toggle('on', x.dataset.themeOpt === t));
     // 그래프는 색을 그릴 때 정하므로 다시 그림
     window.dispatchEvent(new Event('themechange'));
@@ -79,13 +79,9 @@
   // 상단 바: [사이드바 접기] | 화면 이름 · 검색 · 테마 · 기록 · 설정
   const top = document.querySelector('.top');
   const lead = document.createElement('div');
-  lead.style.cssText = 'display:flex;align-items:center;gap:10px;min-width:0';
-  lead.innerHTML = `<button type="button" class="icon-btn" id="sideBtn" title="사이드바 접기/펴기">${I.side}</button><span class="top-sep"></span><span class="top-title" id="topTitle">키워드 분석</span>`;
+  lead.className = 'top-context';
+  lead.innerHTML = `<button type="button" class="icon-btn" id="sideBtn" title="사이드바 접기/펴기">${I.side}</button><span class="top-sep"></span><span class="top-title" id="topTitle" tabindex="-1">키워드 분석</span>`;
   top.prepend(lead);
-  // 한 번이라도 연 화면을 탭으로 (같은 화면은 하나만) · 새로고침해도 기억
-  const otabs = document.createElement('div');
-  otabs.className = 'otabs'; otabs.id = 'openTabs'; otabs.setAttribute('role', 'tablist');
-  lead.after(otabs);
   // 키워드 검색창: 상단 바에서 빼서, 키워드 분석 화면에서만 본문 가운데에
   const kwBox = document.createElement('div');
   kwBox.className = 'kw-search hidden'; kwBox.id = 'kwSearch';
@@ -113,7 +109,23 @@
   };
   acts.prepend(rb);
   const sb = document.getElementById('setBtn');
-  if (sb) { sb.className = 'icon-btn'; sb.innerHTML = I.set; sb.title = '설정'; }
+  if (sb) { sb.className = 'btn sm'; sb.textContent = '설정'; }
+  const headerMenu = (id, label) => {
+    const root = document.createElement('details'); root.className = 'header-menu'; root.id = id;
+    const trigger = document.createElement('summary'); trigger.className = 'btn sm'; trigger.textContent = label;
+    const panel = document.createElement('div'); panel.className = 'card header-panel';
+    root.append(trigger, panel); acts.append(root);
+    return { root, trigger, panel };
+  };
+  const more = headerMenu('topMore', '더보기');
+  const work = headerMenu('activeWork', '작업'); work.root.hidden = true; acts.insertBefore(work.root, more.root);
+  rb.className = tb.className = 'btn sm'; rb.textContent = '현재 화면 초기화'; rb.setAttribute('aria-label', '현재 화면 초기화');
+  [sb, tb, rb].filter(Boolean).forEach(b => { more.panel.append(b); b.addEventListener('click', () => { const at = document.activeElement; more.root.open = false; if (at === b || at === document.body) more.trigger.focus({ preventScroll: true }); }); });
+  for (const menu of [more, work]) {
+    menu.root.addEventListener('toggle', () => { if (menu.root.open) (menu === more ? work : more).root.open = false; });
+    menu.root.addEventListener('keydown', e => { if (e.key === 'Escape' && menu.root.open) { e.preventDefault(); menu.root.open = false; menu.trigger.focus(); } });
+  }
+  document.addEventListener('click', e => { for (const menu of [more, work]) if (!menu.root.contains(e.target)) menu.root.open = false; });
 
   document.getElementById('sideBtn').onclick = () => {
     if (matchMedia('(max-width: 900px)').matches) { document.body.classList.toggle('side-open'); return; }
@@ -173,22 +185,33 @@
     // 그 탭에서 보던 위치로 (내용이 늦게 그려져도 따라가서 맞춤)
     restoreY(POS[v] || 0);
   }
-  const work = document.createElement('div');
-  work.className = 'toolbar'; work.id = 'activeWork'; work.hidden = true;
-  otabs.after(work);
   const workLinks = new Map();
-  for (const [v,name] of [['bulk','대량 분석'],['ai','AI 키워드']]) {
-    const b = document.createElement('button'); b.className = 'btn sm'; b.hidden = true;
-    b.onclick = () => go(v); work.append(b); workLinks.set(v, [b,name]);
+  for (const [v,name] of [['bulk','대량 분석'],['ai','AI 키워드 생성기'],['pl','파워링크 분석기']]) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'btn sm header-job'; b.hidden = true;
+    const title = document.createElement('b'), info = document.createElement('span'); info.className = 'muted'; title.textContent = name;
+    b.append(title, info); work.panel.append(b); workLinks.set(v, [b,info]);
+    b.onclick = () => { const job = v === 'pl' ? window.__PL_WORK?.read() : null; work.root.open = false; go(v); if (job?.id) window.__PL_WORK?.open(job.id); document.getElementById('topTitle')?.focus({ preventScroll: true }); };
   }
+  const workText = id => document.getElementById(id)?.textContent?.trim() || '';
   function syncWork() {
-    const bulk = window.__BULK?.B, ai = window.__AI?.AI;
-    const states = { bulk: bulk?.busy ? '진행 중' : bulk?.vbusy ? '재검증 중' : bulk?.info?.resume ? '이어하기 가능' : '', ai: ai?.busy || '' };
-    for (const [v,[b,name]] of workLinks) {
-      b.hidden = !states[v] || current() === v || isG();
-      const label = name + ' · ' + states[v]; if (b.textContent !== label) b.textContent = label;
+    const bulk = window.__BULK?.B, ai = window.__AI?.AI, pl = window.__PL_WORK?.read();
+    const resume = bulk?.info?.resume;
+    const saved = bulk?.lastSavedCount ?? resume?.next ?? 0;
+    const aiModel = document.querySelector('#aiProg:not(.hidden) .p-model')?.textContent?.trim();
+    const states = {
+      bulk: bulk?.busy ? [workText('bPhase') || '진행 중', '저장 ' + saved.toLocaleString('ko-KR') + '개'].join(' · ') : bulk?.vbusy ? '재검증 중' : resume ? '이어하기 가능 · 저장 ' + resume.next.toLocaleString('ko-KR') + '개' : '',
+      ai: ai?.busy ? [ai.busy, aiModel].filter(Boolean).join(' · ') : '',
+      pl: pl ? ['분석 중', pl.note || pl.cur].filter(Boolean).join(' · ') : '',
+    };
+    for (const [v,[b,info]] of workLinks) {
+      b.hidden = !states[v] || (!isG() && current() === v);
+      if (info.textContent !== states[v]) info.textContent = states[v];
     }
-    work.hidden = [...workLinks.values()].every(([b]) => b.hidden);
+    const count = [...workLinks.values()].filter(([b]) => !b.hidden).length;
+    if (!count && work.root.open) { if (work.root.contains(document.activeElement)) document.getElementById('topTitle')?.focus({ preventScroll: true }); work.root.open = false; }
+    work.root.hidden = !count;
+    const label = '작업 ' + count;
+    if (work.trigger.textContent !== label) work.trigger.textContent = label;
   }
   setInterval(syncWork, 600);
   side.querySelectorAll('[data-view]').forEach((b) => (b.onclick = () => go(b.dataset.view)));
@@ -220,7 +243,7 @@
     adopt();
     const v = current();
     side.querySelectorAll('[data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
-    document.getElementById('topTitle').textContent = NAME[v];
+    document.getElementById('topTitle').textContent = isG() ? 'Google 키워드 분석' : NAME[v];
     const show = (id, on) => document.getElementById(id)?.classList.toggle('hidden', !on);
     show('aiSide', v === 'ai'); show('bSide', v === 'bulk'); show('cSide', v === 'copy'); show('mSide', v === 'mock'); show('pSide', v === 'pl'); show('asRecent', v === 'analyze'); show('asNone', v === 'dup');
     document.getElementById('asLabel').textContent = v === 'analyze' ? '최근 검색' : v === 'mock' ? '캠페인' : '내역';
@@ -228,7 +251,7 @@
     const hide = new Set((window.SETTINGS?.ui?.hideButtons) || []);
     side.querySelectorAll('[data-view]').forEach((b) => { const k = b.dataset.view; b.style.display = k !== 'analyze' && hide.has(k) && k !== v ? 'none' : ''; });
     if (v === 'analyze') recent();
-    drawTabs(v);
+    syncWork();
     placeSearch(v);
   }
   window.__LAYOUT = { sync, go, current };
@@ -242,26 +265,6 @@
   let topRaf = 0;
   addEventListener('scroll', () => { if (!topRaf) topRaf = requestAnimationFrame(() => { topRaf = 0; topBtn.classList.toggle('show', scrollY > innerHeight * 0.8); }); }, { passive: true });
 
-  // ---------------------------------------------------------------- 열린 탭 줄
-  const openKey = () => (isG() ? 'openViews_g' : 'openViews');
-  try { for (const k of ['openViews', 'openViews_g']) { const o = JSON.parse(localStorage.getItem(k) || 'null'); if (Array.isArray(o) && o.some((x) => !NAME[x])) localStorage.setItem(k, JSON.stringify(o.filter((x) => NAME[x]))); } } catch {}
-  for (const k of ['perfPick', 'perfPreset', 'perfMode']) localStorage.removeItem(k);
-  let OPEN = [], openFor = '';
-  const loadOpen = () => { openFor = getMode(); try { OPEN = JSON.parse(localStorage.getItem(openKey()) || '[]').filter((k) => NAME[k]); } catch { OPEN = []; } };
-  const saveOpen = () => localStorage.setItem(openKey(), JSON.stringify(OPEN));
-  function drawTabs(v) {
-    if (openFor !== getMode()) loadOpen();
-    if (!OPEN.includes(v)) { OPEN.push(v); saveOpen(); }
-    otabs.innerHTML = OPEN.map((k) => `<div class="otab ${k === v ? 'on' : ''}" role="tab" aria-selected="${k === v}" data-otab="${k}" title="${NAME[k]}">${I[k]}<span>${NAME[k]}</span>${OPEN.length > 1 ? `<button type="button" class="otab-x" data-x="${k}" title="탭 닫기 (내용은 그대로 남아요)" aria-label="${NAME[k]} 탭 닫기">×</button>` : ''}</div>`).join('');
-    otabs.querySelectorAll('[data-otab]').forEach((t) => (t.onclick = () => go(t.dataset.otab)));
-    otabs.querySelectorAll('[data-x]').forEach((b) => (b.onclick = (e) => {
-      e.stopPropagation();
-      const k = b.dataset.x, i = OPEN.indexOf(k);
-      OPEN = OPEN.filter((x) => x !== k); saveOpen();
-      if (k === current()) go(OPEN[Math.max(0, i - 1)] || 'analyze'); else drawTabs(current());
-    }));
-    otabs.querySelector('.otab.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  }
   // 검색창 자리: 첫 화면이면 로고 아래 가운데, 분석 결과가 있으면 결과 위 가운데
   function placeSearch(v) {
     const form = document.getElementById('searchForm'), empty = document.getElementById('empty');

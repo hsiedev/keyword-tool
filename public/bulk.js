@@ -421,6 +421,7 @@
     }
     const job = B.info?.resume;
     if (!job || job.next >= B.order.length) return;
+    B.lastSavedCount = job.next;
     B.busy = true;
     updateResume();
     $('#bRun').disabled = true; $('#bStop').classList.remove('hidden');
@@ -484,7 +485,7 @@
         B.info = job.next < B.order.length
           ? { at: Date.now(), partial: true, resume: job }
           : { at: Date.now(), total: job.next, ...job.summary };
-        try { await assertSaved(); if (!stopped) $('#bMsg').textContent = `마지막 저장: ${job.next.toLocaleString('ko-KR')}개`; } catch (e) { B.info = checkpoint; throw e; }
+        try { await assertSaved(); B.lastSavedCount = job.next; if (!stopped) $('#bMsg').textContent = `마지막 저장: ${job.next.toLocaleString('ko-KR')}개`; } catch (e) { B.info = checkpoint; throw e; }
       }
       if (job.next < B.order.length) throw new DOMException('중지', 'AbortError');
       const done = B.info;

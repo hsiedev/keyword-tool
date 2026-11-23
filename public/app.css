@@ -122,7 +122,7 @@ body.side-collapsed .as-head{padding:0 16px}
 .dropdown .hrow{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:var(--radius-sm);cursor:pointer}
 .dropdown .hrow:hover{background:var(--muted)}
 .dropdown .hrow small{color:var(--muted-fg)}
-@media(max-width:900px){.top{padding:0 12px}.top-title{display:none}#histBtn{display:none}}
+@media(max-width:900px){.top{padding:0 12px}}
 
 /* 분석 섹션 탭 */
 .tabs{position:sticky;top:var(--head-h);z-index:20;background:color-mix(in oklab,var(--background) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);display:flex;gap:2px;padding:0 24px;overflow-x:auto}
@@ -441,16 +441,6 @@ html.dark [style*="color:#ef4444"]{color:#f87171!important}
 
 /* 상단: 열린 탭 줄 (검색창·검색 기록은 상단에서 뺌) */
 #topTitle,#histBtn,#histPanel{display:none!important}
-.otabs{flex:1;min-width:0;display:flex;gap:4px;align-items:center;overflow-x:auto;scrollbar-width:none;padding:2px 0}
-.otabs::-webkit-scrollbar{display:none}
-.otab{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 6px 0 11px;border:1px solid transparent;border-radius:var(--radius-sm);color:var(--muted-fg);font-size:13px;font-weight:500;white-space:nowrap;cursor:pointer;flex:none;user-select:none}
-.otab:hover{background:var(--muted);color:var(--foreground)}
-.otab.on{background:var(--card);border-color:var(--border);color:var(--foreground);font-weight:650;box-shadow:var(--shadow-sm)}
-.otab svg{width:15px;height:15px;flex:none;opacity:.85}
-.otab.on svg{color:var(--accent);opacity:1}
-.otab:not(:has(.otab-x)){padding-right:12px}
-.otab-x{width:20px;height:20px;display:inline-grid;place-items:center;border:0;background:none;border-radius:5px;font-size:15px;line-height:1;color:var(--muted-fg);padding:0;opacity:.6}
-.otab-x:hover{background:var(--border);color:var(--foreground);opacity:1}
 /* 키워드 분석 검색창: 본문 가운데 */
 .kw-search{display:flex;justify-content:center;padding:20px 28px 6px}
 .kw-search #searchForm{flex:1;max-width:640px;margin:0}
@@ -458,7 +448,7 @@ html.dark [style*="color:#ef4444"]{color:#f87171!important}
 .empty #searchForm{max-width:620px;margin:26px auto 0;height:52px;border-radius:12px}
 .empty #q{font-size:16px;padding:0 18px;color:var(--foreground)}
 .empty #searchForm button{padding:0 22px;font-size:14px}
-@media(max-width:900px){.otab span{display:none}.otab.on span{display:inline}.kw-search{padding:14px 12px 4px}}
+@media(max-width:900px){.kw-search{padding:14px 12px 4px}}
 
 /* 본문은 남는 폭을 다 씀 (사이드바를 접으면 그만큼 넓어짐) · 화면마다 걸려 있던 최대 폭(1,180~1,400px) · 가운데 정렬 해제 */
 @media screen{main,.ai-main{max-width:none!important;margin-left:0!important;margin-right:0!important}}
@@ -664,4 +654,11 @@ html.dark .modal .set-sec input.sw.sw:not(:checked){background:#4b4b4b}
 .pl-compare-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,30%);gap:12px;align-items:start}
 @media(max-width:800px){.pl-compare-grid{grid-template-columns:minmax(0,1fr)}}
 
-#activeWork[hidden],#activeWork button[hidden]{display:none}
+
+/* 상단에는 현재 화면과 공통 작업만, 기능 전환은 사이드바에서 */
+.top-context{display:flex;align-items:center;gap:10px;min-width:0;flex:1}.top-context .icon-btn{flex:none}
+.top-title{min-width:0;text-overflow:ellipsis;overflow:hidden}.top-actions{flex:none}.top-actions #histBtn{display:none}
+.header-menu{position:relative}.header-menu[hidden],.header-panel .header-job[hidden]{display:none}.header-menu>summary{list-style:none;cursor:pointer;white-space:nowrap}.header-menu>summary::-webkit-details-marker{display:none}
+.header-panel{position:absolute;right:0;top:calc(100% + 8px);display:grid;gap:4px;padding:6px;width:max-content;min-width:150px;max-width:min(320px,90vw);box-shadow:var(--shadow-sm)}
+.header-panel .btn{height:auto;min-height:30px;text-align:left;justify-content:flex-start;white-space:normal}.header-panel .header-job{display:grid;justify-items:start;line-height:1.4}.header-job .muted{font-size:12px}
+#activeWork summary{border-color:var(--accent)}

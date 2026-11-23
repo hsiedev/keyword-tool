@@ -36,7 +36,7 @@ start.bat → server.mjs (127.0.0.1:8787)
 | 파워링크 분석 | `public/pl.js`, `powerlink-core.mjs`, `powerlink-compare.mjs`, `/api/pl/*` | PC·모바일 순위 HTML에서 광고 URL을 읽고 내 광고를 일치 수준별로 찾는다. Edge/Chrome을 CDP로 제어해 캡처하고, 입찰가·성과 추정, 사진 포함 엑셀을 제공한다. 서버가 작업을 관리하고 완료 키워드 기준으로 이어간다. 저장된 두 분석의 실적 기간을 비교할 수 있다. |
 | AI 광고 카피 | `public/copy.js`, `copy-core.mjs`, `/api/copy/*`, `/api/copy-projects` | 경쟁 파워링크 문구를 참고해 카피 생성·다시 쓰기·재검증을 실행한다. 글자 수 등은 공용 `public/copy-spec.js`가 실제 계산한다. 프로젝트를 저장하고 목업으로 보낼 수 있다. |
 | 광고 목업 | `public/admock.js`, `copy-core.mjs`, `/api/ad-mock` | 광고 유형별 템플릿·확장소재를 조합해 화면을 미리 보고 PNG로 저장한다. 광고 집행 기능은 아니다. |
-| 화면·설정·검증 | `layout.js`, `settings.js`, `settings-defaults.mjs`, `/api/settings`, `/api/config`, `/api/test` | 모드·상단 탭·최근 검색·테마, UI/산식 규칙, API 키 입력·연결 테스트, 서버 갱신 감지. 공통 컴포넌트는 `dialogs.js`, `filters.js`, `review.js`, `tablecols.js`, `focus.js`, `sectionorder.js`, `toggles.js`. 엑셀 공용 구현은 `xlsx-lite.js`. |
+| 화면·설정·검증 | `layout.js`, `settings.js`, `settings-defaults.mjs`, `/api/settings`, `/api/config`, `/api/test` | 모드·상단 작업 헤더·최근 검색·테마, UI/산식 규칙, API 키 입력·연결 테스트, 서버 갱신 감지. 공통 컴포넌트는 `dialogs.js`, `filters.js`, `review.js`, `tablecols.js`, `focus.js`, `sectionorder.js`, `toggles.js`. 엑셀 공용 구현은 `xlsx-lite.js`. |
 
 ### 수치 해석
 
@@ -79,5 +79,7 @@ start.bat → server.mjs (127.0.0.1:8787)
 4. 회귀 점검: API 키 없음/한도/부분 실패, 연속 검색 응답 역순, 파일 입력과 필터 내보내기 범위, 대량 중지·연결 종료·저장 실패·복구, 기존 JSON 호환, 백업 제외 파일.
 
 ### 화면 연결과 상태 표시
+
+`layout.js`가 왼쪽 사이드바의 기능 탐색과 `#topTitle`, `#activeWork`, `#topMore`를 동기화한다. 상단은 내역이나 별도 탭 목록을 저장하지 않는다. `sessionStorage.ktPos`의 화면별 스크롤 복원은 그대로 유지한다. `#activeWork`는 현재 화면 밖 대량 분석·AI·파워링크 중 활성 또는 대량 이어하기 가능 상태만 집계하며, 기존 작업 화면으로 이동한다.
 
 파워링크 비교에서 기준·비교를 선택한 채 자료와 기간을 수정할 수 있어요. 좁은 화면에서는 표 아래에 하락 진단을 보여줘요. 네이버 검색은 최신 요청만 반영하고 섹션 실패는 따로 재조회할 수 있어요. 대량 분석은 저장이 끝난 건수와 필터 파일 범위를 표시하고, 대량·AI 진행 중 다른 메뉴에서는 상단에 돌아가기 버튼이 나와요. 브라우저를 닫아도 작업이 계속된다는 뜻은 아니에요.
