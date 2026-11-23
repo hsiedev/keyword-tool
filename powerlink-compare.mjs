@@ -88,6 +88,9 @@ export function comparePowerlink(a, b, sourcesA, sourcesB, pa, pb) {
     } else notes.push('클릭/일은 줄었지만 한쪽 노출이 0건이라 CTR 기여를 분리하지 않았어요.');
   } else notes.push('비교 가능한 키워드 합계에서는 클릭/일이 감소하지 않았어요. 개별 하락 키워드를 확인하세요.');
   if (rank.some(r => r.down || r.lost)) notes.push('현장 순위 하락·미노출 전환이 있어요. 스냅샷은 보고서 기간 평균이 아니므로 클릭 하락의 원인으로 단정할 수 없어요.');
+  const biggest = common.filter(r => r.dc < 0).sort((x, y) => x.dc - y.dc).slice(0, 3);
+  if (biggest.length) notes.push('클릭 감소 기여 상위: ' + biggest.map(r => r.kw.replace(/\s+/g, '') + ' ' + fmt(r.dc) + '건/일').join(', ') + '.');
+  if (pa.days !== pb.days) notes.push('기간 길이가 달라 감소 진단은 일평균을 기준으로 했어요. 요일 구성과 공휴일 차이는 별도 확인이 필요해요.');
   const known = k => rows.reduce((n, r) => n + (r[k] ?? 0), 0);
   return { pa, pb, dev, rank, rows: rows.sort((x, y) => (x.dc ?? Infinity) - (y.dc ?? Infinity) || (x.di ?? Infinity) - (y.di ?? Infinity)), notes,
     summary: { matched: common.length, duplicates: rows.filter(r => r.duplicate).length, onlyA: rows.filter(r => r.aOnly).length, onlyB: rows.filter(r => r.bOnly).length, tablesA: A.tables, tablesB: B.tables,

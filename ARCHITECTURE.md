@@ -33,7 +33,7 @@ start.bat → server.mjs (127.0.0.1:8787)
 | 키워드 중복 검사 | `public/dedup.js`, `public/ai.js`, `/api/sources` | TXT·CSV·XLSX에서 열을 선택하고, 정규화·어순·포함 관계·한 글자 차이를 옵션에 따라 검사한다. 남긴 키워드를 내보내거나 대량 분석으로 보낸다. 기존 목록은 서버에도 저장할 수 있다. |
 | 대량 분석 | `public/bulk.js`, `/api/bulk-stream`, `/api/bulk-history` | 파일·붙여넣기 → 공백 제거·대소문자 무시 중복 제거 → 회차별 조회 → 한 내역 탭에 합산. 검색량은 5개씩, 입찰가는 선택적으로 묶어서, 블로그는 선택적으로 키워드별 조회. 정렬·필터·AI 재검증, XLSX·CSV·TXT 내보내기를 제공한다. |
 | Google 모드 | `public/google.js`, `google-core.mjs`, `/api/google/*` | Google·YouTube 자동완성, 비공식 Google Trends, 키워드 플래너·트렌드 CSV 가져오기. Google Ads API 연동이 아니고, 비공식 조회 실패 시 가져온 데이터를 활용한다. |
-| 파워링크 분석 | `public/pl.js`, `powerlink-core.mjs`, `/api/pl/*` | PC·모바일 순위 HTML에서 광고 URL을 읽고 내 광고를 일치 수준별로 찾는다. Edge/Chrome을 CDP로 제어해 캡처하고, 입찰가·성과 추정, 사진 포함 엑셀을 제공한다. 서버가 작업을 관리하고 완료 키워드 기준으로 이어간다. |
+| 파워링크 분석 | `public/pl.js`, `powerlink-core.mjs`, `powerlink-compare.mjs`, `/api/pl/*` | PC·모바일 순위 HTML에서 광고 URL을 읽고 내 광고를 일치 수준별로 찾는다. Edge/Chrome을 CDP로 제어해 캡처하고, 입찰가·성과 추정, 사진 포함 엑셀을 제공한다. 서버가 작업을 관리하고 완료 키워드 기준으로 이어간다. 저장된 두 분석의 실적 기간을 비교할 수 있다. |
 | AI 광고 카피 | `public/copy.js`, `copy-core.mjs`, `/api/copy/*`, `/api/copy-projects` | 경쟁 파워링크 문구를 참고해 카피 생성·다시 쓰기·재검증을 실행한다. 글자 수 등은 공용 `public/copy-spec.js`가 실제 계산한다. 프로젝트를 저장하고 목업으로 보낼 수 있다. |
 | 광고 목업 | `public/admock.js`, `copy-core.mjs`, `/api/ad-mock` | 광고 유형별 템플릿·확장소재를 조합해 화면을 미리 보고 PNG로 저장한다. 광고 집행 기능은 아니다. |
 | 화면·설정·검증 | `layout.js`, `settings.js`, `settings-defaults.mjs`, `/api/settings`, `/api/config`, `/api/test` | 모드·상단 탭·최근 검색·테마, UI/산식 규칙, API 키 입력·연결 테스트, 서버 갱신 감지. 공통 컴포넌트는 `dialogs.js`, `filters.js`, `review.js`, `tablecols.js`, `focus.js`, `sectionorder.js`, `toggles.js`. 엑셀 공용 구현은 `xlsx-lite.js`. |
@@ -50,6 +50,13 @@ start.bat → server.mjs (127.0.0.1:8787)
 - 회차의 `done`과 처리 건수가 검증되면 진행 위치와 결과를 로컬 내역에 저장한다. 저장한 후에만 다음 회차에 진입한다. 전체 진행률은 회차 크기와 현재 단계 기준으로 표시한다.
 - `중지` 또는 연결 끊김 후 해당 내역에서 `이어하기`를 누르면 마지막 완료 회차 다음부터 처리한다. 현재 회차 중간까지 받은 값은 중지 시 볼 수 있으나, 이어할 때는 미완료 회차를 다시 조회한다. 옵션은 처음 시작한 값 그대로 사용한다. 서버가 키워드별 조회 실패로 반환한 행은 별도 표시되며 자동 재시도 대상이 아니다.
 - 브라우저가 회차를 시작하므로 탭을 닫으면 백그라운드로 계속 실행되지 않는다. 다시 열면 마지막 저장 지점부터 이어갈 수 있다. 내역 전체를 JSON으로 저장하므로 대형 결과는 서버 공통 25MB 요청 제한의 영향을 받는다.
+
+### 파워링크 실적 및 기간 비교 계약
+
+- `public/pl.js`가 `xlsx-lite.js`로 전체 시트를 셀 데이터로 파싱한다. 파일 자체는 원본 바이트도 전송한다. `/api/pl/start`와 `/rerun`이 `data/powerlink/<작업>/reports.json`에 보존하고, `job.json`에는 파일·기간 메타데이터만 남긴다. 기존 결과는 `/api/pl/report`에서 보완 가능하다. 실적은 이전 작업에서 자동 복사하지 않는다.
+- `/api/pl/xlsx`는 결과와 원본 셀 데이터 탭을 합친다. 원래 서식·수식·매크로가 필요한 경우 `/api/pl/report-file`이 업로드 바이트를 되돌려준다. 업로드를 받지 않은 예전 작업은 소급 생성하지 않는다. 실적 자료는 GitHub 백업 대상이 아니다.
+- `/api/pl/compare`는 같은 URL 범위의 겹치지 않는 두 기간만 받아, 양쪽에서 유효한 수치가 확인되는 키워드로 합계·일평균·CTR을 계산한다. 중복 키워드는 합계/상세 또는 기기 중복일 수 있어 합산하지 않는다. 키워드·계정과 보고서 집계 범위는 사용자가 맞춰야 한다.
+- `powerlink-compare.mjs`는 클릭 변화의 노출·CTR 기여와 하락 키워드를 계산한다. 현장 순위는 공통 기기에서만 대조하고 계정 기간 평균이나 원인으로 해석하지 않는다. AI 호출 없음. 회귀 테스트: `node tests/powerlink-period.mjs`.
 
 ## 4. 저장과 경계
 

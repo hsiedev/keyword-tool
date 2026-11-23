@@ -54,7 +54,7 @@
   const xml = (s) => new DOMParser().parseFromString(s, 'application/xml');
   const byTag = (node, tag) => [...node.getElementsByTagName('*')].filter((e) => e.localName === tag);
 
-  async function readXlsx(buf) {
+  async function readXlsx(buf, raw = false) {
     const z = await unzip(buf);
     const wb = xml(await z.text('xl/workbook.xml'));
     const relsTxt = await z.text('xl/_rels/workbook.xml.rels');
@@ -68,7 +68,7 @@
       let target = rels[rid] || '';
       target = target.replace(/^\/?xl\//, '').replace(/^\//, '');
       const sx = await z.text('xl/' + target);
-      if (!sx) continue;
+      if (!sx) { if (raw) throw new Error('워크시트 내용을 읽지 못했어요: ' + s.getAttribute('name')); continue; }
       const rows = [];
       for (const row of byTag(xml(sx), 'row')) {
         const r = [];
@@ -82,7 +82,7 @@
           if (t === 's') v = shared[Number(byTag(c, 'v')[0]?.textContent)] ?? '';
           else if (t === 'inlineStr') v = byTag(c, 't').map((x) => x.textContent).join('');
           else v = byTag(c, 'v')[0]?.textContent ?? '';
-          r[ci] = String(v).trim();
+          r[ci] = raw ? ((!t || t === 'n') && v !== '' && Number.isFinite(Number(v)) ? Number(v) : String(v)) : String(v).trim();
         }
         rows[Number(row.getAttribute('r') || rows.length + 1) - 1] = r;
       }
@@ -96,7 +96,7 @@
     try { return new TextDecoder('utf-8', { fatal: true }).decode(buf).replace(/^\ufeff/, ''); }
     catch { return new TextDecoder('euc-kr').decode(buf); }
   }
-  function parseCsv(text) {
+  function parseCsv(text, raw = false) {
     const delim = (text.split('\n')[0].match(/\t/g) || []).length > (text.split('\n')[0].match(/,/g) || []).length ? '\t' : ',';
     const rows = []; let row = [], cur = '', q = false;
     for (let i = 0; i < text.length; i++) {
@@ -106,27 +106,27 @@
         else if (ch === '"') q = false;
         else cur += ch;
       } else if (ch === '"') q = true;
-      else if (ch === delim) { row.push(cur.trim()); cur = ''; }
+      else if (ch === delim) { row.push(raw ? cur : cur.trim()); cur = ''; }
       else if (ch === '\n' || ch === '\r') {
         if (ch === '\r' && text[i + 1] === '\n') i++;
-        row.push(cur.trim()); rows.push(row); row = []; cur = '';
+        row.push(raw ? cur : cur.trim()); rows.push(row); row = []; cur = '';
       } else cur += ch;
     }
-    if (cur || row.length) { row.push(cur.trim()); rows.push(row); }
+    if (cur || row.length) { row.push(raw ? cur : cur.trim()); rows.push(row); }
     return rows;
   }
 
-  async function readFile(file) {
-    const buf = await file.arrayBuffer();
+  async function readFile(file, { raw = false, buffer } = {}) {
+    const buf = buffer || await file.arrayBuffer();
     const name = file.name.toLowerCase();
-    if (name.endsWith('.xlsx') || name.endsWith('.xlsm')) return readXlsx(buf);
+    if (name.endsWith('.xlsx') || name.endsWith('.xlsm')) return readXlsx(buf, raw);
     if (name.endsWith('.xls')) throw new Error('예전 .xls 형식은 읽을 수 없어요. 엑셀에서 "다른 이름으로 저장 > Excel 통합 문서(.xlsx)"로 저장해 주세요.');
     if (name.endsWith('.txt')) {
       // 메모장 파일: 줄바꿈, 쉼표, 탭 어느 것으로 구분해도 키워드 하나씩 한 열로 읽음
       const words = decodeText(buf).split(/[\r\n,\t]+/).map((s) => s.trim()).filter(Boolean);
       return [{ name: file.name, rows: words.map((w) => [w]) }];
     }
-    return [{ name: file.name, rows: parseCsv(decodeText(buf)) }];
+    return [{ name: file.name, rows: parseCsv(decodeText(buf), raw) }];
   }
 
   // ---------------------------------------------------------------- XLSX 쓰기 (무압축 ZIP)
@@ -198,11 +198,11 @@
       const ch = text[i];
       if (q) { if (ch === '"' && text[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch; }
       else if (ch === '"' && cur === '') q = true;
-      else if (ch === '\t') { row.push(cur.trim()); cur = ''; }
-      else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cur.trim()); rows.push(row); row = []; cur = ''; }
+      else if (ch === '\t') { row.push(raw ? cur : cur.trim()); cur = ''; }
+      else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(raw ? cur : cur.trim()); rows.push(row); row = []; cur = ''; }
       else cur += ch;
     }
-    if (cur || row.length) { row.push(cur.trim()); rows.push(row); }
+    if (cur || row.length) { row.push(raw ? cur : cur.trim()); rows.push(row); }
     return rows.filter((r) => r.some((c) => c !== ''));
   }
   function clipRows(dt) {

@@ -11,7 +11,7 @@
   const MAXN = { pc: 10, mo: 5 };
   const S = {
     jobs: [], running: null, job: null, cur: null, // cur = 열린 작업 id (null = 새 분석)
-    draft: { rows: [], file: '', paste: '' },
+    draft: { rows: [], file: '', paste: '', reports: [], period: {} },
     urls: localStorage.getItem('plUrls') || '',
     devices: JSON.parse(localStorage.getItem('plDevs') || '["pc","mo"]'),
     nPc: +localStorage.getItem('plNPc') || 3, nMo: +localStorage.getItem('plNMo') || 3,
@@ -28,7 +28,7 @@
   // ---------------------------------------------------------------- 키워드 읽기 (네이버 광고관리 엑셀 · CSV · 붙여넣기)
   const numOf = (v) => { const s = String(v ?? '').replace(/[^\d.]/g, ''); return s === '' ? null : Number(s); };
   function fromSheet(rows) {
-    const hi = rows.findIndex((r) => (r || []).some((c) => String(c).trim() === '키워드'));
+    const hi = rows.findIndex((r) => (r || []).some((c) => /^(키워드|키워드명|keyword)$/i.test(String(c).trim())));
     if (hi < 0) {
       const k = window.XlsxLite?.pickKeywords ? window.XlsxLite.pickKeywords(rows) : null;
       const ci = k && typeof k.col === 'string' && /번째 열$/.test(k.col) ? parseInt(k.col) - 1 : 0;
@@ -36,11 +36,11 @@
     }
     const h = rows[hi].map((c) => String(c).replace(/\s+/g, ''));
     const at = (name) => h.findIndex((c) => c === name);
-    const iK = at('키워드'), iB = at('입찰가'), iS = at('상태'), iP = h.findIndex((c) => /^PC통검평균노출순위/.test(c)), iM = h.findIndex((c) => /^모바일통검평균노출순위/.test(c));
+    const iK = h.findIndex(c => /^(키워드|키워드명|keyword)$/i.test(c)), iB = at('입찰가'), iS = at('상태'), iP = h.findIndex((c) => /^PC통검평균노출순위/.test(c)), iM = h.findIndex((c) => /^모바일통검평균노출순위/.test(c));
     const out = [];
     for (const r of rows.slice(hi + 1)) {
       const kw = String(r?.[iK] ?? '').trim();
-      if (!kw || /^키워드 [\d,]+개 결과/.test(kw)) continue; // 맨 위 합계 줄
+      if (!kw || /^(합계|총계|소계|전체|총합계|전체합계|TOTALS?|키워드[\d,]+개결과)$/i.test(kw.replace(/\s+/g, ''))) continue; // 맨 위 합계 줄
       const state = iS >= 0 ? String(r[iS] ?? '').trim() : '';
       out.push({ kw, bid: iB >= 0 ? numOf(r[iB]) : null, state, acctPc: iP >= 0 ? numOf(r[iP]) : null, acctMo: iM >= 0 ? numOf(r[iM]) : null, on: !state || state === '노출가능' });
     }
@@ -53,12 +53,28 @@
     const seen = new Map(S.draft.rows.map((r) => [r.kw.replace(/\s+/g, '').toUpperCase(), r]));
     for (const r of list) { const k = r.kw.replace(/\s+/g, '').toUpperCase(); if (k && !seen.has(k)) { seen.set(k, r); S.draft.rows.push(r); } }
   }
+  const periodFields = (p = {}) => `<label>실적 시작일 <input class="inp" style="width:auto" type="date" data-period="start" value="${e2(p.start || '')}"></label> <label>종료일 <input class="inp" style="width:auto" type="date" data-period="end" value="${e2(p.end || '')}"></label>`;
+  const getPeriod = box => Object.fromEntries($$('[data-period]', box).map(x => [x.dataset.period, x.value]));
+  async function readReport(file) {
+    if (file.size > 12 * 1024 * 1024) throw new Error('파일이 12MB를 넘어요. 필요한 보고서로 나눠 주세요.');
+    const buffer = await file.arrayBuffer();
+    const sheets = await window.XlsxLite.readFile(file, { raw: true, buffer });
+    if (!sheets.length) throw new Error('읽을 수 있는 시트가 없어요.');
+    const a = new Uint8Array(buffer), parts = [];
+    for (let i = 0; i < a.length; i += 24576) parts.push(btoa(String.fromCharCode(...a.subarray(i, i + 24576))));
+    return { name: file.name, sheets, original: parts.join('') };
+  }
+  const inputRows = sheets => {
+    const all = sheets.filter(s => s.rows.some(r => r.some(c => /^(키워드|키워드명|keyword)$/i.test(String(c).trim()))));
+    return all.length ? all.flatMap(s => fromSheet(s.rows)) : fromSheet(sheets[0]?.rows || []);
+  };
   async function addFiles(files) {
     for (const f of files) {
       try {
-        const sheets = await window.XlsxLite.readFile(f);
-        const rows = fromSheet(sheets[0]?.rows || []);
+        const raw = await readReport(f);
+        const rows = inputRows(raw.sheets);
         mergeRows(rows);
+        S.draft.reports.push(raw);
         S.draft.file = f.name;
         toast(`${f.name}: 키워드 ${rows.length.toLocaleString('ko-KR')}개 (노출가능 ${rows.filter((r) => r.on).length.toLocaleString('ko-KR')}개 체크)`, 'ok');
       } catch (e) { toast(`${f.name}: ${e.message}`, 'warn'); }
@@ -99,8 +115,8 @@
     if (!rows.some((r) => r.on)) return toast('검사할 키워드를 체크하세요', 'warn');
     if (!S.devices.length) return toast('PC나 모바일 중 하나는 골라주세요', 'warn');
     try {
-      const j = await api('/api/pl/start', { urls, rows, devices: S.devices, nPc: S.nPc, nMo: S.nMo, name: $('#plName')?.value || '' });
-      S.draft = { rows: [], file: '', paste: '' };
+      const j = await api('/api/pl/start', { urls, rows, devices: S.devices, nPc: S.nPc, nMo: S.nMo, name: $('#plName')?.value || '', reports: S.draft.reports, period: S.draft.period });
+      S.draft = { rows: [], file: '', paste: '', reports: [], period: {} };
       await loadJobs(); await openJob(j.id);
     } catch (e) { toast(e.message, 'warn'); }
   }
@@ -235,16 +251,17 @@
     bg.className = 'cfm-bg';
     bg.innerHTML = `<div class="cfm pl-rr" role="dialog" aria-modal="true">
       <div class="cfm-msg"><b>같은 키워드로 재분석</b> <span class="muted">키워드 ${on.length.toLocaleString('ko-KR')}개 · ${src.devices.map((d) => DEVN[d]).join('·')}</span></div>
-      <div class="muted" style="font-size:12.5px;line-height:1.6;margin-top:6px">입찰가를 바꿨다면 광고관리에서 <b>키워드 다운로드 엑셀을 새로 받아</b> 넣어 주세요. 같은 키워드의 입찰가 · 상태 · 평균노출순위만 새 값으로 바뀌고, 키워드 목록과 체크는 그대로예요. 안 넣으면 이전 값으로 재분석해요.</div>
+      <div class="muted" style="font-size:12.5px;line-height:1.6;margin-top:6px">입찰가를 바꿨다면 광고관리에서 <b>키워드 다운로드 엑셀을 새로 받아</b> 넣어 주세요. 같은 키워드의 입찰가 · 상태 · 평균노출순위만 새 값으로 바뀌고, 키워드 목록과 체크는 그대로예요. 안 넣으면 이전 입찰가로 재분석하되 이전 기간의 실적은 복사하지 않아요.</div>
       <div class="drop" id="rrDrop" style="margin-top:10px;padding:14px">새 엑셀을 끌어다 놓거나 <label class="ext" style="cursor:pointer">파일 선택<input type="file" id="rrFile" accept=".xlsx,.xlsm,.csv,.txt" hidden></label></div>
       <textarea id="rrPaste" class="inp" rows="2" style="margin-top:8px" placeholder="또는 엑셀에서 머리글 줄부터 복사해서 여기에 Ctrl+V"></textarea>
+      <div class="pl-bar" style="margin-top:8px">${periodFields()}</div>
       <div id="rrInfo" class="muted" style="font-size:12.5px;margin-top:8px;min-height:18px"></div>
       <div class="cfm-btns"><button type="button" class="btn" data-v="x">취소</button><button type="button" class="btn" data-v="old">이전 입찰가로 재분석</button><button type="button" class="btn pri" data-v="new" disabled>새 입찰가로 재분석</button></div></div>`;
     document.body.appendChild(bg);
-    let got = null, fname = '';
+    let got = null, fname = '', raw = null;
     const info = bg.querySelector('#rrInfo'), btnNew = bg.querySelector('[data-v="new"]');
     const take = (rows, name) => {
-      if (!rows.length) { info.innerHTML = '<span style="color:#b91c1c">키워드를 찾지 못했어요. 머리글(키워드 · 입찰가 …) 줄까지 넣어 주세요</span>'; return; }
+      if (!rows.length) { got = null; btnNew.disabled = true; info.innerHTML = '<span style="color:#b91c1c">키워드를 찾지 못했어요. 머리글(키워드 · 입찰가 …) 줄까지 넣어 주세요</span>'; return; }
       const m = new Map(rows.map((r) => [r.kw.replace(/\s+/g, '').toUpperCase(), r]));
       let changed = 0, missing = 0;
       for (const r of on) { const x = m.get(r.kw.replace(/\s+/g, '').toUpperCase()); if (!x) missing++; else if (x.bid != null && x.bid !== r.bid) changed++; }
@@ -252,13 +269,13 @@
       info.innerHTML = `<b>${e2(name)}</b>: ${rows.length.toLocaleString('ko-KR')}개 읽음 · 이번 키워드 중 <b style="color:var(--accent)">입찰가 바뀜 ${changed.toLocaleString('ko-KR')}개</b>${missing ? ` · 파일에 없음 ${missing.toLocaleString('ko-KR')}개(이전 값 유지)` : ''}`;
       btnNew.disabled = false;
     };
-    const readFiles = async (files) => { const f = files[0]; if (!f) return; try { const sh = await window.XlsxLite.readFile(f); take(fromSheet(sh[0]?.rows || []), f.name); } catch (e) { info.textContent = e.message; } };
+    const readFiles = async (files) => { const f = files[0]; if (!f) return; try { raw = await readReport(f); take(inputRows(raw.sheets), f.name); } catch (e) { got = null; raw = null; btnNew.disabled = true; info.textContent = e.message; } };
     const dz = bg.querySelector('#rrDrop');
     dz.ondragover = (e) => { e.preventDefault(); dz.classList.add('over'); };
     dz.ondragleave = () => dz.classList.remove('over');
     dz.ondrop = (e) => { e.preventDefault(); dz.classList.remove('over'); readFiles([...e.dataTransfer.files]); };
     bg.querySelector('#rrFile').onchange = (e) => readFiles([...e.target.files]);
-    bg.querySelector('#rrPaste').addEventListener('paste', (e) => { const rows = window.XlsxLite?.clipRows(e.clipboardData); if (!rows) return; e.preventDefault(); take(fromSheet(rows), '붙여넣은 표'); });
+    bg.querySelector('#rrPaste').addEventListener('paste', (e) => { const rows = window.XlsxLite?.clipRows(e.clipboardData); if (!rows) return; e.preventDefault(); raw = { name: '붙여넣은 표', sheets: [{ name: '붙여넣은 표', rows }] }; take(fromSheet(rows), raw.name); });
     const close = () => { removeEventListener('keydown', onKey, true); bg.remove(); };
     const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
     addEventListener('keydown', onKey, true);
@@ -268,7 +285,7 @@
       if (v === 'x') return close();
       b.disabled = true;
       try {
-        const j = await api('/api/pl/rerun', { id, nPc: S.nPc, nMo: S.nMo, ...(v === 'new' && got ? { rows: got, file: fname } : {}) });
+        const j = await api('/api/pl/rerun', { id, nPc: S.nPc, nMo: S.nMo, ...(v === 'new' && got ? { rows: got, file: fname, reports: raw ? [raw] : [], period: getPeriod(bg) } : {}) });
         close();
         await loadJobs(); await openJob(j.id);
         toast(j.updated ? `새 입찰가로 재분석해요 (입찰가 바뀐 키워드 ${j.changed}개). 첫 분석 아래에 붙어 있어요` : '이전 입찰가로 다시 분석해요. 첫 분석 아래에 붙어 있어요', 'ok');
@@ -276,12 +293,92 @@
     }));
   }
 
+  function compareLauncher() {
+    return '<div class="pl-bar" style="margin-bottom:10px"><button class="btn" id="plCompare">두 기간 비교</button><span class="muted">저장한 분석의 순위·실제 실적·하락 신호</span></div>';
+  }
+  function dialogPL(title, html) {
+    const bg = document.createElement('div');
+    bg.className = 'cfm-bg';
+    bg.innerHTML = `<div class="cfm" role="dialog" aria-modal="true" aria-label="${title}" style="width:min(1160px,94vw);max-width:none;max-height:85vh;overflow:auto"><div class="pl-bar"><h3>${title}</h3><span style="flex:1"></span><button class="btn" data-close>닫기</button></div>${html}</div>`;
+    const close = () => { removeEventListener('keydown', onKey); bg.remove(); };
+    const onKey = e => { if (e.key === 'Escape') close(); };
+    bg.addEventListener('click', e => { if (e.target === bg || e.target.closest('[data-close]')) close(); });
+    addEventListener('keydown', onKey); document.body.appendChild(bg); $('[data-close]', bg).focus();
+    return bg;
+  }
+  function reportHTML(j, running) {
+    const p = j.report?.period;
+    const files = j.report?.files || [];
+    return `<div class="pl-bar" style="margin-top:8px"><b>실적 보고서</b><span class="muted">${p ? e2(p.start + ' ~ ' + p.end) : '기간 미지정'} · ${files.length ? '인식한 키워드 ' + n0(j.report.keywords) + '개' : '저장된 원본 없음'}</span>
+      ${running ? '' : '<button class="btn sm" id="plReport">실적 파일·기간 설정</button>'}
+      ${files.map((f,i) => f.original ? `<a class="ext" href="/api/pl/report-file?id=${encodeURIComponent(j.id)}&i=${i}" title="업로드 원본 그대로 다운로드">${e2(f.name)}</a>` : e2(f.name)).join(' ')}</div>`;
+  }
+  function bindReport() {
+    const b = $('#plReport'); if (!b) return;
+    b.onclick = () => {
+      const id = S.job.id;
+      const bg = dialogPL('실적 파일·기간 설정', `<p class="muted">광고관리에서 같은 범위로 받은 키워드별 실적 보고서 기간을 입력하세요. 파일을 새로 고르면 이 분석에 저장된 원본 세트를 교체하고, 고르지 않으면 날짜만 수정합니다.</p><div class="pl-bar">${periodFields(S.job.report?.period || {})}</div><p><input type="file" aria-label="실적 보고서 파일" accept=".xlsx,.xlsm,.csv,.txt" multiple></p><button class="btn pri" data-save>저장</button><p class="muted" role="status"></p>`);
+      $('[data-save]', bg).onclick = async e => {
+        const btn = e.currentTarget, status = $('[role=status]', bg); btn.disabled = true;
+        try {
+          const files = [...$('input[type=file]', bg).files];
+          const data = await api('/api/pl/report', { id, period: getPeriod(bg), reports: await Promise.all(files.map(readReport)) });
+          if (S.job?.id === id) { S.job.report = data.report; draw(); }
+          $('[data-close]', bg).click(); toast('실적 자료와 기간을 저장했어요.', 'ok');
+        } catch (x) { status.textContent = x.message; btn.disabled = false; }
+      };
+    };
+  }
+  async function openCompare() {
+    const j = S.job;
+    try {
+      const { jobs } = await api('/api/pl/jobs');
+      const ready = jobs.filter(m => m.status !== 'running');
+      const options = id => '<option value="">분석 선택</option>' + ready.map(m => `<option value="${e2(m.id)}" ${id === m.id ? 'selected' : ''}>${e2(m.name)} · ${e2(m.period ? m.period.start + ' ~ ' + m.period.end : '실적 기간 미지정')}</option>`).join('');
+      const bg = dialogPL('파워링크 두 기간 비교', `<div class="pl-bar"><label>기준 기간 <select class="inp" data-cmp="a">${options(S.prev?.id)}</select></label><label>비교 기간 <select class="inp" data-cmp="b">${options(j?.id)}</select></label><button class="btn pri" data-run>비교</button></div><p class="muted">같은 광고 URL·계정·보고서 범위를 비교하세요. 보고서 실적은 기간 합계·일평균, 순위는 두 분석에서 측정한 PC·모바일 스냅샷입니다.</p><div data-output aria-live="polite"></div>`);
+      $('[data-run]', bg).onclick = async e => {
+        const btn = e.currentTarget, out = $('[data-output]', bg); btn.disabled = true; out.textContent = '비교하는 중…';
+        try { renderComparison(out, await api('/api/pl/compare', { a: $('[data-cmp=a]', bg).value, b: $('[data-cmp=b]', bg).value })); }
+        catch (x) { out.textContent = x.message; }
+        finally { btn.disabled = false; }
+      };
+    } catch (e) { toast(e.message, 'warn'); }
+  }
+  function renderComparison(out, c) {
+    const f = n => n == null ? '—' : n.toLocaleString('ko-KR', { maximumFractionDigits: 1 });
+    const signed = n => n == null ? '—' : (n > 0 ? '+' : '') + f(n);
+    const percent = n => n == null ? '—' : f(n * 100) + '%';
+    const s = c.summary;
+    const metric = (name, a, b, da, db, pct) => `<div class="card"><b>${name}</b><div>${f(a)} → ${f(b)}</div><div class="muted">일평균 ${f(da)} → ${f(db)} · ${pct == null ? '변화율 미표시' : signed(pct) + '%'}</div></div>`;
+    out.innerHTML = `<p><b>${e2(c.pa.start)} ~ ${e2(c.pa.end)}</b> (${c.pa.days}일) → <b>${e2(c.pb.start)} ~ ${e2(c.pb.end)}</b> (${c.pb.days}일)</p>
+      <div class="grid g3">${s.matched ? metric('실제 노출수', s.ai, s.bi, s.ia, s.ib, s.impPct) + metric('실제 클릭수', s.ac, s.bc, s.ca, s.cb, s.clkPct) + `<div class="card"><b>CTR</b><div>${percent(s.ta)} → ${percent(s.tb)}</div></div>` : '<p>실적을 합산할 수 있는 키워드가 없어요.</p>'}</div>
+      <p class="muted">실적 비교 가능 ${f(s.matched)}개 · 보고서 한쪽에만 있음 ${f(s.onlyA)} / ${f(s.onlyB)}개 · 중복 제외 ${f(s.duplicates)}개 · 식별 가능한 노출 기준 포함 비중 ${percent(s.coverageA)} → ${percent(s.coverageB)}</p>
+      <p class="muted">${c.rank.length ? c.rank.map(r => `${DEVN[r.dev]} 순위 ${f(r.avgA)} → ${f(r.avgB)} (양쪽 노출 ${f(r.paired)}개, 하락 ${f(r.down)}개, 미노출 전환 ${f(r.lost)}개)`).join(' · ') : '공통 측정 기기가 없어요.'}</p>
+      <div class="card"><b>하락 진단 · AI 미사용</b><ul>${c.notes.map(n => '<li>' + e2(n) + '</li>').join('')}</ul></div>
+      <div class="pl-bar" style="margin-top:10px"><label>키워드 찾기 <input class="inp" data-search></label><label><input type="checkbox" data-down> 하락만</label><span data-count class="muted"></span><button class="btn" data-export="csv">비교 CSV</button><button class="btn" data-export="txt">키워드 TXT</button></div>
+      <div class="tbl-wrap" style="max-height:420px"><table class="rel"><thead><tr><th class="l">키워드</th>${c.dev.map(d => '<th>' + DEVN[d] + ' 순위</th>').join('')}<th>실제 노출수</th><th>실제 클릭수</th><th>클릭/일 증감</th><th>상태</th></tr></thead><tbody></tbody></table></div>`;
+    const rankText = x => (x.aMiss ? '미노출' : f(x.a)) + ' → ' + (x.bMiss ? '미노출' : f(x.b));
+    const status = r => r.duplicate ? '중복 제외' : r.ok ? '비교 가능' : r.aOnly ? '기준에만 있음' : r.bOnly ? '비교에만 있음' : '실적 미확인';
+    const values = r => [r.kw, ...c.dev.map(d => rankText(r.rank[d])), f(r.ai) + ' → ' + f(r.bi), f(r.ac) + ' → ' + f(r.bc), signed(r.dc), status(r)];
+    const selected = () => { const q = $('[data-search]', out).value.trim().toUpperCase().replace(/\s+/g, ''); return c.rows.filter(r => r.kw.toUpperCase().replace(/\s+/g, '').includes(q) && (!$('[data-down]', out).checked || r.dc < 0 || r.di < 0 || Object.values(r.rank).some(x => x.change > 0 || x.a != null && x.bMiss))); };
+    const drawRows = () => { const rows = selected(); $('[data-count]', out).textContent = f(rows.length) + '개' + (rows.length > 200 ? ' · 화면 상위 200개, 파일은 필터 전체' : ''); $('tbody', out).innerHTML = rows.slice(0, 200).map(r => '<tr>' + values(r).map((v,i) => '<td' + (i ? '' : ' class="l"') + '>' + e2(v) + '</td>').join('') + '</tr>').join(''); };
+    $('[data-search]', out).oninput = $('[data-down]', out).onchange = drawRows; drawRows();
+    $$('[data-export]', out).forEach(btn => btn.onclick = () => {
+      const rows = selected(); const kind = btn.dataset.export;
+      const csv = r => r.map((v, i) => '"' + (i === 0 ? String(v).replace(/^[\s]*[=+@-]/, m => "'" + m) : String(v)).replaceAll('"','""') + '"').join(',');
+      const head = ['키워드', ...c.dev.map(d => DEVN[d] + ' 순위'), '기준 노출수', '비교 노출수', '기준 클릭수', '비교 클릭수', '일평균 노출 증감', '일평균 클릭 증감', '상태'];
+      const text = kind === 'txt' ? rows.map(r => r.kw.replace(/\s+/g, '')).join('\r\n') : [head, ...rows.map(r => [r.kw, ...c.dev.map(d => rankText(r.rank[d])), r.ai ?? '', r.bi ?? '', r.ac ?? '', r.bc ?? '', r.di ?? '', r.dc ?? '', status(r)])].map(csv).join('\r\n');
+      const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob(['\ufeff', text], { type: 'text/plain;charset=utf-8' })); link.download = '파워링크기간비교_' + c.pb.end + '.' + kind; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    });
+  }
+
   function draw() {
     const box = $('#plBody');
     if (!box) return;
     drawSide();
     box.innerHTML = `<div class="sec"><h2>파워링크 분석기 <span class="muted" style="font-size:13px;font-weight:500">내 파워링크가 실제 네이버 검색 화면(로그아웃 상태)에서 몇 위인지 · AI 없이 이 PC에서 직접 검색</span></h2>
-      ${S.job ? jobHTML() : newHTML()}</div>`;
+      ${compareLauncher()}${S.job ? jobHTML() : newHTML()}</div>`;
+    $('#plCompare').onclick = openCompare;
     S.job ? bindJob() : bindNew();
   }
 
@@ -307,7 +404,7 @@
       </div>
       <div class="card"><h3>② 키워드 <span class="muted" style="font-size:13px" id="plCnt">${C.head}</span></h3>
         <div class="drop" id="plDrop">네이버 광고관리 <b>키워드 다운로드 엑셀</b>을 끌어다 놓거나 <label class="ext" style="cursor:pointer">파일 선택<input type="file" id="plFile" accept=".xlsx,.xlsm,.csv,.txt" hidden></label>
-          <div class="muted" style="margin-top:4px">키워드 · 입찰가 · 상태 · 통검 평균노출순위를 알아서 읽어요. '노출가능'만 체크돼요${S.draft.file ? ` · 넣은 파일: ${e2(S.draft.file)}` : ''}</div></div>
+          <div class="muted" style="margin-top:4px">키워드 · 입찰가 · 상태 · 통검 평균노출순위 · 실제 노출수·클릭수를 읽고 원본을 저장해요. '노출가능'만 체크돼요${S.draft.file ? ` · 저장할 원본 ${S.draft.reports.length}개 · 최근 파일: ${e2(S.draft.file)}` : ''}</div></div>
         <label class="muted" style="display:block;margin-top:10px">엑셀 표 붙여넣기 <span style="font-size:12px">(DRM 등으로 파일을 못 넣을 때: 엑셀에서 머리글 줄까지 범위를 복사해 아래 칸에 Ctrl+V)</span></label>
         <textarea id="plPaste" class="inp" rows="3" placeholder="엑셀에서 '키워드 · 입찰가 · 상태 …' 머리글 줄부터 복사해서 붙여넣으면 바로 목록에 들어가요&#10;직접 쓸 때는 한 줄에 &quot;키워드&quot; 또는 &quot;키워드, 입찰가&quot; → [목록에 추가]"></textarea>
         <button class="btn" id="plPasteAdd" style="margin-top:6px">목록에 추가</button>
@@ -323,6 +420,7 @@
       ${rows.length > view.length ? `<div class="muted" style="padding:8px">… 나머지 ${(rows.length - view.length).toLocaleString('ko-KR')}개는 표에서 생략 (체크 상태는 그대로 반영)</div>` : ''}</div></div>` : ''}`;
   }
   function bindNew() {
+    $('[data-period]', $('#plBody')).forEach(x => x.oninput = () => { S.draft.period[x.dataset.period] = x.value; });
     $$('[data-find]').forEach((b) => (b.onclick = () => Finder.open()));
     $('#plUrls').oninput = (e) => { S.urls = e.target.value; localStorage.setItem('plUrls', S.urls); };
     $$('[data-dev]').forEach((c) => (c.onchange = () => { S.devices = $$('[data-dev]').filter((x) => x.checked).map((x) => x.dataset.dev); localStorage.setItem('plDevs', JSON.stringify(S.devices)); draw(); }));
@@ -344,6 +442,7 @@
       if (!got.length) return toast('붙여넣은 표에서 키워드를 찾지 못했어요', 'warn');
       const before = S.draft.rows.length;
       mergeRows(got);
+      S.draft.reports.push({ name: '붙여넣은 표', sheets: [{ name: '붙여넣은 표', rows }] });
       S.draft.file = S.draft.file || '붙여넣은 표';
       draw();
       toast(`붙여넣은 표: 키워드 ${got.length.toLocaleString('ko-KR')}개 (새로 추가 ${(S.draft.rows.length - before).toLocaleString('ko-KR')}개 · 노출가능 ${got.filter((r) => r.on).length.toLocaleString('ko-KR')}개 체크)`, 'ok');
@@ -352,7 +451,7 @@
     $$('[data-pick]').forEach((b) => (b.onclick = () => { const k = b.dataset.pick; S.draft.rows.forEach((r) => (r.on = k === 'all' ? true : k === 'none' ? false : !r.state || r.state === '노출가능')); draw(); }));
     $('#plAll').onchange = () => { const on = !S.draft.rows.every((r) => r.on); S.draft.rows.forEach((r) => (r.on = on)); draw(); };
     $$('[data-on]').forEach((c) => (c.onchange = () => { S.draft.rows[+c.dataset.on].on = c.checked; const C = cntTxt(); $('#plCnt').textContent = C.head; $('#plEta').textContent = C.bar; $('#plAll').checked = S.draft.rows.every((r) => r.on); }));
-    $('#plClr').onclick = () => { S.draft = { rows: [], file: '', paste: '' }; draw(); };
+    $('#plClr').onclick = () => { S.draft = { rows: [], file: '', paste: '', reports: [], period: {} }; draw(); };
     $('#plGo').onclick = start;
   }
 
@@ -394,6 +493,7 @@
       <div class="pl-bar"><b style="font-size:15px">${e2(j.name)}</b><span class="muted">${new Date(j.createdAt).toLocaleString('ko-KR')} · URL ${j.urls.map(e2).join(', ')} · ${j.runs}회 평균${j.source ? ` · <span title="재분석 때 넣은 파일">새 입찰가: ${e2(j.source.file)} (바뀜 ${j.source.changed}개)</span>` : ''}</span><span style="flex:1"></span>
         ${run ? '<button class="btn" id="plStop">중지</button>' : `${j.status !== 'done' ? '<button class="btn pri" id="plResume">이어서 하기</button>' : ''}<button class="btn" id="plRerun" title="같은 키워드 · URL · 기기로 다시 검사해서 이 분석 아래(스레드)에 붙여요">같은 키워드로 재분석</button>`}
         <button class="btn pri" id="plXlsx">엑셀 다운로드</button></div>
+      ${reportHTML(j, run)}
       ${S.thread.length > 1 ? `<div class="pl-thread">${S.thread.map((m, i) => { const pct = m.total ? Math.round((m.done / m.total) * 100) : 0, run2 = m.status === 'running'; return `<button class="${m.id === j.id ? 'on' : ''} ${run2 ? 'run' : ''}" data-th="${e2(m.id)}" style="--p:${run2 ? pct : 100}%" title="${run2 ? `진행 중 ${pct}%` : ST[m.status] || ''}"><span>${i === 0 ? '첫 분석' : e2(m.custom ? m.name : '재분석 ' + (m.thread || i))} <small>${run2 ? pct + '%' : fmtD(m.createdAt)}</small></span></button>`; }).join('<span class="muted">›</span>')}</div>` : ''}
       <div class="prog ${run ? '' : j.status === 'done' ? 'done' : 'fail'}" style="margin-top:10px"><div class="prog-top"><b>${run ? `검사 중 · ${e2(S.running?.cur || '')}` : ST[j.status]}${j.error ? ' · ' + e2(j.error) : ''}</b><span>${done.toLocaleString('ko-KR')} / ${all.length.toLocaleString('ko-KR')}개${run && left ? ` · 남은 시간 약 ${eta < 3600 ? Math.max(1, Math.round(eta / 60)) + '분' : Math.floor(eta / 3600) + '시간 ' + Math.round((eta % 3600) / 60) + '분'}` : ''}</span></div>
         <div class="bar"><div style="width:${all.length ? (done / all.length) * 100 : 0}%"></div></div>
@@ -433,6 +533,7 @@
     </div>`;
   }
   function bindJob() {
+    bindReport();
     $$('[data-find]').forEach((b) => (b.onclick = () => Finder.open()));
     const j = S.job;
     $('#plStop')?.addEventListener('click', async () => { await api('/api/pl/stop', { id: j.id }).catch(() => {}); toast('중지할게요 (지금 키워드까지 마치고 멈춰요)', 'ok'); });
@@ -522,7 +623,7 @@
   })();
 
   // ---------------------------------------------------------------- 메뉴 열기·닫기
-  window.__RESET_pl = () => { clearTimeout(S.timer); S.cur = null; S.job = null; S.draft = { rows: [], file: '', paste: '' }; localStorage.setItem('plCur', ''); draw(); scrollTo(0, 0); return '초기화했어요 (지난 분석은 왼쪽 내역에 있어요)'; };
+  window.__RESET_pl = () => { clearTimeout(S.timer); S.cur = null; S.job = null; S.draft = { rows: [], file: '', paste: '', reports: [], period: {} }; localStorage.setItem('plCur', ''); draw(); scrollTo(0, 0); return '초기화했어요 (지난 분석은 왼쪽 내역에 있어요)'; };
   function showPl(on) {
     if (on) { $('#aiView')?.classList.add('hidden'); window.__hideDup?.(); window.__hideBulk?.(); window.__hideCopy?.(); window.__hideMock?.(); }
     $('#plView').classList.toggle('hidden', !on);

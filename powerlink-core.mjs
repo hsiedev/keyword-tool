@@ -1,3 +1,4 @@
+import { comparePowerlink, periodOf, reports } from './powerlink-compare.mjs';
 // 파워링크 분석기 (AI 없이 이 PC에서 크롤링)
 // - 순위: 로그아웃 상태의 네이버 '광고 더보기' 페이지 HTML을 받아 광고 순서를 읽음 (PC 최대 25위, 모바일 최대 15위). 가볍고 빠름
 //         같은 키워드를 여러 번(기본 4회) 검색해서 평균 순위를 냄 (검색할 때마다 순위가 조금씩 바뀜)
@@ -207,14 +208,14 @@ export function buildXlsx(sheets) {
     const rows = s.rows.map((r, ri) => {
       const ht = s.heights?.[ri];
       return `<row r="${ri + 1}"${ht ? ` ht="${ht}" customHeight="1"` : ''}>${r.map((v, ci) => {
-        const ref = colName(ci) + (ri + 1), st = ri === 0 ? ' s="1"' : ' s="2"';
+        const ref = colName(ci) + (ri + 1), st = ri === 0 && !s.raw ? ' s="1"' : ' s="2"';
         if (typeof v === 'number' && isFinite(v)) return `<c r="${ref}"${st}><v>${v}</v></c>`;
         if (v == null || v === '') return ri === 0 ? '' : `<c r="${ref}"${st}/>`;
         return `<c r="${ref}" t="inlineStr"${st}><is><t xml:space="preserve">${escX(v)}</t></is></c>`;
       }).join('')}</row>`;
     }).join('');
     const imgs = s.images || [];
-    files.push({ name: `xl/worksheets/sheet${n}.xml`, data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="${M}" xmlns:r="${R}"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>${cols ? `<cols>${cols}</cols>` : ''}<sheetData>${rows}</sheetData>${s.rows.length > 1 ? `<autoFilter ref="A1:${colName(Math.max(0, s.rows[0].length - 1))}${s.rows.length}"/>` : ''}${imgs.length ? '<drawing r:id="rId1"/>' : ''}</worksheet>` });
+    files.push({ name: `xl/worksheets/sheet${n}.xml`, data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="${M}" xmlns:r="${R}"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>${cols ? `<cols>${cols}</cols>` : ''}<sheetData>${rows}</sheetData>${!s.raw && s.rows.length > 1 ? `<autoFilter ref="A1:${colName(Math.max(0, s.rows[0].length - 1))}${s.rows.length}"/>` : ''}${imgs.length ? '<drawing r:id="rId1"/>' : ''}</worksheet>` });
     if (!imgs.length) return;
     files.push({ name: `xl/worksheets/_rels/sheet${n}.xml.rels`, data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${R}/drawing" Target="../drawings/drawing${n}.xml"/></Relationships>` });
     const E = 9525;
@@ -244,6 +245,23 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
   const R = () => ({ runs: 4, gapMs: 1200, ...(getRules?.() || {}) });
   const jobDir = (id) => path.join(ROOT, id);
   const okId = (id) => /^pl\d{8,}[a-z0-9]*$/.test(String(id || ''));
+  const rawPath = j => path.join(jobDir(j.id), 'reports.json');
+  function loadReports(j) {
+    if (!j.report?.files?.length) return [];
+    return JSON.parse(fs.readFileSync(rawPath(j), 'utf8'));
+  }
+  function saveReports(j, sources, period) {
+    if (!Array.isArray(sources) || !sources.length) return;
+    if (sources.length > 30 || sources.some(s => !s || !Array.isArray(s.sheets) || !s.sheets.length || s.sheets.some(h => !h || !Array.isArray(h.rows) || h.rows.some(r => !Array.isArray(r) || r.some(v => v != null && !['string','number','boolean'].includes(typeof v)))))) throw new Error('실적 파일의 시트 형식이 올바르지 않아요.');
+    if (sources.reduce((n, s) => n + s.sheets.length, 0) > 200) throw new Error('한 분석에 원본 시트를 200개까지 넣을 수 있어요.');
+    const raw = sources.map(s => ({ name: String(s.name || '붙여넣은 표').slice(0, 180), sheets: s.sheets,
+      ...(typeof s.original === 'string' && /^[A-Za-z0-9+/]+={0,2}$/.test(s.original) ? { original: s.original } : {}) }));
+    const p = period?.start || period?.end ? periodOf(period.start, period.end) : null;
+    const parsed = reports(raw);
+    fs.mkdirSync(jobDir(j.id), { recursive: true });
+    fs.writeFileSync(rawPath(j) + '.tmp', JSON.stringify(raw)); fs.renameSync(rawPath(j) + '.tmp', rawPath(j));
+    j.report = { period: p, files: raw.map(s => ({ name: s.name, original: !!s.original })), tables: parsed.tables, keywords: parsed.rows.size };
+  }
   const jobs = new Map(); // 메모리 캐시
   function load(id) {
     if (!okId(id)) return null;
@@ -280,7 +298,7 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
     clearTimeout(saveT.get(j.id));
     if (now) w(); else saveT.set(j.id, setTimeout(w, 1500));
   }
-  const meta = (j) => ({ id: j.id, name: j.name, custom: !!j.custom, pinned: !!j.pinned, parentId: j.parentId || null, thread: j.thread || 0, createdAt: j.createdAt, updatedAt: j.updatedAt, status: j.status, purged: !!j.purged, total: j.rows.filter((r) => r.on !== false).length, done: j.rows.filter((r) => r.on !== false && r.done).length, devices: j.devices });
+  const meta = (j) => ({ id: j.id, name: j.name, custom: !!j.custom, pinned: !!j.pinned, parentId: j.parentId || null, thread: j.thread || 0, createdAt: j.createdAt, updatedAt: j.updatedAt, status: j.status, purged: !!j.purged, total: j.rows.filter((r) => r.on !== false).length, done: j.rows.filter((r) => r.on !== false && r.done).length, devices: j.devices, period: j.report?.period || null });
   function list() {
     const out = [];
     for (const d of fs.readdirSync(ROOT)) { if (!okId(d)) continue; const j = load(d); if (j) out.push(meta(j)); }
@@ -499,7 +517,9 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
     const j = { id: 'pl' + now + Math.random().toString(36).slice(2, 6), name: String(b.name || '').trim().slice(0, 60) || `${rows.find((r) => r.on).kw} 외 ${rows.filter((r) => r.on).length - 1}개`,
       parentId: b.parentId || null, thread: b.thread || 0, custom: !!b.custom,
       createdAt: now, updatedAt: now, urls, devices, runs: Math.min(5, Math.max(1, Number(R().runs) || 4)), nPc: Math.min(10, Math.max(1, Number(b.nPc) || 3)), nMo: Math.min(5, Math.max(1, Number(b.nMo) || 3)), rows, status: 'ready' };
+    saveReports(j, b.reports, b.period);
     jobs.set(j.id, j); save(j, true);
+    if (j.saveErr) { jobs.delete(j.id); throw new Error('분석 내역을 저장하지 못했어요: ' + j.saveErr); }
     return j;
   }
 
@@ -535,6 +555,17 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
       }
       return { name: dev === 'pc' ? 'PC' : '모바일', rows, heights, widths: [22, 10, 8, 10, 11, 13, 13, 13, 13, 10, 11] };
     });
+    const raw = loadReports(j), parsed = reports(raw).rows;
+    if (raw.length) {
+      sheets.push({ name: '실적 키워드', rows: [['키워드', '실제 노출수', '실제 클릭수', '비고'], ...[...parsed.values()].map(r => [r.kw, r.duplicate ? '' : r.imp, r.duplicate ? '' : r.clk, r.duplicate ? '중복: 원본 확인' : ''])] });
+      const index = [['원본 탭', '파일', '원래 시트 이름', '행 수', '보고서 시작일', '보고서 종료일']];
+      for (const f of raw) for (const s of f.sheets) {
+        const n = index.length, name = '원본 ' + n;
+        index.push([name, f.name, s.name, s.rows.length, j.report.period?.start, j.report.period?.end]);
+        sheets.push({ name, rows: s.rows, raw: true });
+      }
+      sheets.splice(j.devices.length, 0, { name: '원본 목록', rows: index, widths: [12, 32, 24, 12, 15, 15] });
+    }
     return buildXlsx(sheets);
   }
 
@@ -547,6 +578,13 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
         const j = load(u.searchParams.get('id'));
         if (!j) return send(res, 404, { error: '없는 작업이에요' });
         return send(res, 200, { job: j, running: RUN?.id === j.id ? { note: RUN.note, cur: RUN.cur } : null, thread: threadOf(j), prev: prevRanks(j) });
+      }
+      if (p === '/api/pl/report-file') {
+        const j = load(u.searchParams.get('id'));
+        const f = j && loadReports(j)[Number(u.searchParams.get('i'))];
+        if (!f?.original) return send(res, 404, { error: '저장된 원본 파일이 없어요' });
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(f.name).replace(/'/g, '%27')}`, 'Cache-Control': 'no-store' });
+        return res.end(Buffer.from(f.original, 'base64'));
       }
       if (p === '/api/pl/img') {
         const j = load(u.searchParams.get('id')), f = String(u.searchParams.get('f') || '');
@@ -567,6 +605,26 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
       }
       if (req.method !== 'POST') return send(res, 405, { error: 'POST로 보내주세요' });
       const b = await readBody(req);
+      if (p === '/api/pl/compare') {
+        const a = load(b.a), z = load(b.b);
+        if (!a || !z || a.id === z.id) return send(res, 400, { error: '서로 다른 두 분석을 고르세요.' });
+        if (RUN?.id === a.id || RUN?.id === z.id) return send(res, 400, { error: '진행 중인 작업은 중지하거나 끝난 뒤 비교하세요.' });
+        const pa = a.report?.period, pb = z.report?.period;
+        if (!pa || !pb) return send(res, 400, { error: '두 분석 모두 결과 화면에서 실적 기간을 저장하세요.' });
+        return send(res, 200, comparePowerlink(a, z, loadReports(a), loadReports(z), pa, pb));
+      }
+      if (p === '/api/pl/report') {
+        const j = load(b.id);
+        if (!j) return send(res, 404, { error: '없는 작업이에요' });
+        if (RUN?.id === j.id) return send(res, 400, { error: '작업이 끝나거나 중지한 뒤 저장하세요.' });
+        const p = periodOf(b.period?.start, b.period?.end);
+        if (b.reports?.length) saveReports(j, b.reports, p);
+        else if (j.report) j.report.period = p;
+        else j.report = { period: p, files: [], tables: 0, keywords: 0 };
+        save(j, true);
+        if (j.saveErr) throw new Error(j.saveErr);
+        return send(res, 200, { report: j.report });
+      }
       if (p === '/api/pl/start') { const j = create(b); await runJob(j); return send(res, 200, { id: j.id }); }
       if (p === '/api/pl/resume') { const j = load(b.id); if (!j) return send(res, 404, { error: '없는 작업이에요' }); if (j.status === 'done') return send(res, 200, { id: j.id }); await runJob(j); return send(res, 200, { id: j.id }); }
       if (p === '/api/pl/stop') { if (RUN && (!b.id || RUN.id === b.id)) RUN.stop = true; return send(res, 200, { ok: true }); }
@@ -591,7 +649,7 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
         });
         const known = new Set(src.rows.map((r) => nk(r.kw)));
         const extra = upd ? [...upd.keys()].filter((k2) => !known.has(k2)).length : 0;
-        const j = create({ urls: src.urls, devices: src.devices, nPc: b.nPc || src.nPc, nMo: b.nMo || src.nMo, rows, name: `${root.name} · 재분석 ${k}`, parentId: root.id, thread: k });
+        const j = create({ urls: src.urls, devices: src.devices, nPc: b.nPc || src.nPc, nMo: b.nMo || src.nMo, rows, reports: b.reports, period: b.period, name: `${root.name} · 재분석 ${k}`, parentId: root.id, thread: k });
         if (upd) { j.source = { file: String(b.file || '새 파일').slice(0, 80), changed, missing, extra }; save(j, true); }
         await runJob(j);
         return send(res, 200, { id: j.id, changed, missing, extra, updated: !!upd });
