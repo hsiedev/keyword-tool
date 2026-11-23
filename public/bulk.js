@@ -18,7 +18,7 @@
   try { B.ai = JSON.parse(localStorage.getItem('bulkAI') || 'null'); } catch { B.ai = null; } // 재검증에 쓸 AI (대량 분석 전용)
 
   // ---------------------------------------------------------------- 내역 탭 (왼쪽 사이드바)
-  // 분석 한 번 = 탭 하나. 분석기 폴더의 data\bulk-history\에 파일로 저장 (1,000개 × 입찰가도 넉넉)
+  // 분석 한 번 = 탭 하나. data\bulk-history\에 회차별 진행 상태와 결과를 저장
   const H = { list: [], cur: null, cache: new Map(), err: '' };
   const defaultVC = () => ({ topic: '', examples: '', extra: '', minVol: RULES().verify?.defaultMinVol ?? 50, target: 'all' });
   const newSession = () => ({ id: 'b' + Date.now() + Math.floor(Math.random() * 1000), name: '새 분석', custom: false, pinned: false, createdAt: Date.now(), updatedAt: Date.now(), rows: [], info: null, vc: defaultVC(), draft: true });
@@ -39,6 +39,7 @@
     B.fb?.reset();
     B.sort = { key: 'total', dir: -1 };
   }
+  const BATCH_SIZE = 1000; // /api/bulk-stream의 회차 상한과 맞춤
   let saveT = null;
   // touch=false: 조건 입력처럼 목록 순서를 바꾸지 않는 저장
   function persist(now, touch = true) {
@@ -49,7 +50,7 @@
     if (touch) s.updatedAt = Date.now();
     if (s.draft) return;
     clearTimeout(saveT);
-    if (now) saveSession(s); else saveT = setTimeout(() => saveSession(s), 600);
+    if (now) return saveSession(s); else saveT = setTimeout(() => saveSession(s), 600);
   }
   async function saveSession(s, metaOnly) {
     try {
@@ -62,6 +63,7 @@
       H.err = '내역을 파일로 저장하지 못했어요. 분석기를 다시 시작해 주세요 (start.bat). ' + e.message;
     }
     drawSide();
+    return !H.err;
   }
   async function initHistory() {
     try {
@@ -110,7 +112,8 @@
   }
   function afterOpen() {
     $('#bvProg')?.classList.add('hidden'); if ($('#bvMsg')) $('#bvMsg').textContent = '';
-    fillVC(); drawResult(); drawSide();
+    $('#bProg').classList.add('hidden'); $('#bMsg').textContent = '';
+    updateResume(); fillVC(); drawResult(); drawSide();
     scrollTo({ top: 0 });
   }
   const PIN = '<svg width="12" height="12" viewBox="0 0 24 24" fill="#16a34a" style="flex:none"><path d="M16 3l5 5-3 1-4 4 1 5-2 2-4-4-5 5-1-1 5-5-4-4 2-2 5 1 4-4z"/></svg>';
@@ -265,6 +268,7 @@
             </div>
             <div style="display:flex;gap:8px;margin-top:14px;align-items:center;flex-wrap:wrap">
               <button class="btn pri" id="bRun">분석 시작</button>
+              <button class="btn pri hidden" id="bResume">이어하기</button>
               <button class="btn hidden" id="bStop">중지</button>
               <button class="btn" id="bClear">입력 비우기</button>
             </div>
@@ -318,7 +322,8 @@
     dz.ondrop = (e) => { e.preventDefault(); dz.classList.remove('over'); addFiles([...e.dataTransfer.files]); };
     $('#bPaste').oninput = (e) => { B.paste = e.target.value; drawCount(); };
     for (const k of ['bids', 'blog']) { const cb = $('#bo_' + k); cb.checked = B.opt[k]; cb.onchange = () => (B.opt[k] = cb.checked); }
-    $('#bRun').onclick = start;
+    $('#bRun').onclick = () => start();
+    $('#bResume').onclick = () => start(true);
     $('#bClear').onclick = () => { B.files = []; B.paste = ''; $('#bPaste').value = ''; drawInput(); };
 
     const btn = document.createElement('button');
@@ -396,25 +401,35 @@
   }
 
   // ---------------------------------------------------------------- 실행 (서버 스트림)
-  async function start() {
-    if (B.busy) return;
-    const kws = inputKeywords();
-    if (!kws.length) return ($('#bMsg').innerHTML = '<span style="color:#b91c1c">분석할 키워드를 넣어주세요</span>');
-    if (kws.length > 1000 && !await uiConfirm(`키워드가 ${kws.length.toLocaleString('ko-KR')}개예요. 앞의 1,000개만 분석할까요?`)) return;
-    // 결과가 있는 탭에서 다시 분석하면 이전 결과는 내역에 그대로 두고 새 탭으로 (재검증 조건은 이어받음)
-    if (B.order.length || !H.cur) { const vc = { ...B.vc }; clearTimeout(saveT); loadInto(newSession()); B.vc = vc; }
-    B.rows = new Map(); B.order = kws.slice(0, 1000); B.page = 1; B.sel = new Set(); B.f.v = '';
-    delete H.cur.draft; H.cur.createdAt = Date.now();
-    if (!H.cur.custom) H.cur.name = autoName(B.order);
-    B.order.forEach((k) => B.rows.set(k, { keyword: k, pending: true }));
-    B.busy = true; B.info = null;
+  function updateResume() {
+    const left = B.info?.resume ? B.order.length - B.info.resume.next : 0;
+    const btn = $('#bResume');
+    btn.classList.toggle('hidden', B.busy || left <= 0);
+    btn.textContent = `이어하기 (${left.toLocaleString('ko-KR')}개)`;
+  }
+  async function start(resume = false) {
+    if (B.busy || B.vbusy) return;
+    const kws = resume ? B.order : inputKeywords();
+    if (!kws.length) return ($('#bMsg').textContent = '분석할 키워드를 넣어주세요');
+    if (!resume) {
+      if (B.order.length || !H.cur) { const vc = { ...B.vc }; clearTimeout(saveT); loadInto(newSession()); B.vc = vc; }
+      B.rows = new Map(kws.map((k) => [k, { keyword: k, skipped: true }]));
+      B.order = kws; B.page = 1; B.sel = new Set(); B.f.v = '';
+      delete H.cur.draft; H.cur.createdAt = Date.now();
+      if (!H.cur.custom) H.cur.name = autoName(kws);
+      B.info = { at: Date.now(), partial: true, resume: { next: 0, opt: { ...B.opt }, summary: {} } };
+    }
+    const job = B.info?.resume;
+    if (!job || job.next >= B.order.length) return;
+    B.busy = true;
+    updateResume();
     $('#bRun').disabled = true; $('#bStop').classList.remove('hidden');
     $('#bProg').classList.remove('hidden', 'fail');
     const t0 = Date.now();
     const timer = setInterval(() => ($('#bTime').textContent = Math.round((Date.now() - t0) / 1000) + '초'), 500);
     let steps = ['검색량'];
     const setP = (txt, p) => { $('#bPhase').textContent = txt; $('#bBar').style.width = p + '%'; $('#bPct').textContent = Math.round(p) + '%'; };
-    setP('준비 중', 2);
+    setP('준비 중', 100 * job.next / B.order.length);
     $('#bMsg').textContent = '';
     drawResult(); drawSide(); fillVC();
     const ctrl = new AbortController();
@@ -422,35 +437,56 @@
     $('#bStop').onclick = () => { stopped = true; ctrl.abort(); reader?.cancel().catch(() => {}); };
     let lastDraw = 0;
     const redraw = (force) => { if (force || Date.now() - lastDraw > 400) { lastDraw = Date.now(); drawResult(); } };
+    const assertSaved = async () => {
+      if (!await persist(true)) throw new Error('내역을 저장하지 못해 분석을 멈췄어요. 저장 상태를 확인한 뒤 이어하기를 누르세요.');
+    };
     try {
-      const res = await fetch('/api/bulk-stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keywords: B.order, bids: B.opt.bids, blog: B.opt.blog }), signal: ctrl.signal });
-      const ct = res.headers.get('content-type') || '';
-      if (!ct.includes('event-stream')) { const j = await res.json(); throw new Error(j.error || '서버 오류'); }
-      reader = res.body.getReader();
-      const dec = new TextDecoder();
-      let buf = '', done = null;
-      while (!done) {
-        const { value, done: end } = await reader.read();
-        if (end) break;
-        buf += dec.decode(value, { stream: true });
-        const parts = buf.split('\n\n'); buf = parts.pop();
-        for (const part of parts) {
-          const line = part.split('\n').find((l) => l.startsWith('data:'));
-          if (!line) continue;
-          const ev = JSON.parse(line.slice(5).trim());
-          if (ev.type === 'error') throw new Error(ev.message);
-          if (ev.type === 'start') steps = ev.steps;
-          if (ev.type === 'rows') { for (const r of ev.rows) { const o = B.rows.get(r.keyword) || { keyword: r.keyword }; Object.assign(o, r); delete o.pending; B.rows.set(r.keyword, o); } redraw(); }
-          if (ev.type === 'progress') {
-            const si = steps.indexOf(ev.step);
-            const p = ((si + ev.done / ev.total) / steps.length) * 100;
-            setP(`${si + 1}/${steps.length}단계 · ${ev.step} 조회 중 ${ev.done.toLocaleString('ko-KR')} / ${ev.total.toLocaleString('ko-KR')}`, p);
+      await assertSaved();
+      while (job.next < B.order.length && !stopped) {
+        const offset = job.next;
+        const batch = B.order.slice(offset, offset + BATCH_SIZE);
+        const label = `${Math.floor(offset / BATCH_SIZE) + 1}/${Math.ceil(B.order.length / BATCH_SIZE)}회차`;
+        for (const k of batch) B.rows.set(k, { keyword: k, pending: true, checks: B.rows.get(k)?.checks });
+        redraw(true);
+        const res = await fetch('/api/bulk-stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keywords: batch, ...job.opt }), signal: ctrl.signal });
+        const ct = res.headers.get('content-type') || '';
+        if (!ct.includes('event-stream')) { const j = await res.json(); throw new Error(j.error || '서버 오류'); }
+        reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '', done = null;
+        while (!done) {
+          const { value, done: end } = await reader.read();
+          if (end) break;
+          buf += dec.decode(value, { stream: true });
+          const parts = buf.split('\n\n'); buf = parts.pop();
+          for (const part of parts) {
+            const line = part.split('\n').find((l) => l.startsWith('data:'));
+            if (!line) continue;
+            const ev = JSON.parse(line.slice(5).trim());
+            if (ev.type === 'error') throw new Error(ev.message);
+            if (ev.type === 'start') steps = ev.steps;
+            if (ev.type === 'rows') { for (const r of ev.rows) { const o = B.rows.get(r.keyword) || { keyword: r.keyword }; Object.assign(o, r); delete o.pending; B.rows.set(r.keyword, o); } redraw(); }
+            if (ev.type === 'progress') {
+              const si = steps.indexOf(ev.step);
+              const p = (offset + batch.length * (si + ev.done / ev.total) / steps.length) / B.order.length * 100;
+              setP(`${label} · ${si + 1}/${steps.length}단계 · ${ev.step} 조회 중 ${ev.done.toLocaleString('ko-KR')} / ${ev.total.toLocaleString('ko-KR')}`, p);
+            }
+            if (ev.type === 'done') done = ev;
           }
-          if (ev.type === 'done') done = ev;
         }
+        if (!done || done.total !== batch.length) throw new Error('회차 결과를 모두 받지 못했어요');
+        reader.releaseLock(); reader = null;
+        const checkpoint = { ...B.info, resume: { ...job, summary: { ...job.summary } } };
+        job.next += batch.length;
+        for (const k of ['notFound', 'failed']) job.summary[k] = (job.summary[k] || 0) + (done[k] || 0);
+        for (const k of ['bidErr', 'blogErr', 'blogSkipped']) if (done[k]) job.summary[k] = done[k];
+        B.info = job.next < B.order.length
+          ? { at: Date.now(), partial: true, resume: job }
+          : { at: Date.now(), total: job.next, ...job.summary };
+        try { await assertSaved(); } catch (e) { B.info = checkpoint; throw e; }
       }
-      if (!done) throw new Error('서버 연결이 끊겼어요');
-      B.info = { at: Date.now(), ...done };
+      if (job.next < B.order.length) throw new DOMException('중지', 'AbortError');
+      const done = B.info;
       setP(`완료 · ${done.total.toLocaleString('ko-KR')}개 · ${Math.round((Date.now() - t0) / 1000)}초`, 100);
       const notes = [];
       if (done.notFound) notes.push(`검색광고 데이터가 없는 키워드 ${done.notFound}개 (검색량이 거의 없거나 광고 불가 키워드)`);
@@ -463,12 +499,15 @@
       const aborted = stopped || e.name === 'AbortError';
       $('#bPhase').textContent = aborted ? '중지했어요 (받은 데까지 표시)' : '실패';
       if (!aborted) { $('#bProg').classList.add('fail'); $('#bMsg').innerHTML = `<span style="color:#b91c1c">${esc(e.message)}</span>`; }
-      B.info = { at: Date.now(), partial: true };
+      if (B.info?.resume) $('#bPhase').textContent += ` · 저장 기준 ${B.info.resume.next.toLocaleString('ko-KR')}개`;
     } finally {
       clearInterval(timer);
-      B.busy = false; $('#bRun').disabled = false; $('#bStop').classList.add('hidden');
+      $('#bStop').classList.add('hidden');
       for (const k of B.order) { const o = B.rows.get(k); if (o?.pending) { delete o.pending; o.skipped = true; } }
-      persist(true); drawResult(); drawSide();
+      if (reader) await reader.cancel().catch(() => {});
+      if (B.info?.resume && !await persist(true)) $('#bMsg').textContent = '내역 저장에 실패했어요. 새로고침 전에 저장 상태를 확인해 주세요.';
+      B.busy = false; $('#bRun').disabled = false;
+      updateResume(); drawResult(); drawSide();
     }
   }
 
