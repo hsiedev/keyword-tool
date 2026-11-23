@@ -27,7 +27,7 @@ async function fetch(url, opts) {
   return new Response(events.map(e => 'data: ' + JSON.stringify(e) + '\n\n').join(''), { headers: { 'content-type': 'text/event-stream' } });
 }
 function boot() {
-  const ctx = { window: { addEventListener() {} }, localStorage: { getItem: () => null }, fetch, $, RULES: () => ({}), esc: String, setInterval, clearInterval, clearTimeout, AbortController, DOMException, TextDecoder, scrollTo() {} };
+  const ctx = { addEventListener() {}, window: { addEventListener() {} }, localStorage: { getItem: () => null }, fetch, $, RULES: () => ({}), esc: String, setInterval, clearInterval, clearTimeout, AbortController, DOMException, TextDecoder, scrollTo() {} };
   const fixture = src.replace(/  mount\(\);\r?\n\}\)\(\);/, '  drawResult = drawSide = fillVC = () => {};\n})();');
   assert.notEqual(fixture, src);
   vm.runInNewContext(fixture, ctx);
