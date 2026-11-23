@@ -93,11 +93,14 @@
 
   // ---------------------------------------------------------------- CSV 읽기 (UTF-8 / EUC-KR 자동)
   function decodeText(buf) {
+    const bytes = new Uint8Array(buf);
+    if (bytes[0] === 255 && bytes[1] === 254) return new TextDecoder('utf-16le').decode(buf);
+    if (bytes[0] === 254 && bytes[1] === 255) return new TextDecoder('utf-16be').decode(buf);
     try { return new TextDecoder('utf-8', { fatal: true }).decode(buf).replace(/^\ufeff/, ''); }
     catch { return new TextDecoder('euc-kr').decode(buf); }
   }
-  function parseCsv(text, raw = false) {
-    const delim = (text.split('\n')[0].match(/\t/g) || []).length > (text.split('\n')[0].match(/,/g) || []).length ? '\t' : ',';
+  function parseCsv(text, raw = false, delimiter) {
+    const delim = delimiter || ((text.split('\n')[0].match(/\t/g) || []).length > (text.split('\n')[0].match(/,/g) || []).length ? '\t' : ',');
     const rows = []; let row = [], cur = '', q = false;
     for (let i = 0; i < text.length; i++) {
       const ch = text[i];
@@ -116,7 +119,7 @@
     return rows;
   }
 
-  async function readFile(file, { raw = false, buffer } = {}) {
+  async function readFile(file, { raw = false, buffer, csvHeader } = {}) {
     const buf = buffer || await file.arrayBuffer();
     const name = file.name.toLowerCase();
     if (name.endsWith('.xlsx') || name.endsWith('.xlsm')) return readXlsx(buf, raw);
@@ -126,7 +129,14 @@
       const words = decodeText(buf).split(/[\r\n,\t]+/).map((s) => s.trim()).filter(Boolean);
       return [{ name: file.name, rows: words.map((w) => [w]) }];
     }
-    return [{ name: file.name, rows: parseCsv(decodeText(buf), raw) }];
+    const text = decodeText(buf);
+    if (csvHeader) {
+      const proposals = [',','\t',';'].map(d => parseCsv(text, raw, d));
+      const fit = rows => rows.reduce((max, row) => row.length > 1 && csvHeader(row) ? Math.max(max, row.length) : max, 0);
+      proposals.sort((a,b) => fit(b) - fit(a));
+      if (fit(proposals[0])) return [{ name: file.name, rows: proposals[0] }];
+    }
+    return [{ name: file.name, rows: parseCsv(text, raw) }];
   }
 
   // ---------------------------------------------------------------- XLSX 쓰기 (무압축 ZIP)

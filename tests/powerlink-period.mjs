@@ -44,5 +44,15 @@ try {
   assert.match(joined, /r="S7"[^>]*><v>2<\/v>/);
   assert.match(joined, /r="Z5"[^>]*><is><t[^>]*>분석 대상 아님/);
   assert.doesNotMatch(joined, /r="S3"|r="S6"/);
+  const reorder = [10,11,4,17,0,9,14,1,2,3,5,6,7,8,12,13,15,16];
+  const shuffled = fixture.map((row, i) => i === 0 || !row.length ? row : reorder.map(k => row[k] ?? ''));
+  shuffled[1][4] = '​등록 키워드'; shuffled[1][0] = '클릭 수 (건)'; shuffled[1][5] = '노출 수 (회)';
+  assert.equal((await call('/api/pl/report',{id:a.id,period:p('01','02'),reports:[{name:'붙여넣은 표',sheets:[{name:'순서변경',rows:shuffled}]}]})).s,200);
+  const shuffledCompare = await call('/api/pl/compare',{a:a.id,b:b.id});
+  // 중복 실적을 임의 합산하지 않지만, 해당 머리글과 수치 자체는 찾아낸다.
+  assert.equal(shuffledCompare.v.summary.tablesA,1);
+  const shuffledXml = unzip((await call('/api/pl/xlsx?id='+a.id)).v)['xl/worksheets/sheet1.xml'];
+  assert.match(shuffledXml, /r="A4"[^>]*><v>10<\/v>.*r="B4"[^>]*><is><t[^>]*>00123/);
+  assert.match(shuffledXml, /r="E4"[^>]*><is><t[^>]*>테스트 키워드.*r="F4"[^>]*><v>100<\/v>.*r="S4"[^>]*><v>2<\/v>/);
   console.log('파워링크 테스트 통과: 기간·실적·순위·중복·원본 파일·결과 엑셀');
 } finally { fs.rmSync(tmp,{recursive:true,force:true}); }

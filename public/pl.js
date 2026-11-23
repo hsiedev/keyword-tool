@@ -28,21 +28,19 @@
   // ---------------------------------------------------------------- 키워드 읽기 (네이버 광고관리 엑셀 · CSV · 붙여넣기)
   const numOf = (v) => { const s = String(v ?? '').replace(/[^\d.]/g, ''); return s === '' ? null : Number(s); };
   function fromSheet(rows) {
-    const hi = rows.findIndex((r) => (r || []).some((c) => /^(키워드|키워드명|keyword)$/i.test(String(c).trim())));
-    if (hi < 0) {
+    const header = window.PowerlinkColumns.find(rows);
+    if (!header) {
       const k = window.XlsxLite?.pickKeywords ? window.XlsxLite.pickKeywords(rows) : null;
       const ci = k && typeof k.col === 'string' && /번째 열$/.test(k.col) ? parseInt(k.col) - 1 : 0;
       return rows.map((r) => (r || []).map((c) => String(c).trim())).filter((r) => r[ci] && !/^[\d,.]+$/.test(r[ci])).map((r) => ({ kw: r[ci], bid: numOf(r.find((c, i) => i !== ci && /^[\d,]+원?$/.test(c))), state: '', on: true }));
     }
-    const h = rows[hi].map((c) => String(c).replace(/\s+/g, ''));
-    const at = (name) => h.findIndex((c) => c === name);
-    const iK = h.findIndex(c => /^(키워드|키워드명|keyword)$/i.test(c)), iB = at('입찰가'), iS = at('상태'), iP = h.findIndex((c) => /^PC통검평균노출순위/.test(c)), iM = h.findIndex((c) => /^모바일통검평균노출순위/.test(c));
+    const { at, col: { kw: iK, bid: iB, state: iS, pc: iP, mo: iM } } = header;
     const out = [];
-    for (const r of rows.slice(hi + 1)) {
+    for (const r of rows.slice(at + 1)) {
       const kw = String(r?.[iK] ?? '').trim();
       if (!kw || /^(합계|총계|소계|전체|총합계|전체합계|TOTALS?|키워드[\d,]+개결과)$/i.test(kw.replace(/\s+/g, ''))) continue; // 맨 위 합계 줄
       const state = iS >= 0 ? String(r[iS] ?? '').trim() : '';
-      out.push({ kw, bid: iB >= 0 ? numOf(r[iB]) : null, state, acctPc: iP >= 0 ? numOf(r[iP]) : null, acctMo: iM >= 0 ? numOf(r[iM]) : null, on: !state || state === '노출가능' });
+      out.push({ kw, bid: iB >= 0 ? numOf(r[iB]) : null, state, acctPc: iP >= 0 ? numOf(r[iP]) : null, acctMo: iM >= 0 ? numOf(r[iM]) : null, on: !state || window.PowerlinkColumns.clean(state) === '노출가능' });
     }
     return out;
   }
@@ -58,14 +56,14 @@
   async function readReport(file) {
     if (file.size > 12 * 1024 * 1024) throw new Error('파일이 12MB를 넘어요. 필요한 보고서로 나눠 주세요.');
     const buffer = await file.arrayBuffer();
-    const sheets = await window.XlsxLite.readFile(file, { raw: true, buffer });
+    const sheets = await window.XlsxLite.readFile(file, { raw: true, buffer, csvHeader: row => window.PowerlinkColumns.find([row])?.col.kw >= 0 });
     if (!sheets.length) throw new Error('읽을 수 있는 시트가 없어요.');
     const a = new Uint8Array(buffer), parts = [];
     for (let i = 0; i < a.length; i += 24576) parts.push(btoa(String.fromCharCode(...a.subarray(i, i + 24576))));
     return { name: file.name, sheets, original: parts.join('') };
   }
   const inputRows = sheets => {
-    const all = sheets.filter(s => s.rows.some(r => r.some(c => /^(키워드|키워드명|keyword)$/i.test(String(c).trim()))));
+    const all = sheets.filter(s => window.PowerlinkColumns.find(s.rows));
     return all.length ? all.flatMap(s => fromSheet(s.rows)) : fromSheet(sheets[0]?.rows || []);
   };
   async function addFiles(files) {
@@ -471,7 +469,7 @@
       toast(`붙여넣은 표: 키워드 ${got.length.toLocaleString('ko-KR')}개 (새로 추가 ${(S.draft.rows.length - before).toLocaleString('ko-KR')}개 · 노출가능 ${got.filter((r) => r.on).length.toLocaleString('ko-KR')}개 체크)`, 'ok');
     }, true);
     if (!$('#plGo')) return;
-    $$('[data-pick]').forEach((b) => (b.onclick = () => { const k = b.dataset.pick; S.draft.rows.forEach((r) => (r.on = k === 'all' ? true : k === 'none' ? false : !r.state || r.state === '노출가능')); draw(); }));
+    $$('[data-pick]').forEach((b) => (b.onclick = () => { const k = b.dataset.pick; S.draft.rows.forEach((r) => (r.on = k === 'all' ? true : k === 'none' ? false : !r.state || window.PowerlinkColumns.clean(r.state) === '노출가능')); draw(); }));
     $('#plAll').onchange = () => { const on = !S.draft.rows.every((r) => r.on); S.draft.rows.forEach((r) => (r.on = on)); draw(); };
     $$('[data-on]').forEach((c) => (c.onchange = () => { S.draft.rows[+c.dataset.on].on = c.checked; const C = cntTxt(); $('#plCnt').textContent = C.head; $('#plEta').textContent = C.bar; $('#plAll').checked = S.draft.rows.every((r) => r.on); }));
     $('#plClr').onclick = () => { S.draft = { rows: [], file: '', paste: '', reports: [], period: {} }; draw(); };

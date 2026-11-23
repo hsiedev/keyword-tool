@@ -1,3 +1,4 @@
+import plColumns from './public/pl-columns.js';
 import { comparePowerlink, periodOf, reports } from './powerlink-compare.mjs';
 // 파워링크 분석기 (AI 없이 이 PC에서 크롤링)
 // - 순위: 로그아웃 상태의 네이버 '광고 더보기' 페이지 HTML을 받아 광고 순서를 읽음 (PC 최대 25위, 모바일 최대 15위). 가볍고 빠름
@@ -543,9 +544,9 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
 
   // 원본 행과 열은 재정렬하지 않는다. 분석에서 중복 제거하더라도 원본의 해당 행 모두에 같은 검색 결과를 붙인다.
   function withReportResults(rows, j, ranks) {
-    const a = rows.findIndex(row => row.some(v => /^(키워드|키워드명|keyword)$/i.test(String(v ?? '').trim())));
-    if (a < 0) return null;
-    const col = rows[a].findIndex(v => /^(키워드|키워드명|keyword)$/i.test(String(v ?? '').trim()));
+    const header = plColumns.find(rows);
+    if (!header) return null;
+    const { at: a, col: { kw: col } } = header;
     const width = rows.reduce((n, row) => Math.max(n, row.length), 0);
     const labels = j.devices.flatMap((d, i) => {
       const dev = d === 'pc' ? 'PC' : '모바일', n = ranks[i];

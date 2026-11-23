@@ -1398,7 +1398,7 @@ function guard(req, u) {
 }
 
 // ---------------------------------------------------------------- 버전: 서버 코드가 바뀌었는지 (다시 시작 필요 여부)
-const SERVER_FILES = ['server.mjs', 'ai-cli.mjs', 'github-sync.mjs', 'sections.mjs', 'settings-defaults.mjs', 'copy-core.mjs', 'public/copy-spec.js', 'google-core.mjs', 'powerlink-core.mjs', 'powerlink-compare.mjs'];
+const SERVER_FILES = ['server.mjs', 'ai-cli.mjs', 'github-sync.mjs', 'sections.mjs', 'settings-defaults.mjs', 'copy-core.mjs', 'public/copy-spec.js', 'google-core.mjs', 'powerlink-core.mjs', 'powerlink-compare.mjs', 'public/pl-columns.js'];
 const codeHash = () => {
   const h = crypto.createHash('sha1');
   for (const f of SERVER_FILES) { try { h.update(fs.readFileSync(path.join(__dirname, f))); } catch {} }

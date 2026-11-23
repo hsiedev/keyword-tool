@@ -1,11 +1,7 @@
+import plColumns from './public/pl-columns.js';
 // 기간별 광고 보고서와 현장 순위 스냅샷을 분리해 비교한다. 외부 호출 없음.
 const DAY = 86400000;
 export const keyOf = v => String(v ?? '').trim().replace(/\s+/g, '').toUpperCase();
-const header = v => keyOf(v).replace(/[()（）_-]/g, '');
-const heads = {
-  kw: /^(키워드|키워드명|KEYWORD)$/, imp: /^(총|전체)?(노출수|노출횟수)(회)?$|^IMPRESSIONS?$/,
-  clk: /^(총|전체)?(클릭수|클릭횟수)(회)?$|^CLICKS?$/,
-};
 export function periodOf(start, end) {
   const date = v => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(v || '')) return NaN;
@@ -27,8 +23,7 @@ export function reports(sources = []) {
   for (const source of sources) for (const s of source.sheets) {
     let col = null;
     for (const row of s.rows) {
-      const h = row.map(header);
-      const idx = Object.fromEntries(Object.entries(heads).map(([k, re]) => [k, h.findIndex(v => re.test(v))]));
+      const idx = plColumns.columns(row);
       if (idx.kw >= 0 && idx.imp >= 0 && idx.clk >= 0) { if (!col) tables++; col = idx; continue; }
       if (!col) continue;
       const kw = String(row[col.kw] ?? '').trim(), key = keyOf(kw);
