@@ -27,10 +27,22 @@ try {
   assert.equal((await call('/api/pl/compare',{a:b.id,b:a.id})).s,400);
   assert.deepEqual((await call('/api/pl/report-file?id='+a.id+'&i=0')).v,original);
   const x = (await call('/api/pl/xlsx?id='+a.id)).v;
-  const xml = {}; for(let i=0;x.readUInt32LE(i)===0x04034b50;) { const len=x.readUInt16LE(i+26), extra=x.readUInt16LE(i+28), n=x.readUInt32LE(i+18), begin=i+30+len+extra; xml[x.toString('utf8',i+30,i+30+len)]=zlib.inflateRawSync(x.subarray(begin,begin+n)).toString(); i=begin+n; }
+  const unzip = x => { const xml = {}; for(let i=0;x.readUInt32LE(i)===0x04034b50;) { const len=x.readUInt16LE(i+26), extra=x.readUInt16LE(i+28), n=x.readUInt32LE(i+18), begin=i+30+len+extra; xml[x.toString('utf8',i+30,i+30+len)]=zlib.inflateRawSync(x.subarray(begin,begin+n)).toString(); i=begin+n; } return xml; };
+  const xml = unzip(x);
   assert.match(xml['xl/workbook.xml'],/원본 목록.*실적 키워드.*원본 1.*원본 2/);
   assert.match(xml['xl/worksheets/sheet4.xml'],/  원본 공백  /);
   assert.match(xml['xl/worksheets/sheet5.xml'],/모든 탭 유지.*0021/);
   assert.equal((await call('/api/pl/jobs')).v.jobs.find(x=>x.id===a.id).period.days,2);
+  const head = ['키워드','총비용','평균 CPC','입찰가 유형','입찰가','클릭률(%)','평균노출순위','광고 연관지수','클릭 기대지수','노출수','클릭수','키워드 ID','등록시각','수정시각','상태','즐겨찾기','PC통검평균노출순위','모바일통검평균노출순위'];
+  const fixture = [['붙여넣은 보고서'], head, ['키워드 2개 결과'], ['테스트 키워드', 30, '', '', 10, '', '', '', '', 100, 10, '00123'], ['미선택'], [], ['테스트 키워드']];
+  assert.equal((await call('/api/pl/report',{id:a.id,period:p('01','02'),reports:[{name:'붙여넣은 표',sheets:[{name:'붙여넣은 표',rows:fixture}]}]})).s,200);
+  const joined = unzip((await call('/api/pl/xlsx?id='+a.id)).v)['xl/worksheets/sheet1.xml'];
+  assert.match(joined, /r="R2"[^>]*><is><t[^>]*>모바일통검평균노출순위/);
+  assert.match(joined, /r="S2"[^>]*><is><t[^>]*>파워링크 PC 실측 평균순위/);
+  assert.match(joined, /r="J4"[^>]*><v>100<\/v>.*r="K4"[^>]*><v>10<\/v>.*r="L4"[^>]*><is><t[^>]*>00123/);
+  assert.match(joined, /r="S4"[^>]*><v>2<\/v>/);
+  assert.match(joined, /r="S7"[^>]*><v>2<\/v>/);
+  assert.match(joined, /r="Z5"[^>]*><is><t[^>]*>분석 대상 아님/);
+  assert.doesNotMatch(joined, /r="S3"|r="S6"/);
   console.log('파워링크 테스트 통과: 기간·실적·순위·중복·원본 파일·결과 엑셀');
 } finally { fs.rmSync(tmp,{recursive:true,force:true}); }

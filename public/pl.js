@@ -275,7 +275,7 @@
     dz.ondragleave = () => dz.classList.remove('over');
     dz.ondrop = (e) => { e.preventDefault(); dz.classList.remove('over'); readFiles([...e.dataTransfer.files]); };
     bg.querySelector('#rrFile').onchange = (e) => readFiles([...e.target.files]);
-    bg.querySelector('#rrPaste').addEventListener('paste', (e) => { const rows = window.XlsxLite?.clipRows(e.clipboardData); if (!rows) return; e.preventDefault(); raw = { name: '붙여넣은 표', sheets: [{ name: '붙여넣은 표', rows }] }; take(fromSheet(rows), raw.name); });
+    bg.querySelector('#rrPaste').addEventListener('paste', (e) => { const rows = window.XlsxLite?.clipRows(e.clipboardData, { raw: true }); if (!rows) return; e.preventDefault(); raw = { name: '붙여넣은 표', sheets: [{ name: '붙여넣은 표', rows }] }; take(fromSheet(rows), raw.name); });
     const close = () => { removeEventListener('keydown', onKey, true); bg.remove(); };
     const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
     addEventListener('keydown', onKey, true);
@@ -428,7 +428,7 @@
       <div class="card"><h3>② 키워드 <span class="muted" style="font-size:13px" id="plCnt">${C.head}</span></h3>
         <div class="drop" id="plDrop">네이버 광고관리 <b>키워드 다운로드 엑셀</b>을 끌어다 놓거나 <label class="ext" style="cursor:pointer">파일 선택<input type="file" id="plFile" accept=".xlsx,.xlsm,.csv,.txt" hidden></label>
           <div class="muted" style="margin-top:4px">키워드 · 입찰가 · 상태 · 통검 평균노출순위 · 실제 노출수·클릭수를 읽고 원본을 저장해요. '노출가능'만 체크돼요${S.draft.file ? ` · 저장할 원본 ${S.draft.reports.length}개 · 최근 파일: ${e2(S.draft.file)}` : ''}</div></div>
-        <label class="muted" style="display:block;margin-top:10px">엑셀 표 붙여넣기 <span style="font-size:12px">(DRM 등으로 파일을 못 넣을 때: 엑셀에서 머리글 줄까지 범위를 복사해 아래 칸에 Ctrl+V)</span></label>
+        <label class="muted" style="display:block;margin-top:10px">엑셀 표 붙여넣기 <span style="font-size:12px">(DRM 등으로 파일을 못 넣을 때: 엑셀에서 머리글을 포함해 전체 열을 복사한 뒤 아래 칸에 Ctrl+V)</span></label>
         <textarea id="plPaste" class="inp" rows="3" placeholder="엑셀에서 '키워드 · 입찰가 · 상태 …' 머리글 줄부터 복사해서 붙여넣으면 바로 목록에 들어가요&#10;직접 쓸 때는 한 줄에 &quot;키워드&quot; 또는 &quot;키워드, 입찰가&quot; → [목록에 추가]"></textarea>
         <button class="btn" id="plPasteAdd" style="margin-top:6px">목록에 추가</button>
       </div>
@@ -458,8 +458,8 @@
     $('#plPasteAdd').onclick = () => { const r = fromPaste($('#plPaste').value); if (!r.length) return; mergeRows(r); draw(); };
     // 엑셀 표를 붙여넣으면 바로 표로 읽어서 목록에 추가 (머리글 '키워드'가 있으면 입찰가·상태·평균노출순위 열도 읽음)
     $('#plPaste').addEventListener('paste', (e) => {
-      const rows = window.XlsxLite?.clipRows(e.clipboardData);
-      if (!rows || Math.max(...rows.map((r) => r.length)) < 2) return;
+      const rows = window.XlsxLite?.clipRows(e.clipboardData, { raw: true });
+      if (!rows || !rows.some(r => r.length > 1)) return;
       e.preventDefault();
       const got = fromSheet(rows);
       if (!got.length) return toast('붙여넣은 표에서 키워드를 찾지 못했어요', 'warn');
@@ -515,7 +515,7 @@
     return `<div class="card">
       <div class="pl-bar"><b style="font-size:15px">${e2(j.name)}</b><span class="muted">${new Date(j.createdAt).toLocaleString('ko-KR')} · URL ${j.urls.map(e2).join(', ')} · ${j.runs}회 평균${j.source ? ` · <span title="재분석 때 넣은 파일">새 입찰가: ${e2(j.source.file)} (바뀜 ${j.source.changed}개)</span>` : ''}</span><span style="flex:1"></span>
         ${run ? '<button class="btn" id="plStop">중지</button>' : `${j.status !== 'done' ? '<button class="btn pri" id="plResume">이어서 하기</button>' : ''}<button class="btn" id="plRerun" title="같은 키워드 · URL · 기기로 다시 검사해서 이 분석 아래(스레드)에 붙여요">같은 키워드로 재분석</button>`}
-        <button class="btn pri" id="plXlsx">엑셀 다운로드</button></div>
+        <button class="btn pri" id="plXlsx" title="원본 열 오른쪽에 파워링크 결과를 붙여 저장해요">엑셀 다운로드</button></div>
       ${reportHTML(j, run)}
       ${S.thread.length > 1 ? `<div class="pl-thread">${S.thread.map((m, i) => { const pct = m.total ? Math.round((m.done / m.total) * 100) : 0, run2 = m.status === 'running'; return `<button class="${m.id === j.id ? 'on' : ''} ${run2 ? 'run' : ''}" data-th="${e2(m.id)}" style="--p:${run2 ? pct : 100}%" title="${run2 ? `진행 중 ${pct}%` : ST[m.status] || ''}"><span>${i === 0 ? '첫 분석' : e2(m.custom ? m.name : '재분석 ' + (m.thread || i))} <small>${run2 ? pct + '%' : fmtD(m.createdAt)}</small></span></button>`; }).join('<span class="muted">›</span>')}</div>` : ''}
       <div class="prog ${run ? '' : j.status === 'done' ? 'done' : 'fail'}" style="margin-top:10px"><div class="prog-top"><b>${run ? `검사 중 · ${e2(S.running?.cur || '')}` : ST[j.status]}${j.error ? ' · ' + e2(j.error) : ''}</b><span>${done.toLocaleString('ko-KR')} / ${all.length.toLocaleString('ko-KR')}개${run && left ? ` · 남은 시간 약 ${eta < 3600 ? Math.max(1, Math.round(eta / 60)) + '분' : Math.floor(eta / 3600) + '시간 ' + Math.round((eta % 3600) / 60) + '분'}` : ''}</span></div>

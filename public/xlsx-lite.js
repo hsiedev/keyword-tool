@@ -192,7 +192,7 @@
 
   // ---------------------------------------------------------------- 엑셀 표 붙여넣기
   // 엑셀에서 셀을 복사하면 클립보드에 탭으로 구분된 글(TSV)과 HTML 표가 같이 들어옴 → 행·열로 읽음. 표가 아니면 null
-  function parseTsv(text) {
+  function parseTsv(text, { raw = false } = {}) {
     const rows = []; let row = [], cur = '', q = false;
     for (let i = 0; i < text.length; i++) {
       const ch = text[i];
@@ -203,17 +203,17 @@
       else cur += ch;
     }
     if (cur || row.length) { row.push(raw ? cur : cur.trim()); rows.push(row); }
-    return rows.filter((r) => r.some((c) => c !== ''));
+    return raw ? rows : rows.filter((r) => r.some((c) => c !== ''));
   }
-  function clipRows(dt) {
+  function clipRows(dt, options = {}) {
     if (!dt) return null;
     const txt = dt.getData('text/plain') || '';
-    if (/\t/.test(txt)) return parseTsv(txt);
+    if (/\t/.test(txt)) return parseTsv(txt, options);
     const html = dt.getData('text/html') || '';
     if (/<table/i.test(html)) {
       const doc = new DOMParser().parseFromString(html, 'text/html');
-      const rows = [...doc.querySelectorAll('tr')].map((tr) => [...tr.children].map((td) => td.textContent.replace(/\s+/g, ' ').trim()));
-      if (rows.length && rows.some((r) => r.length > 1)) return rows.filter((r) => r.some((c) => c !== ''));
+      const rows = [...doc.querySelectorAll('tr')].map((tr) => [...tr.children].map((td) => options.raw ? td.textContent : td.textContent.replace(/\s+/g, ' ').trim()));
+      if (rows.length && rows.some((r) => r.length > 1)) return options.raw ? rows : rows.filter((r) => r.some((c) => c !== ''));
     }
     return null;
   }

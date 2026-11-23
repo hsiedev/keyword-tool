@@ -208,7 +208,7 @@ export function buildXlsx(sheets) {
     const rows = s.rows.map((r, ri) => {
       const ht = s.heights?.[ri];
       return `<row r="${ri + 1}"${ht ? ` ht="${ht}" customHeight="1"` : ''}>${r.map((v, ci) => {
-        const ref = colName(ci) + (ri + 1), st = ri === 0 && !s.raw ? ' s="1"' : ' s="2"';
+        const ref = colName(ci) + (ri + 1), st = ri === (s.headerRow ?? (s.raw ? -1 : 0)) ? ' s="1"' : ' s="2"';
         if (typeof v === 'number' && isFinite(v)) return `<c r="${ref}"${st}><v>${v}</v></c>`;
         if (v == null || v === '') return ri === 0 ? '' : `<c r="${ref}"${st}/>`;
         return `<c r="${ref}" t="inlineStr"${st}><is><t xml:space="preserve">${escX(v)}</t></is></c>`;
@@ -541,6 +541,35 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
     return { id: p.id, name: p.name, at: p.createdAt, ranks: out };
   }
 
+  // 원본 행과 열은 재정렬하지 않는다. 분석에서 중복 제거하더라도 원본의 해당 행 모두에 같은 검색 결과를 붙인다.
+  function withReportResults(rows, j, ranks) {
+    const a = rows.findIndex(row => row.some(v => /^(키워드|키워드명|keyword)$/i.test(String(v ?? '').trim())));
+    if (a < 0) return null;
+    const col = rows[a].findIndex(v => /^(키워드|키워드명|keyword)$/i.test(String(v ?? '').trim()));
+    const width = rows.reduce((n, row) => Math.max(n, row.length), 0);
+    const labels = j.devices.flatMap((d, i) => {
+      const dev = d === 'pc' ? 'PC' : '모바일', n = ranks[i];
+      return [`파워링크 ${dev} 실측 평균순위`, `${dev} 노출 확인 횟수`, `${dev} 최고~최저 순위`, `${dev} ${n}위 평균 입찰가`, `${dev} ${n}위 예상 노출수(월)`, `${dev} ${n}위 예상 클릭수(월)`, `${dev} ${n}위 예상 비용(월)`];
+    });
+    const key = v => String(v ?? '').trim().replace(/\s+/g, '').toUpperCase();
+    const measured = new Map(j.rows.map(r => [key(r.kw), r]));
+    const widths = Array.from({ length: width }, (_, i) => Math.min(28, Math.max(i === col ? 22 : 12, String(rows[a][i] ?? '').length * 2 + 2)));
+    return { raw: true, headerRow: a, widths: [...widths, ...labels.map(() => 19)], rows: rows.map((row, i) => {
+      if (i < a) return row;
+      const k = key(row[col]);
+      if (i !== a && (!k || /^(합계|총계|소계|전체|총합계|전체합계|TOTALS?|키워드[\d,]+개결과)$/i.test(k))) return row;
+      const r = measured.get(k);
+      const cells = i === a ? [...labels, '파워링크 분석 상태'] : [
+        ...j.devices.flatMap((d, i) => {
+          if (!r || r.on === false) return Array(7).fill(null);
+          const n = ranks[i], x = r.res?.[d], p = j.perf?.[`${d}:${n}`]?.[r.key];
+          return [x?.n > 0 ? (x.seen > 0 ? x.avg : '미노출') : null, x?.n > 0 ? `${x.seen}/${x.n}회` : null,
+            x?.seen > 0 ? (x.min === x.max ? x.min : `${x.min}~${x.max}`) : null,
+            j.bids?.[r.key]?.[d]?.[n - 1], p?.imp, p?.clk, p?.cost];
+        }), !r || r.on === false ? '분석 대상 아님' : r.done ? '측정 완료' : '측정 미완료'];
+      return [...row, ...Array(width - row.length).fill(null), ...cells];
+    }) };
+  }
   function excel(j, nPc, nMo) {
     const won = (v) => (v == null ? '' : v);
     const sheets = j.devices.map((dev) => {
@@ -556,17 +585,20 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
       return { name: dev === 'pc' ? 'PC' : '모바일', rows, heights, widths: [22, 10, 8, 10, 11, 13, 13, 13, 13, 10, 11] };
     });
     const raw = loadReports(j), parsed = reports(raw).rows;
+    const pastedSheets = [];
     if (raw.length) {
       sheets.push({ name: '실적 키워드', rows: [['키워드', '실제 노출수', '실제 클릭수', '비고'], ...[...parsed.values()].map(r => [r.kw, r.duplicate ? '' : r.imp, r.duplicate ? '' : r.clk, r.duplicate ? '중복: 원본 확인' : ''])] });
       const index = [['원본 탭', '파일', '원래 시트 이름', '행 수', '보고서 시작일', '보고서 종료일']];
       for (const f of raw) for (const s of f.sheets) {
         const n = index.length, name = '원본 ' + n;
         index.push([name, f.name, s.name, s.rows.length, j.report.period?.start, j.report.period?.end]);
-        sheets.push({ name, rows: s.rows, raw: true });
+        const joined = withReportResults(s.rows, j, j.devices.map(d => d === 'pc' ? nPc : nMo));
+        sheets.push(joined ? { name, ...joined } : { name, rows: s.rows, raw: true });
+        if (joined && f.name === '붙여넣은 표') pastedSheets.push(sheets.pop());
       }
       sheets.splice(j.devices.length, 0, { name: '원본 목록', rows: index, widths: [12, 32, 24, 12, 15, 15] });
     }
-    return buildXlsx(sheets);
+    return buildXlsx([...pastedSheets, ...sheets]);
   }
 
   // ---------------------------------------------------------------- HTTP
