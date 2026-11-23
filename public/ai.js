@@ -881,7 +881,7 @@
       const shown = lo + ((hi - lo) * pct) / 100;
       bar.style.width = shown + '%';
       bar.parentElement.classList.toggle('indet', !!indet);
-      q('.p-pct').textContent = Math.round(shown) + '%';
+      q('.p-pct').textContent = indet ? '진행 중' : Math.round(shown) + '%';
       if (phase) q('.p-phase').textContent = phase;
     };
     const timer = setInterval(() => (q('.p-time').textContent = Math.round((Date.now() - t0) / 1000) + '초'), 500);

@@ -296,14 +296,15 @@
   function compareLauncher() {
     return '<div class="pl-bar" style="margin-bottom:10px"><button class="btn" id="plCompare">두 기간 비교</button><span class="muted">저장한 분석의 순위·실제 실적·하락 신호</span></div>';
   }
-  function dialogPL(title, html) {
-    const bg = document.createElement('div');
-    bg.className = 'cfm-bg';
-    bg.innerHTML = `<div class="cfm" role="dialog" aria-modal="true" aria-label="${title}" style="width:min(1160px,94vw);max-width:none;max-height:85vh;overflow:auto"><div class="pl-bar"><h3>${title}</h3><span style="flex:1"></span><button class="btn" data-close>닫기</button></div>${html}</div>`;
-    const close = () => { removeEventListener('keydown', onKey); bg.remove(); };
-    const onKey = e => { if (e.key === 'Escape') close(); };
-    bg.addEventListener('click', e => { if (e.target === bg || e.target.closest('[data-close]')) close(); });
-    addEventListener('keydown', onKey); document.body.appendChild(bg); $('[data-close]', bg).focus();
+  function dialogPL(title, html, opener = document.activeElement) {
+    const bg = document.createElement('dialog');
+    const previous = opener;
+    bg.className = 'pl-modal';
+    bg.setAttribute('aria-label', title);
+    bg.innerHTML = `<div class="cfm" style="width:min(1160px,94vw);max-width:none;max-height:85vh;overflow:auto"><div class="pl-bar"><h3>${title}</h3><span style="flex:1"></span><button class="btn" data-close>닫기</button></div>${html}</div>`;
+    bg.addEventListener('close', () => { bg.remove(); if (previous?.isConnected) previous.focus(); });
+    bg.addEventListener('click', e => { if (e.target.closest('[data-close]')) bg.close(); });
+    document.body.appendChild(bg); bg.showModal(); $('[data-close]', bg).focus();
     return bg;
   }
   function reportHTML(j, running) {
@@ -315,35 +316,57 @@
   }
   function bindReport() {
     const b = $('#plReport'); if (!b) return;
-    b.onclick = () => {
-      const id = S.job.id;
-      const bg = dialogPL('실적 파일·기간 설정', `<p class="muted">광고관리에서 같은 범위로 받은 키워드별 실적 보고서 기간을 입력하세요. 파일을 새로 고르면 이 분석에 저장된 원본 세트를 교체하고, 고르지 않으면 날짜만 수정합니다.</p><div class="pl-bar">${periodFields(S.job.report?.period || {})}</div><p><input type="file" aria-label="실적 보고서 파일" accept=".xlsx,.xlsm,.csv,.txt" multiple></p><button class="btn pri" data-save>저장</button><p class="muted" role="status"></p>`);
+    b.onclick = () => editReport(S.job.id, S.job.report?.period, () => draw());
+  }
+  function editReport(id, period, onSaved) {
+      const bg = dialogPL('실적 파일·기간 설정', `<p class="muted">광고관리에서 같은 범위로 받은 키워드별 실적 보고서 기간을 입력하세요. 파일을 새로 고르면 이 분석에 저장된 원본 세트를 교체하고, 고르지 않으면 날짜만 수정합니다.</p><div class="pl-bar">${periodFields(period || {})}</div><p><input type="file" aria-label="실적 보고서 파일" accept=".xlsx,.xlsm,.csv,.txt" multiple></p><button class="btn pri" data-save>저장</button><p class="muted" role="status"></p>`);
       $('[data-save]', bg).onclick = async e => {
-        const btn = e.currentTarget, status = $('[role=status]', bg); btn.disabled = true;
+        const btn = e.currentTarget, status = $('[role=status]', bg); btn.disabled = true; status.textContent = '파일을 확인하고 저장 중…';
         try {
           const files = [...$('input[type=file]', bg).files];
           const data = await api('/api/pl/report', { id, period: getPeriod(bg), reports: await Promise.all(files.map(readReport)) });
-          if (S.job?.id === id) { S.job.report = data.report; draw(); }
+          if (S.job?.id === id) S.job.report = data.report;
+          onSaved?.(data.report);
           $('[data-close]', bg).click(); toast('실적 자료와 기간을 저장했어요.', 'ok');
         } catch (x) { status.textContent = x.message; btn.disabled = false; }
       };
-    };
   }
   async function openCompare() {
-    const j = S.job;
+    const j = S.job, trigger = $('#plCompare');
+    if (trigger.disabled) return;
+    trigger.disabled = true; trigger.textContent = '내역 불러오는 중…';
     try {
       const { jobs } = await api('/api/pl/jobs');
       const ready = jobs.filter(m => m.status !== 'running');
       const options = id => '<option value="">분석 선택</option>' + ready.map(m => `<option value="${e2(m.id)}" ${id === m.id ? 'selected' : ''}>${e2(m.name)} · ${e2(m.period ? m.period.start + ' ~ ' + m.period.end : '실적 기간 미지정')}</option>`).join('');
-      const bg = dialogPL('파워링크 두 기간 비교', `<div class="pl-bar"><label>기준 기간 <select class="inp" data-cmp="a">${options(S.prev?.id)}</select></label><label>비교 기간 <select class="inp" data-cmp="b">${options(j?.id)}</select></label><button class="btn pri" data-run>비교</button></div><p class="muted">같은 광고 URL·계정·보고서 범위를 비교하세요. 보고서 실적은 기간 합계·일평균, 순위는 두 분석에서 측정한 PC·모바일 스냅샷입니다.</p><div data-output aria-live="polite"></div>`);
-      $('[data-run]', bg).onclick = async e => {
-        const btn = e.currentTarget, out = $('[data-output]', bg); btn.disabled = true; out.textContent = '비교하는 중…';
-        try { renderComparison(out, await api('/api/pl/compare', { a: $('[data-cmp=a]', bg).value, b: $('[data-cmp=b]', bg).value })); }
-        catch (x) { out.textContent = x.message; }
-        finally { btn.disabled = false; }
+      const bg = dialogPL('파워링크 두 기간 비교', `<div class="pl-bar"><label>기준 기간 <select class="inp" data-cmp="a">${options(S.prev?.id)}</select></label><label>비교 기간 <select class="inp" data-cmp="b">${options(j?.id)}</select></label><button class="btn pri" data-run>비교</button></div><p class="muted">같은 광고 URL·계정·보고서 범위를 비교하세요. 보고서 실적은 기간 합계·일평균, 순위는 두 분석에서 측정한 PC·모바일 스냅샷입니다.</p><div data-check class="pl-bar" role="status"></div><div data-status role="status"></div><div data-output></div>`, trigger);
+      const sels = $$('[data-cmp]', bg), btn = $('[data-run]', bg), check = $('[data-check]', bg), status = $('[data-status]', bg), out = $('[data-output]', bg);
+      let busy = false;
+      function validate() {
+        const [a,b] = sels.map(s => ready.find(x => x.id === s.value));
+        check.replaceChildren();
+        const text = !ready.length ? '먼저 파워링크 분석을 저장하세요.' : !a || !b ? '비교할 두 분석을 선택하세요.' : a === b ? '서로 다른 두 분석을 선택하세요.' : !a.period || !b.period ? '기간이 없는 분석의 실적 자료를 보완하세요.' : a.period.end >= b.period.start ? '기준 기간이 먼저 오도록, 겹치지 않는 기간을 선택하세요.' : '';
+        if (text) check.append(text);
+        for (const [i,m] of [a,b].entries()) if (m) {
+          const fix = document.createElement('button'); fix.className = 'btn sm'; fix.textContent = (i ? '비교' : '기준') + ' 자료 설정'; fix.disabled = busy;
+          fix.onclick = () => editReport(m.id, m.period, report => {
+            m.period = report.period; out.replaceChildren(); status.textContent = '실적 자료를 저장했어요.';
+            sels.forEach(sel => { const val = sel.value; sel.innerHTML = options(val); }); validate();
+          }); check.append(fix);
+        }
+        btn.disabled = busy || !!text;
+      }
+      sels.forEach(sel => sel.onchange = () => { status.textContent = ''; out.replaceChildren(); validate(); }); validate();
+      btn.onclick = async () => {
+        busy = true; validate(); sels.forEach(s => s.disabled = true); status.textContent = '비교하는 중…';
+        try { renderComparison(out, await api('/api/pl/compare', { a: sels[0].value, b: sels[1].value })); status.textContent = '비교 결과를 불러왔어요.'; }
+        catch (x) { status.textContent = '비교 실패: ' + x.message; }
+        finally { busy = false; sels.forEach(s => s.disabled = false); validate(); }
       };
     } catch (e) { toast(e.message, 'warn'); }
+    finally { trigger.disabled = false; trigger.textContent = '두 기간 비교'; }
   }
+
   function renderComparison(out, c) {
     const f = n => n == null ? '—' : n.toLocaleString('ko-KR', { maximumFractionDigits: 1 });
     const signed = n => n == null ? '—' : (n > 0 ? '+' : '') + f(n);
@@ -354,9 +377,9 @@
       <div class="grid g3">${s.matched ? metric('실제 노출수', s.ai, s.bi, s.ia, s.ib, s.impPct) + metric('실제 클릭수', s.ac, s.bc, s.ca, s.cb, s.clkPct) + `<div class="card"><b>CTR</b><div>${percent(s.ta)} → ${percent(s.tb)}</div></div>` : '<p>실적을 합산할 수 있는 키워드가 없어요.</p>'}</div>
       <p class="muted">실적 비교 가능 ${f(s.matched)}개 · 보고서 한쪽에만 있음 ${f(s.onlyA)} / ${f(s.onlyB)}개 · 중복 제외 ${f(s.duplicates)}개 · 식별 가능한 노출 기준 포함 비중 ${percent(s.coverageA)} → ${percent(s.coverageB)}</p>
       <p class="muted">${c.rank.length ? c.rank.map(r => `${DEVN[r.dev]} 순위 ${f(r.avgA)} → ${f(r.avgB)} (양쪽 노출 ${f(r.paired)}개, 하락 ${f(r.down)}개, 미노출 전환 ${f(r.lost)}개)`).join(' · ') : '공통 측정 기기가 없어요.'}</p>
-      <div class="card"><b>하락 진단 · AI 미사용</b><ul>${c.notes.map(n => '<li>' + e2(n) + '</li>').join('')}</ul></div>
+      <div class="pl-compare-grid"><div>
       <div class="pl-bar" style="margin-top:10px"><label>키워드 찾기 <input class="inp" data-search></label><label><input type="checkbox" data-down> 하락만</label><span data-count class="muted"></span><button class="btn" data-export="csv">비교 CSV</button><button class="btn" data-export="txt">키워드 TXT</button></div>
-      <div class="tbl-wrap" style="max-height:420px"><table class="rel"><thead><tr><th class="l">키워드</th>${c.dev.map(d => '<th>' + DEVN[d] + ' 순위</th>').join('')}<th>실제 노출수</th><th>실제 클릭수</th><th>클릭/일 증감</th><th>상태</th></tr></thead><tbody></tbody></table></div>`;
+      <div class="tbl-wrap" style="max-height:420px"><table class="rel"><thead><tr><th class="l">키워드</th>${c.dev.map(d => '<th>' + DEVN[d] + ' 순위</th>').join('')}<th>실제 노출수</th><th>실제 클릭수</th><th>클릭/일 증감</th><th>상태</th></tr></thead><tbody></tbody></table></div></div><aside class="card"><b>하락 진단 · AI 미사용</b><ul>${c.notes.map(n => '<li>' + e2(n) + '</li>').join('')}</ul></aside></div>`;
     const rankText = x => (x.aMiss ? '미노출' : f(x.a)) + ' → ' + (x.bMiss ? '미노출' : f(x.b));
     const status = r => r.duplicate ? '중복 제외' : r.ok ? '비교 가능' : r.aOnly ? '기준에만 있음' : r.bOnly ? '비교에만 있음' : '실적 미확인';
     const values = r => [r.kw, ...c.dev.map(d => rankText(r.rank[d])), f(r.ai) + ' → ' + f(r.bi), f(r.ac) + ' → ' + f(r.bc), signed(r.dc), status(r)];

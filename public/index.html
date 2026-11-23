@@ -609,7 +609,10 @@ $('#modelBtn').onclick = async () => {
 /* ---------------------------------------------------------------- 실행 */
 $('#searchForm').onsubmit = (e) => { e.preventDefault(); const k = $('#q').value.trim(); if (k) run(k); };
 
+let analyzeRequest;
+let suggestRequest = 0;
 function resetAnalyze() {
+  analyzeRequest?.abort(); analyzeRequest = null;
   STATE = null;
   $('#result').innerHTML = ''; $('#banners').innerHTML = '';
   $('#tabs').classList.add('hidden'); $('#empty').classList.remove('hidden');
@@ -619,6 +622,9 @@ function resetAnalyze() {
   window.__LAYOUT?.sync?.(); scrollTo(0, 0);
 }
 async function run(kw, push = true) {
+  analyzeRequest?.abort();
+  const request = analyzeRequest = new AbortController();
+  STATE = null; SUG = null;
   if (window.showAI && !$('#aiView')?.classList.contains('hidden')) showAI(false);
   window.__hideDup?.();
   window.__hideBulk?.();
@@ -631,9 +637,10 @@ async function run(kw, push = true) {
   history.replaceState(null, '', '?keyword=' + encodeURIComponent(kw));
   document.title = `'${kw}' 분석 - 키워드 분석기`;
   try {
-    const r = await fetch('/api/analyze?keyword=' + encodeURIComponent(kw));
+    const r = await fetch('/api/analyze?keyword=' + encodeURIComponent(kw), { signal: request.signal });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
+    if (request !== analyzeRequest) return;
     STATE = d;
     REL = { filters: { inc: '', exc: '', min: '', max: '', comp: '' }, sort: { key: 'total', dir: -1 }, page: 1, cluster: '', blog: {}, selected: new Set() };
     if (push) pushHist(kw);
@@ -641,7 +648,10 @@ async function run(kw, push = true) {
     loadSections(kw);
     loadSuggest(kw, false);
   } catch (e) {
-    $('#result').innerHTML = `<div class="banner err">분석 실패: ${esc(e.message)}<br>서버 창(검은 창)이 켜져 있는지 확인해 주세요.</div>`;
+    if (request !== analyzeRequest) return;
+    const box = $('#result');
+    box.innerHTML = `<div class="banner err" role="alert">분석 실패: ${esc(e.message)} <button class="btn sm">다시 시도</button></div>`;
+    box.querySelector('button').onclick = () => run(kw, push);
   }
 }
 
@@ -981,11 +991,16 @@ async function runCompare() {
 
 /* ---------------------------------------------------------------- 섹션 분석 */
 async function loadSections(kw) {
+  const request = analyzeRequest;
   let j;
   try { j = await (await fetch('/api/sections?keyword=' + encodeURIComponent(kw))).json(); } catch (e) { j = { error: e.message }; }
-  if (!STATE || STATE.keyword !== kw) return;
+  if (request !== analyzeRequest || !STATE || STATE.keyword !== kw) return;
   const box = $('#sec-section');
-  if (j.error) { box.innerHTML = `<h2>섹션 분석</h2><div class="card muted">${esc(j.error)}</div>`; return; }
+  if (j.error) {
+    box.innerHTML = `<h2>섹션 분석</h2><div class="banner err" role="alert">${esc(j.error)} <button class="btn sm">섹션 다시 시도</button></div>`;
+    const b = box.querySelector("button"); b.onclick = () => { b.disabled = true; b.textContent = "다시 조회 중…"; loadSections(kw); };
+    return;
+  }
   const cls = (k) => (k === 'ad' ? 't-ad' : k === 'ex_csa' ? 't-ai' : ['web', 'review', 'kin'].includes(k) ? 't-web' : '');
   const desc = (s) => (s.key === 'ad' ? `${s.count}개의 광고 노출 중` : s.name === '웹사이트' ? `${s.count}개 문서` : s.key === 'ex_csa' ? 'AI 답변 노출 중' : '');
   const list = (arr) => `<ul class="order">${arr.map((s, i) => `<li class="${cls(s.key)}"><span class="n">${i + 1}</span><b>${esc(s.name)}</b><span class="muted">${desc(s)}</span></li>`).join('')}</ul>`;
@@ -1044,12 +1059,13 @@ function renderIntent(d) {
 /* ---------------------------------------------------------------- 자동완성 · 관련 검색어 (API 키 불필요) */
 let SUG = null;
 async function loadSuggest(kw, deep) {
+  const request = analyzeRequest, seq = ++suggestRequest;
   const sec = $('#sec-suggest');
   if (!sec) return;
   if (deep) sec.querySelector('.sug-body')?.insertAdjacentHTML('afterbegin', '<div class="loading" style="padding:16px"><div class="spin"></div>자음(ㄱ~ㅎ)을 붙여 자동완성을 넓게 모으는 중... (10초쯤)</div>');
   let j;
   try { const r = await fetch(`/api/suggest?keyword=${encodeURIComponent(kw)}${deep ? '&deep=1' : ''}`); j = r.status === 404 ? { error: '서버가 예전 버전이라 아직 이 기능이 없어요. start.bat을 다시 실행하면 생겨요.' } : await r.json(); } catch (e) { j = { error: '서버에 연결하지 못했어요: ' + e.message }; }
-  if (STATE?.keyword !== kw) return; // 그 사이 다른 키워드로 바뀜
+  if (request !== analyzeRequest || seq !== suggestRequest || STATE?.keyword !== kw) return; // 그 사이 다른 키워드로 바뀜
   if (j.error) { sec.innerHTML = `<h2>자동완성 · 관련 검색어</h2><div class="banner err" style="margin:0">${esc(j.error)}</div>`; return; }
   SUG = j;
   drawSuggest();

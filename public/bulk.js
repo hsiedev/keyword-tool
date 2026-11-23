@@ -272,8 +272,8 @@
               <button class="btn hidden" id="bStop">중지</button>
               <button class="btn" id="bClear">입력 비우기</button>
             </div>
-            <div class="prog hidden" id="bProg"><div class="prog-top"><b id="bPhase">준비 중</b><span><span id="bPct">0%</span> · <span id="bTime" class="muted">0초</span></span></div><div class="bar"><div id="bBar"></div></div></div>
-            <div class="muted" id="bMsg" style="margin-top:8px"></div>
+            <div class="prog hidden" id="bProg"><div class="prog-top"><b id="bPhase" role="status">준비 중</b><span><span id="bPct">0%</span> · <span id="bTime" class="muted">0초</span></span></div><div class="bar"><div id="bBar"></div></div></div>
+            <div class="muted" id="bMsg" role="status" style="margin-top:8px"></div>
           </div>
         </div>
       </div>
@@ -430,11 +430,12 @@
     let steps = ['검색량'];
     const setP = (txt, p) => { $('#bPhase').textContent = txt; $('#bBar').style.width = p + '%'; $('#bPct').textContent = Math.round(p) + '%'; };
     setP('준비 중', 100 * job.next / B.order.length);
-    $('#bMsg').textContent = '';
+    $('#bMsg').textContent = `마지막 저장: ${job.next.toLocaleString('ko-KR')}개`;
     drawResult(); drawSide(); fillVC();
     const ctrl = new AbortController();
     let reader = null, stopped = false;
-    $('#bStop').onclick = () => { stopped = true; ctrl.abort(); reader?.cancel().catch(() => {}); };
+    $('#bStop').disabled = false;
+    $('#bStop').onclick = () => { $('#bStop').disabled = true; $('#bPhase').textContent = '멈추는 중…'; stopped = true; ctrl.abort(); reader?.cancel().catch(() => {}); };
     let lastDraw = 0;
     const redraw = (force) => { if (force || Date.now() - lastDraw > 400) { lastDraw = Date.now(); drawResult(); } };
     const assertSaved = async () => {
@@ -469,7 +470,7 @@
             if (ev.type === 'progress') {
               const si = steps.indexOf(ev.step);
               const p = (offset + batch.length * (si + ev.done / ev.total) / steps.length) / B.order.length * 100;
-              setP(`${label} · ${si + 1}/${steps.length}단계 · ${ev.step} 조회 중 ${ev.done.toLocaleString('ko-KR')} / ${ev.total.toLocaleString('ko-KR')}`, p);
+              if (!stopped) setP(`${label} · ${si + 1}/${steps.length}단계 · ${ev.step} 조회 중 ${ev.done.toLocaleString('ko-KR')} / ${ev.total.toLocaleString('ko-KR')}`, p);
             }
             if (ev.type === 'done') done = ev;
           }
@@ -483,7 +484,7 @@
         B.info = job.next < B.order.length
           ? { at: Date.now(), partial: true, resume: job }
           : { at: Date.now(), total: job.next, ...job.summary };
-        try { await assertSaved(); } catch (e) { B.info = checkpoint; throw e; }
+        try { await assertSaved(); if (!stopped) $('#bMsg').textContent = `마지막 저장: ${job.next.toLocaleString('ko-KR')}개`; } catch (e) { B.info = checkpoint; throw e; }
       }
       if (job.next < B.order.length) throw new DOMException('중지', 'AbortError');
       const done = B.info;
@@ -612,6 +613,8 @@
         default: { if (r.bidError) return '<td><span class="muted">-</span></td>'; const v = getV(k, r); return `<td>${v == null ? '<span class="muted">-</span>' : v.toLocaleString('ko-KR')}</td>`; }
       }
     };
+    const exportRows = viewRows();
+    const unavailable = exportRows.filter(r => r.pending || r.skipped || r.error || r.notFound).length;
     const tools = $('#bTools');
     tools.innerHTML = `
       <select id="bfComp"><option value="">경쟁 전체</option>${['높음', '중간', '낮음'].map((x) => `<option ${B.f.comp === x ? 'selected' : ''}>${x}</option>`).join('')}</select>
@@ -623,6 +626,7 @@
       <button class="btn ok-btn" id="bOkSel" title="체크한 키워드를 '적합 (직접)'으로 확정해요. 다음 재검증에서 빠지고, AI에게 예시로 전달돼요.">체크한 키워드 적합으로</button>
       <button class="btn" id="bDelSel">체크한 키워드 삭제</button>
       <span class="muted"><b>${rows.length.toLocaleString('ko-KR')}</b>개 표시${rows.length !== all.length ? ` / 전체 ${all.length.toLocaleString('ko-KR')}` : ''}</span>
+      <span class="muted">다운로드: 필터 ${exportRows.length.toLocaleString('ko-KR')}개 / 전체 ${all.length.toLocaleString('ko-KR')}개${unavailable ? ` · 미조회·데이터 없음 ${unavailable}개 포함` : ''}</span>
       <button class="btn pri" id="bXlsx">엑셀 다운로드</button>
       <button class="btn" id="bCsv">CSV</button>
       <button class="btn" id="bTxt" title="지금 필터에 맞는 키워드만, 한 줄에 하나씩">TXT</button>`;
@@ -852,11 +856,11 @@
   });
   // 다른 화면(중복 검사 등)에서 키워드를 넘겨받아 입력칸에 채움
   function setInput(list, note) {
-    if (B.busy) return alert('분석 중에는 넘길 수 없어요');
+    if (B.busy || B.vbusy) return alert('진행 중인 대량 작업을 끝낸 뒤 보내주세요.');
     if (B.order.length || !H.cur?.draft) newTab();
     B.files = []; B.paste = list.join('\n'); $('#bPaste').value = B.paste;
     drawInput(); showBulk(true);
-    $('#bMsg').innerHTML = esc(note || `키워드 ${list.length.toLocaleString('ko-KR')}개를 넣었어요. [분석 시작]을 누르세요.`);
+    $('#bMsg').innerHTML = esc(note || `선택한 키워드 ${list.length.toLocaleString('ko-KR')}개를 초안에 넣었어요. 목록을 확인하고 [분석 시작]을 누르세요.`);
   }
   window.__BULK = { B, H, addFiles, start, showBulk, verify, openSession, newTab, setInput };
   mount();

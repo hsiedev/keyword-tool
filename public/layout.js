@@ -173,6 +173,24 @@
     // 그 탭에서 보던 위치로 (내용이 늦게 그려져도 따라가서 맞춤)
     restoreY(POS[v] || 0);
   }
+  const work = document.createElement('div');
+  work.className = 'toolbar'; work.id = 'activeWork'; work.hidden = true;
+  otabs.after(work);
+  const workLinks = new Map();
+  for (const [v,name] of [['bulk','대량 분석'],['ai','AI 키워드']]) {
+    const b = document.createElement('button'); b.className = 'btn sm'; b.hidden = true;
+    b.onclick = () => go(v); work.append(b); workLinks.set(v, [b,name]);
+  }
+  function syncWork() {
+    const bulk = window.__BULK?.B, ai = window.__AI?.AI;
+    const states = { bulk: bulk?.busy ? '진행 중' : bulk?.vbusy ? '재검증 중' : bulk?.info?.resume ? '이어하기 가능' : '', ai: ai?.busy || '' };
+    for (const [v,[b,name]] of workLinks) {
+      b.hidden = !states[v] || current() === v || isG();
+      const label = name + ' · ' + states[v]; if (b.textContent !== label) b.textContent = label;
+    }
+    work.hidden = [...workLinks.values()].every(([b]) => b.hidden);
+  }
+  setInterval(syncWork, 600);
   side.querySelectorAll('[data-view]').forEach((b) => (b.onclick = () => go(b.dataset.view)));
 
   // 각 화면의 내역 목록(AI 생성기·대량 분석)을 사이드바 안으로
