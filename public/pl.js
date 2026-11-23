@@ -441,7 +441,7 @@
       ${rows.length > view.length ? `<div class="muted" style="padding:8px">… 나머지 ${(rows.length - view.length).toLocaleString('ko-KR')}개는 표에서 생략 (체크 상태는 그대로 반영)</div>` : ''}</div></div>` : ''}`;
   }
   function bindNew() {
-    $('[data-period]', $('#plBody')).forEach(x => x.oninput = () => { S.draft.period[x.dataset.period] = x.value; });
+    $$('[data-period]', $('#plBody')).forEach(x => x.oninput = () => { S.draft.period[x.dataset.period] = x.value; });
     $$('[data-find]').forEach((b) => (b.onclick = () => Finder.open()));
     $('#plUrls').oninput = (e) => { S.urls = e.target.value; localStorage.setItem('plUrls', S.urls); };
     $$('[data-dev]').forEach((c) => (c.onchange = () => { S.devices = $$('[data-dev]').filter((x) => x.checked).map((x) => x.dataset.dev); localStorage.setItem('plDevs', JSON.stringify(S.devices)); draw(); }));
