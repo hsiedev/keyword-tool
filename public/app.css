@@ -669,3 +669,29 @@ html.dark .modal .set-sec input.sw.sw:not(:checked){background:#4b4b4b}
 .work-title label span { margin-left:4px; font-size:12px; font-weight:400; }
 .work-title input.inp { display:block; width:100%; max-width:360px; box-sizing:border-box; }
 .work-title small { display:block; margin-top:4px; font-size:12px; }
+
+/* 네이버 키워드 입찰 검토 */
+.bid-main { max-width:1280px; min-width:0; }
+.bid-step,.bid-tools,.bid-source details { margin-top:12px; }
+.bid-tools,.bid-line { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; }
+.bid-tools label { display:flex; align-items:center; gap:6px; }
+.bid-tools input { max-width:180px; }
+.bid-line { justify-content:space-between; }
+.bid-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,168px),1fr)); gap:8px 12px; }
+.bid-fields label,.bid-source details label { min-width:0; display:block; }
+.bid-fields .inp { width:100%; min-width:0; margin-top:4px; box-sizing:border-box; }
+#bidView fieldset { border:1px solid var(--border); border-radius:8px; margin:12px 0; padding:8px 12px 12px; min-inline-size:0; }
+#bidView legend { padding:0 4px; font-weight:600; }
+#bidView p { margin:6px 0; }
+.bid-source { min-width:0; overflow-wrap:anywhere; }
+.bid-source details textarea { margin:4px 0; }
+.bid-source .drop label,.bid-choice,#bidView summary { cursor:pointer; }
+.bid-check { display:flex; align-items:center; gap:6px; }
+.bid-result { margin:8px 0; overflow-wrap:anywhere; }
+.bid-result ul { margin:6px 0; padding-left:20px; }
+.bid-pill { font-size:12px; border:1px solid var(--border); border-radius:6px; padding:1px 6px; }
+.bid-warning { border-left:3px solid var(--primary); padding-left:8px; }
+.bid-history { display:flex; align-items:center; gap:4px; }
+.bid-history .sit { flex:1; min-width:0; text-align:left; color:inherit; }
+.bid-history .sn,.bid-history .sm { display:block; overflow:hidden; text-overflow:ellipsis; }
+.bid-history .bid-del { flex:0 0 auto; }

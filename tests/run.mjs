@@ -395,6 +395,43 @@ await test('새 작업 제목: 다섯 화면에 공통 입력 사용 및 공백�
   eq(apply(doc, '   '), ''); eq(doc.custom, false);
   eq(apply(doc, '가'.repeat(61)).length, 60);
 });
+// ---------------------------------------------------------------- 입찰 검토 / 네이버 원본 CSV
+{
+  const B = (await import(pathToFileURL(path.join(TMP, 'public', 'bid-rules.js')).href)).default;
+  const id=i=>'nkw-a001-01-'+String(i).padStart(15,'0');
+  const cfg={group:'검증그룹',device:'mo',cpa:'6000',scopeOK:true,from:'2026-11-17',to:'2026-11-19',nFrom:'2026-11-17',nTo:'2026-11-19',download:'2026-11-20',pFrom:'2026-11-14',pTo:'2026-11-16'};
+  const today='2026-11-24';
+  const dHead=['ROAS','순위','그룹','추정 실적','신청하기','비용(VAT별도/마크업 포함)','노출','순방문','클릭'];
+  const nHead=['상태','키워드 ID','수정시각','입찰가','키워드','클릭수','입찰가 유형'];
+  const dData=[dHead,[0,1,'검증그룹','-', '-',36500,470,110,130],[0,1,'하향대상','-', '-',20000,180,16,60],[3,3,'상향대상',24000,4,8000,150,28,40],[2,2,'유지대상',17000,3,8500,140,18,30],[0,1,'총합계','-', '-',36500,470,110,130]];
+  const nData=[nHead,['노출가능',id(1),'2026-11-10T13:00:00+09:00',500,'하향대상',23,'키워드'],['노출가능',id(2),'2026-11-10',640,'상향대상',40,'키워드'],['노출가능',id(3),'2026-11-10',360,'유지대상',30,'키워드'],['노출가능',id(4),'2026-11-10',320,'성과없음',0,'키워드']];
+  const previous=B.parseSheet([dHead,[2,1,'상향대상',24000,4,10000,210,40,54]],'daily').rows;
+  const daily=B.parseSheet(dData,'daily',cfg.group).rows, naver=B.parseSheet(nData,'naver').rows;
+  const run=(over={},ns=naver,ds=daily,prev=previous)=>B.evaluate({daily:ds,naver:ns,previous:prev,settings:{...cfg,...over}},today);
+  await test('입찰: 재배열한 머리글·합계 제거, 신청 대시 0, CPA·순위·상하향',()=>{
+    const a=run(); eq(a.matched,3);eq(a.naverOnly.length,1);eq(a.discrep,1);eq(a.rows.map(x=>[x.state,x.bid??null]),[['down',450],['up',670],['keep',null]]);
+    eq(a.rows[0].roas,0);eq(a.rows[0].d.conv,0);eq(a.rows[1].cpa,2000);eq(a.rows[1].allowed,600);eq(run({},naver,daily,[]).rows[1].state,'keep');
+  });
+  await test('입찰: 기간·날짜·최근 수정·중복·미집계·노출 제한 가드',()=>{
+    for(const o of [{to:'2026-11-18'},{cpa:''},{scopeOK:false},{download:'2026-11-18'},{from:'2026-11-31'},{device:''},{download:'2026-11-26'}]) ok(run(o).rows.every(r=>r.state==='hold'));
+    for(const n of [{modified:'2026-11-17T23:59:00+09:00'},{modified:''},{status:'중지: 키워드 노출 제한'},{type:'기본'}]) eq(run({},[{...naver[0],...n},...naver.slice(1)]).rows[0].state,'hold');
+    eq(run({},[...naver,{...naver[0],id:id(9)}]).rows[0].state,'hold');
+    eq(run({},naver,[{...daily[0],conv:null},...daily.slice(1)]).rows[0].state,'hold');
+    eq(run({pFrom:'2026-11-15'}).rows[1].state,'keep');
+    eq(run({},[{...naver[0],bid:70},...naver.slice(1)]).rows[0].state,'keep');
+    ok(B.period({...cfg,from:'2026-11-12',to:'2026-11-15',nFrom:'2026-11-12',nTo:'2026-11-15',download:'2026-11-16'},today).errors.some(x=>x.includes('7일')));
+  });
+  await test('입찰: CSV 원본 538바이트 유지 · CP949 · 10,000행 분할과 중복 차단',()=>{
+    const t=fs.readFileSync(path.join(TMP,'public','ko_edit_keyword_bid_template.csv'));
+    const rows=Array.from({length:10001},(_,i)=>({id:id(i+1),kw:i===0?'롯데카드혜택':'키워드',gid:'',bid:450,before:500}));
+    const files=B.csvFiles(t,rows);eq(files.length,2);
+    for (const f of files) ok(Buffer.from(f.subarray(0,538)).equals(t));
+    const decode=f=>new TextDecoder('euc-kr',{fatal:true}).decode(f).split('\r\n');
+    eq(decode(files[0])[6],','+id(1)+',롯데카드혜택,450');eq(decode(files[0]).length,10007);eq(decode(files[1]).length,8);
+    for(const rows2 of [[rows[0],rows[0]],[{...rows[0],bid:451}],[{...rows[0],bid:500}]]) {let rejected=false;try{B.csvFiles(t,rows2);}catch{rejected=true;}ok(rejected);}
+  });
+}
+
 // ---------------------------------------------------------------- 결과
 console.log('\n키워드 분석기 자동 테스트\n' + results.join('\n'));
 console.log(`\n통과 ${pass} · 실패 ${fail}`);
