@@ -59,11 +59,11 @@ export function allowed({trend,market,metrics:m,metricsPeriod}){
   if(cpc)out.push('cpc');
   return out;
 }
+const marketCount=x=>typeof x==='number'?val(x):typeof x==='string'&&/^<\s*\d{1,15}$/.test(x)?'< '+x.match(/\d+/)[0]:null;
 function rawAd(raw,at){
-  const token=x=>typeof x==='number'?val(x):/^<\s*\d+$/.test(String(x))?'< '+String(x).match(/\d+/)[0]:null;
   const comp=Object.hasOwn(severity,raw.compIdx)?raw.compIdx:null;
   const depth=raw.plAvgDepth==null||raw.plAvgDepth===''?null:val(Number(raw.plAvgDepth));
-  const r={at,pc:token(raw.monthlyPcQcCnt),mo:token(raw.monthlyMobileQcCnt),comp,depth};
+  const r={at,pc:marketCount(raw.monthlyPcQcCnt),mo:marketCount(raw.monthlyMobileQcCnt),comp,depth};
   return [r.pc,r.mo,r.comp,r.depth].some(v=>v!=null)?r:null;
 }
 async function saveMarket(dir,keyword,current){
@@ -71,15 +71,27 @@ async function saveMarket(dir,keyword,current){
   const folder=path.join(dir,key);await fs.mkdir(folder,{recursive:true});
   const names=(await fs.readdir(folder)).filter(f=>/^\d{4}-\d{2}-\d{2}\.json$/.test(f)&&f.slice(0,10)<current.at).sort().reverse();
   let previous=null;
-  for(const f of names.slice(0,5)){try{const v=JSON.parse(await fs.readFile(path.join(folder,f),'utf8'));if(v.at===f.slice(0,10)){previous=v;break;}}catch{}}
+  for(const f of names.slice(0,5)){
+    try {
+      const v=JSON.parse(await fs.readFile(path.join(folder,f),'utf8'));
+      if(v?.at!==f.slice(0,10))continue;
+      // Never pass unrelated fields from a persisted file into evidence or the AI prompt.
+      const snapshot={at:v.at,pc:marketCount(v.pc),mo:marketCount(v.mo),comp:Object.hasOwn(severity,v.comp)?v.comp:null,depth:val(v.depth)};
+      if([snapshot.pc,snapshot.mo,snapshot.comp,snapshot.depth].some(x=>x!=null)){previous=snapshot;break;}
+    }catch{}
+  }
   try{await fs.writeFile(path.join(folder,current.at+'.json'),JSON.stringify(current),{flag:'wx'});}catch(e){if(e.code!=='EEXIST')throw e;}
   return previous;
 }
 const status=(message,code)=>Object.assign(Error(message),{status:code});
-export function createBidDiagnosis({dataDir,lookup,series,interpret,hasAd,hasTrend,hasModel,modelName,today}){
+export function createBidDiagnosis({dataDir,lookup,series,interpret,hasAd,hasTrend,modelOptions,today}){
   let active=false;const pending=new Map();
+  const availability=()=>{
+    const models=modelOptions(), preferred=models[0];
+    return {ai:models.length>0,model:preferred?.label??null,models,defaultModel:preferred?{provider:preferred.provider,model:preferred.model}:null};
+  };
   return async function handle(req,res,u,readBody,send){
-    if(req.method==='GET'&&u.pathname==='/api/bid-diagnosis')return send(res,200,{ad:hasAd(),trend:hasTrend(),ai:hasModel(),model:modelName()});
+    if(req.method==='GET'&&u.pathname==='/api/bid-diagnosis')return send(res,200,{ad:hasAd(),trend:hasTrend(),...availability()});
     if(req.method!=='POST')throw status('지원하지 않는 요청이에요.',405);
     if(active)throw status('다른 키워드 진단이 끝난 뒤 다시 실행해 주세요.',429);
     active=true;const signal=new AbortController();const close=()=>{if(!res.writableEnded)signal.abort();};res.once('close',close);
@@ -88,12 +100,16 @@ export function createBidDiagnosis({dataDir,lookup,series,interpret,hasAd,hasTre
       if(u.pathname.endsWith('/explain')){
         const now=Date.now();for(const [k,v] of pending)if(v.expires<now)pending.delete(k);
         const saved=pending.get(b?.ticket);if(!saved)throw status('진단 근거가 만료됐어요. 다시 조회해 주세요.',400);
-        if(!hasModel())return send(res,200,{notes:[],message:'설정에서 AI 모델을 연결하면 원인 해석을 볼 수 있어요.'});
+        if(typeof b.provider!=='string'||typeof b.model!=='string')throw status('해석에 사용할 AI 모델을 선택해 주세요.',400);
+        const choice=modelOptions().find(x=>x.provider===b.provider&&x.model===b.model);
+        if(!choice)throw status('연결되어 있고 목록에 있는 AI 모델만 쓸 수 있어요. 근거를 다시 조회해 주세요.',400);
+        if(signal.signal.aborted)return;
         const {codes,evidence}=saved;
         let ai;
-        try{ai=await interpret({codes,evidence},signal.signal);}catch{if(signal.signal.aborted)return;return send(res,200,{notes:[],message:'AI 응답을 받지 못했어요. 확인된 근거는 그대로 볼 수 있어요.'});}
+        try{ai=await interpret({codes,evidence},signal.signal,choice);}catch{if(signal.signal.aborted)return;return send(res,200,{model:choice.label,notes:[],message:'선택한 AI 모델에서 응답을 받지 못했어요. 확인된 근거는 그대로 볼 수 있어요.'});}
+        if(signal.signal.aborted)return;
         const selected=[...new Set((Array.isArray(ai?.arr)?ai.arr:[]).map(x=>x?.code).filter(c=>codes.includes(c)))].slice(0,3);
-        return send(res,200,{model:ai.model,notes:selected.map(code=>({code,title:TYPES[code][0],why:TYPES[code][1],next:TYPES[code][2]})),message:selected.length?'':'AI가 확인 가능한 원인 후보를 고르지 못했어요.'});
+        return send(res,200,{model:choice.label,notes:selected.map(code=>({code,title:TYPES[code][0],why:TYPES[code][1],next:TYPES[code][2]})),message:selected.length?'':'AI가 확인 가능한 원인 후보를 고르지 못했어요.'});
       }
       const now=today(), q=readRequest(b,now), messages=[];
       const [marketRes,trendRes]=await Promise.allSettled([
@@ -116,15 +132,15 @@ export function createBidDiagnosis({dataDir,lookup,series,interpret,hasAd,hasTre
       else if(trendRes.status!=='fulfilled')messages.push('데이터랩 검색 지표를 가져오지 못했어요.');
       else {trend=trendSummary(trendRes.value,q);if(trend.delta==null)messages.push('검색 지수의 관측일 또는 표본이 부족해 증감률은 표시하지 않아요.');}
       const evidence={device:q.device,market,trend,metrics:q.metrics,metricsPeriod:{prior:q.prior,current:q.current}};const codes=allowed(evidence);
-      let ticket=null;
-      if(codes.length&&hasModel()){
+      const ai=availability();let ticket=null;
+      if(codes.length&&ai.ai){
         // Only numeric evidence and closed labels reach the AI; no keyword, account or workbook.
         ticket=randomUUID();
         for(const [k,v] of pending)if(v.expires<Date.now())pending.delete(k);
         if(pending.size>=32)pending.delete(pending.keys().next().value);
         pending.set(ticket,{codes,evidence,expires:Date.now()+5*60000});
       }
-      return send(res,200,{...evidence,ticket,messages,model:modelName(),explainStatus:!hasModel()?'AI 미연결':!codes.length?'비교 근거 부족: AI를 호출하지 않았어요.':''});
+      return send(res,200,{...evidence,ticket,messages,...ai,explainStatus:!ai.ai?'설정 › API 설정 › AI 모델에서 연결해 주세요.':!codes.length?'비교 근거 부족: AI를 호출하지 않았어요.':''});
     }finally {active=false;res.off('close',close);}
   };
 }

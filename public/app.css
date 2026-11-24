@@ -712,11 +712,27 @@ html.dark .modal .set-sec input.sw.sw:not(:checked){background:#4b4b4b}
 .bid-diag-card{margin-top:9px;}
 .bid-diag-dialog li+li{margin-top:8px;}
 
-/* 입찰가 검토: 가격을 키워드 바로 아래에 붙여 표시 */
-.bid-review-prices{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px 18px;margin:9px 0;}
-.bid-review-prices>div{min-width:78px;}
-.bid-review-prices small{display:block;color:var(--muted-fg);}
-.bid-review-prices b,.bid-final-meta output,.bid-manual{font-variant-numeric:tabular-nums;}
-.bid-manual.inp{width:112px;max-width:100%;box-sizing:border-box;padding:4px 7px;}
-.bid-final-meta{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;margin:5px 0;}
-.bid-final-meta input{vertical-align:middle;}
+/* 입찰가 검토: 생성기와 같은 고정 머리글·촘촘한 표 */
+#bidResults .fp-bar{margin:8px 0;justify-content:flex-start}
+.bid-table-wrap{max-height:min(66vh,620px);overscroll-behavior:contain}
+#bidTable{--bid-pick-width:36px;min-width:1020px;font-variant-numeric:tabular-nums}
+#bidTable th,#bidTable td{padding:6px 8px;white-space:nowrap}
+#bidTable th button{background:none;border:0;color:inherit;font:inherit;font-weight:inherit;cursor:pointer;padding:3px 0}
+#bidTable th button span{color:var(--muted-fg);font-size:11px}
+#bidTable th[aria-sort] button span{color:var(--primary)}
+#bidTable .bid-pick-cell,#bidTable .bid-key-cell{position:sticky;background:var(--card);z-index:1}
+#bidTable .bid-pick-cell{left:0;width:var(--bid-pick-width);max-width:var(--bid-pick-width);min-width:var(--bid-pick-width);box-sizing:border-box;padding-inline:0;text-align:center}
+#bidTable .bid-key-cell{left:var(--bid-pick-width);min-width:116px;max-width:150px;border-right:1px solid var(--border)}
+#bidTable td.bid-key-cell b{display:block;max-width:150px;overflow:hidden;text-overflow:ellipsis}
+#bidTable thead th{position:sticky;top:0;z-index:2}
+#bidTable thead .bid-pick-cell,#bidTable thead .bid-key-cell{z-index:3;background:var(--muted)}
+#bidTable .bid-manual.inp{width:82px;padding:4px 6px;text-align:right}
+#bidTable .bid-invalid{color:var(--danger,var(--foreground));text-decoration:underline dotted}
+#bidTable .bid-approved{color:var(--primary);font-weight:600}
+.bid-hold-tools{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin:8px 0}
+.bid-hold-tools button[aria-pressed=true]{color:var(--primary);border-color:var(--primary);font-weight:600}
+.bid-row-dialog{width:min(calc(100% - 32px),640px);max-height:calc(100vh - 48px);box-sizing:border-box;border:1px solid var(--border);border-radius:var(--radius);padding:18px;background:var(--card);color:var(--foreground)}
+.bid-row-dialog::backdrop{background:rgba(0,0,0,.45)}
+.bid-row-dialog header{justify-content:space-between}
+.bid-row-dialog h2,.bid-row-dialog p,.bid-row-dialog li{overflow-wrap:anywhere}
+@media(max-width:600px){#bidTable .bid-key-cell,#bidTable td.bid-key-cell b{max-width:116px}}

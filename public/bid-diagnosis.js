@@ -6,13 +6,35 @@
   const device={pc:'PC',mo:'모바일',both:'PC·모바일'};
   const sourced=(url,label)=>'<a class="ext" target="_blank" rel="noopener noreferrer" href="'+url+'">'+label+'</a>';
   const d=document.createElement('dialog');d.className='card bid-diag-dialog';d.setAttribute('aria-labelledby','bdTitle');
-  d.innerHTML='<header class="bid-line"><h2 id="bdTitle">시장·성과 진단</h2><button type="button" class="btn sm" id="bdClose">닫기</button></header><p id="bdHead" class="muted"></p><div class="bid-tools"><span id="bdStatus" role="status"></span><button type="button" class="btn sm hidden" id="bdStop">중지</button></div><div id="bdEvidence"></div><section class="bid-step hidden" id="bdAI"><h3>AI가 우선 확인할 원인</h3><p class="muted">선택한 행의 집계 수치와 API 지표만 설정된 AI로 보내요. 키워드명·ID·엑셀 원본은 보내지 않아요. 입찰 금액과 CSV는 바뀌지 않아요.</p><button type="button" class="btn sm" id="bdExplain">AI로 원인 해석</button><div id="bdNotes"></div></section>';
+  d.innerHTML='<header class="bid-line"><h2 id="bdTitle">시장·성과 진단</h2><button type="button" class="btn sm" id="bdClose">닫기</button></header><p id="bdHead" class="muted"></p><div class="bid-tools"><span id="bdStatus" role="status"></span><button type="button" class="btn sm hidden" id="bdStop">중지</button></div><div id="bdEvidence"></div><section class="bid-step hidden" id="bdAI"><h3>AI가 우선 확인할 원인</h3><p class="muted">아래 버튼을 누르면 선택한 행의 집계 수치와 API 지표만 선택한 AI 모델로 보내요. 키워드명·ID·엑셀 원본은 보내지 않아요. 입찰 금액과 CSV는 바뀌지 않아요.</p><div class="bid-tools"><label>AI 모델 <select id="bdModel" class="hsel" style="width:min(340px,65vw)" disabled></select></label><button type="button" class="btn sm" id="bdExplain" disabled>AI로 원인 해석</button></div><div id="bdNotes" role="status"></div></section>';
   document.body.append(d);
   const $=id=>d.querySelector('#'+id);
-  let active=null, seq=0, tick=0, data=null;
+  let active=null, seq=0, tick=0, data=null, models=[];
+  const modelKey='bidDiagnosisModel';
+  const selected=()=>models[$('bdModel').value];
+  function updateAction(){
+    $('bdModel').disabled=Boolean(active)||!models.length;
+    $('bdExplain').disabled=Boolean(active)||!data?.ticket||!selected();
+  }
+  function clearNotes(){ $('bdNotes').textContent=data?.explainStatus||''; }
+  function chooseModels(j){
+    const select=$('bdModel');models=Array.isArray(j.models)?j.models:[];
+    let previous=null;try{previous=JSON.parse(localStorage.getItem(modelKey));}catch{}
+    const indexOf=x=>models.findIndex(m=>m.provider===x?.provider&&m.model===x?.model);
+    const i=indexOf(previous);
+    select.replaceChildren(...models.map((m,i)=>new Option(m.label,String(i))));
+    if(models.length)select.selectedIndex=i>=0?i:Math.max(0,indexOf(j.defaultModel));
+    else select.add(new Option('선택할 수 있는 모델 없음',''));
+    clearNotes();updateAction();
+  }
+  $('bdModel').onchange=()=>{
+    const m=selected();if(!m)return;
+    try{localStorage.setItem(modelKey,JSON.stringify({provider:m.provider,model:m.model}));}catch{}
+    clearNotes();$('bdStatus').textContent='네이버 근거 조회 완료';updateAction();
+  };
   async function post(url,body,signal){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal});if(r.status===404&&!r.headers.get('content-type')?.includes('json'))throw Error('서버를 다시 시작한 뒤 진단을 실행해 주세요.');const j=await r.json();if(!r.ok)throw Error(j.error||'진단을 가져오지 못했어요.');return j;}
-  function stop(msg=''){seq++;active?.abort();active=null;clearInterval(tick);$('bdStop').classList.add('hidden');$('bdStatus').textContent=msg;$('bdExplain').disabled=!data?.ticket;}
-  function start(text){stop();const now=Date.now();active=new AbortController();const step=()=>{$('bdStatus').textContent=text+' · '+Math.floor((Date.now()-now)/1000)+'초';};step();tick=setInterval(step,1000);$('bdStop').classList.remove('hidden');$('bdExplain').disabled=true;return {key:seq,signal:active.signal};}
+  function stop(msg=''){seq++;active?.abort();active=null;clearInterval(tick);$('bdStop').classList.add('hidden');$('bdStatus').textContent=msg;updateAction();}
+  function start(text){stop();const now=Date.now();active=new AbortController();const step=()=>{$('bdStatus').textContent=text+' · '+Math.floor((Date.now()-now)/1000)+'초';};step();tick=setInterval(step,1000);$('bdStop').classList.remove('hidden');updateAction();return {key:seq,signal:active.signal};}
   $('bdClose').onclick=()=>{stop();d.close();};$('bdStop').onclick=()=>stop('진단을 중지했어요.');d.addEventListener('close',()=>stop());d.addEventListener('cancel',()=>stop());
   function evidence(j){
     const {market:m,trend:t,metrics:{before:a,after:b}}=j;
@@ -25,19 +47,20 @@
     const pair=(k,fmt=n)=>a?fmt(a[k])+' → '+fmt(b?.[k]):fmt(b?.[k]);
     const met=box('데일리리포트 실측',a||b?'<p>노출 '+pair('imp')+' · 클릭 '+pair('clicks')+' · 신청 '+pair('conv')+' · 순위 '+pair('rank',v=>n(v,1))+'</p><p>클릭률 '+pair('ctr',pct)+' · CPC '+pair('cpc',won)+' · 방문/클릭 '+pair('visitRate',pct)+' · 신청/방문 '+pair('applyRate',pct)+'</p><p>CPA '+pair('cpa',won)+' · 추정 ROAS '+pair('roas',pct)+'</p>':'<p class="muted">확인된 데일리 성과 없음</p>');
     $('bdEvidence').innerHTML=market+trend+met+(j.messages?.length?'<ul class="muted">'+j.messages.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'');
-    $('bdAI').classList.remove('hidden');$('bdExplain').textContent=j.model?'AI로 원인 해석 · '+j.model:'AI로 원인 해석';$('bdNotes').textContent=j.explainStatus||'';
+    chooseModels(j);$('bdAI').classList.remove('hidden');
   }
   async function open(q){
-    stop();data=null;$('bdEvidence').replaceChildren();$('bdNotes').replaceChildren();$('bdAI').classList.add('hidden');$('bdTitle').textContent=q.keyword.replace(/\s+/g,'')+' · 시장·성과 진단';$('bdHead').textContent=(device[q.device]||'기기 미확인')+' · 이 진단은 입찰 금액을 바꾸지 않아요.';
+    stop();data=null;models=[];$('bdEvidence').replaceChildren();$('bdNotes').replaceChildren();$('bdAI').classList.add('hidden');$('bdTitle').textContent=q.keyword.replace(/\s+/g,'')+' · 시장·성과 진단';$('bdHead').textContent=(device[q.device]||'기기 미확인')+' · 이 진단은 입찰 금액을 바꾸지 않아요.';
     if(!d.open)d.showModal();const {key,signal}=start('네이버 근거 조회 중');
     try{const j=await post('/api/bid-diagnosis',q,signal);if(key!==seq)return;data=j;evidence(j);stop('네이버 근거 조회 완료');}
     catch(e){if(key===seq)stop(e.message);}
   }
   $('bdExplain').onclick=async()=>{
-    if(!data?.ticket)return;
-    const {key,signal}=start((data.model||'설정된 AI')+' 해석 중');
-    try{const j=await post('/api/bid-diagnosis/explain',{ticket:data.ticket},signal);if(key!==seq)return;
-      $('bdNotes').innerHTML=(j.notes?.length?'<p class="muted">'+esc(j.model||'AI')+' · 다음은 근거와 맞는 가설이며, 원인이 확정된 것은 아니에요.</p><ol>'+j.notes.map(x=>'<li><b>'+esc(x.title)+'</b><p>'+esc(x.why)+'</p><p class="muted">다음 확인: '+esc(x.next)+'</p></li>').join('')+'</ol>':'<p class="muted">'+esc(j.message)+'</p>');stop('AI 해석 완료');}
+    const m=selected();if(active||!data?.ticket||!m)return;
+    const {ticket}=data;
+    clearNotes();const {key,signal}=start(m.label+' 해석 중');
+    try{const j=await post('/api/bid-diagnosis/explain',{ticket,provider:m.provider,model:m.model},signal);if(key!==seq)return;
+      $('bdNotes').innerHTML=(j.notes?.length?'<p class="muted">'+esc(j.model||'AI')+' · 다음은 근거와 맞는 가설이며, 원인이 확정된 것은 아니에요.</p><ol>'+j.notes.map(x=>'<li><b>'+esc(x.title)+'</b><p>'+esc(x.why)+'</p><p class="muted">다음 확인: '+esc(x.next)+'</p></li>').join('')+'</ol>':'<p class="muted">'+esc(j.message)+'</p>');stop(j.notes?.length?'AI 해석 완료':'AI 해석 결과 없음');}
     catch(e){if(key===seq)stop(e.message);}
   };
   window.BidDiagnosis={open};

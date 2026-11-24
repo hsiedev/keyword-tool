@@ -730,9 +730,9 @@ async function waitSec(sec, signal, onTick) {
     await sleep(1000);
   }
 }
-const modelChain = (over) => {
+const modelChain = (over, exact = false) => {
   const primary = over || config.geminiModel || GEMINI_DEFAULT;
-  return pinned() ? [primary] : [primary, ...GEMINI_FALLBACKS.filter((m) => m !== primary)].slice(0, 4);
+  return exact || pinned() ? [primary] : [primary, ...GEMINI_FALLBACKS.filter((m) => m !== primary)].slice(0, 4);
 };
 
 async function gemini(prompt, schema, { temperature = 0.9, system } = {}) {
@@ -828,7 +828,7 @@ function schemaExample(sc) {
 async function cliStream(p, { system, prompt, schema }, emit, signal, { total = 0, model: modelOver } = {}) {
   needKey(p);
   const P = PROVIDERS[p];
-  const model = modelOver || P.model();
+  const model = modelOver ?? P.model();
   const tag = `${P.name}${model ? ' · ' + model : ''}`;
   const ex = schema ? schemaExample(schema) : null;
   const itemEx = Array.isArray(ex) ? ex[0] : ex;
@@ -870,8 +870,7 @@ async function llmJson(prompt, schema, { temperature = 0.9, system } = {}) {
   return { data: arr, model, tried: [] };
 }
 const BID_DIAG = createBidDiagnosis({
-  dataDir: path.join(__dirname,'data'), hasAd, hasTrend:hasOpen, hasModel:hasAI,
-  modelName:()=> [PROVIDERS[provider()].name, PROVIDERS[provider()].model()].filter(Boolean).join(' · '),
+  dataDir: path.join(__dirname,'data'), hasAd, hasTrend:hasOpen, modelOptions: bidDiagnosisModels,
   today:()=>ymd(kstNow()),
   async lookup(keyword,signal){
     const j=await adRequest('GET','/keywordstool',{query:{hintKeywords:keyword,showDetail:'1'},signal});
@@ -883,16 +882,42 @@ const BID_DIAG = createBidDiagnosis({
     },signal);
     return j.results?.find(r=>r.title==='target')?.data||[];
   },
-  async interpret({codes,evidence},signal){
-    const system='광고 성과의 원인 후보를 우선순위로 정렬한다. 입력의 허용 코드 중 근거가 강하고 먼저 확인할 최대 3개만 선택한다. 데이터랩은 절대량이 아니고 경쟁 지표는 조회일 관측값이며 인과관계를 판단할 수 없다. 입찰 금액은 제안하지 않는다. 허용 코드 외에는 출력하지 않는다.';
+  async interpret({codes,evidence},signal,choice){
+    const system='광고 성과의 원인 후보를 우선순위로 정렬한다. 입력의 허용 코드 중 근거가 강하고 먼저 확인할 최대 3개만 선택한다. 데이터랩은 절대량이 아니고 경쟁 지표는 조회일 관측값이며 인과관계를 판단할 수 없다. 제공된 근거만 사용한다. 파일을 열거나 명령을 실행하거나 웹을 검색하지 않는다. 입찰 금액은 제안하지 않는다. 허용 코드 외에는 출력하지 않는다.';
     const schema={type:'ARRAY',items:{type:'OBJECT',required:['code'],properties:{code:{type:'STRING',enum:codes}}}};
-    return llmStream({system,prompt:JSON.stringify({allowedCodes:codes,evidence}),schema,temperature:0.1},()=>{},signal,{total:Math.min(3,codes.length)});
+    return llmStream({system,prompt:JSON.stringify({allowedCodes:codes,evidence}),schema,temperature:0.1},()=>{},signal,{total:Math.min(3,codes.length),provider:choice.provider,model:choice.model,exactModel:true});
   },
 });
+// Reuse model catalogs discovered by the existing settings chooser. Diagnosis itself does not
+// enumerate models remotely or run login probes, and never takes a model ID from the browser on trust.
+const DIAG_MODEL_CATALOGS = new Map();
+const providerConnection = (p) => p === 'gemini' ? config.geminiKey : cliPath(p, config);
+function bidDiagnosisModels() {
+  const configured = provider();
+  const models = [];
+  for (const p of [configured, ...Object.keys(PROVIDERS).filter(x => x !== configured)]) {
+    const P = PROVIDERS[p], connection = providerConnection(p);
+    if (!connection) continue;
+    const catalog = DIAG_MODEL_CATALOGS.get(p);
+    const found = catalog?.connection === connection ? catalog.models : null;
+    const candidates = [P.model(), ...(found || []), ...(CLI_MODELS[p] || []), ...(P.kind === 'cli' ? [''] : [])];
+    for (const m of new Set(candidates)) {
+      const safe = p === 'codex' ? /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}(?::(?:low|medium|high|xhigh|minimal|none))?$/ : /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+      if (typeof m !== 'string' || !(safe.test(m) || (m === '' && P.kind === 'cli'))) continue;
+      // Gemini's list comes from the saved API key. If loaded, exclude a configured model no longer listed.
+      if (p === 'gemini' && found && !found.includes(m)) continue;
+      models.push({provider:p, model:m, name:P.name, label:P.name+' · '+(m || '계정 기본 모델')});
+    }
+  }
+  return models;
+}
 async function providerModels(p) {
-  if (p === 'gemini') return geminiModels();
-  if (p === 'agy' || p === 'codex') return (await cliModels(p, config)).map((m) => m.id);
-  return CLI_MODELS[p] || [];
+  const connection = providerConnection(p);
+  const models = p === 'gemini' ? await geminiModels()
+    : p === 'agy' || p === 'codex' ? (await cliModels(p, config)).map(m => m.id)
+    : CLI_MODELS[p] || [];
+  if (connection && providerConnection(p) === connection) DIAG_MODEL_CATALOGS.set(p, {connection, models});
+  return models;
 }
 
 async function geminiModels() {
@@ -990,7 +1015,7 @@ async function aiGenerateStream(b, emit, signal) {
 }
 
 // Gemini 스트리밍 공통: 생각 요약(thought) + 답변의 "keyword" 개수로 진행률, 바쁘면 다른 모델로 대체
-async function geminiStream(baseBody, emit, signal, { total, label = '작성 중', model: modelOver, countKey = 'keyword' } = {}) {
+async function geminiStream(baseBody, emit, signal, { total, label = '작성 중', model: modelOver, countKey = 'keyword', exactModel = false } = {}) {
   const countRe = new RegExp(`"${countKey}"\\s*:`, 'g'); // 진행률: 이 필드가 나온 횟수
   if (!hasGemini()) throw new Error('Gemini API 키가 설정되지 않았어요 (API 설정 > AI 모델 탭)');
   const n = total;
@@ -998,7 +1023,7 @@ async function geminiStream(baseBody, emit, signal, { total, label = '작성 중
   const plan = retryPlan();
   const tried = [];
   emit('start', { total: n });
-  for (const model of modelChain(modelOver)) {
+  for (const model of modelChain(modelOver, exactModel)) {
     let thinking = true, waited = 0, waited429 = false;
     const tModel = Date.now(); // 모델 고정일 때 한 모델에 쓰는 시간 상한 (90초)
     for (let attempt = 0; ; attempt++) {

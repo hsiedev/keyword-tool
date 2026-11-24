@@ -4,7 +4,7 @@
 // - 보고 있는 줄 위아래를 검정 그라데이션으로 살짝 어둡게 해서 그 줄만 눈에 들어오게
 (function () {
   // 대상 표: 키워드 분석(연관), AI 키워드 생성기, 대량 분석, 키워드 중복 검사, 구글 모드 키워드 표
-  const TABLES = '#relTbl, #aiTbl, #bTblWrap > table, #dTblWrap > table, #gView table.g-tbl';
+  const TABLES = '#relTbl, #aiTbl, #bTblWrap > table, #dTblWrap > table, #gView table.g-tbl, #bidTable';
   const FP = { table: null, idx: -1, raf: 0 };
   let shade, pill;
 
@@ -38,7 +38,7 @@
     shade.firstChild.style.transform = `translate3d(0,${Math.round(rc.top - H - 70)}px,0)`;
     shade.lastChild.style.transform = `translate3d(0,${Math.round(rc.bottom)}px,0)`;
     const cb = cbOf(tr);
-    const html = `<b>집중 피킹</b> ${FP.idx + 1} / ${rows.length}${cb ? ` · ${cb.checked ? '<span class="fp-ck">체크됨</span>' : '체크 안 됨'}` : ''} <span class="fp-keys">↑↓ 이동${cb ? ' · Space 체크' : ''} · Esc 끝내기</span>`;
+    const html = `<b>집중 피킹</b> ${FP.idx + 1} / ${rows.length}${cb ? ` · ${cb.disabled ? '지금은 선택할 수 없음' : cb.checked ? '<span class="fp-ck">체크됨</span>' : '체크 안 됨'}` : ''} <span class="fp-keys">↑↓ 이동${cb && !cb.disabled ? ' · Space 체크' : ''} · Esc 끝내기</span>`;
     if (pill.innerHTML !== html) pill.innerHTML = html; // 바뀔 때만 (DOM 감시가 다시 부르지 않게)
   }
   const schedule = () => { if (FP.table && !FP.raf) FP.raf = requestAnimationFrame(place); };
@@ -134,7 +134,7 @@
     const el = e.target;
     const typing = el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) && !(el.tagName === 'INPUT' && el.type === 'checkbox');
     if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
-    if ([...document.querySelectorAll('.modal-bg, .cfm-bg, .rv-bg')].some((m) => !m.classList.contains('hidden') && m.offsetParent !== null)) return; // 설정·확인창이 떠 있으면 건드리지 않음
+    if ([...document.querySelectorAll('.modal-bg, .cfm-bg, .rv-bg, dialog[open], .bid-diag:not(.hidden)')].some((m) => !m.classList.contains('hidden') && m.getClientRects().length)) return; // 설정·확인창이 떠 있으면 건드리지 않음
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       const now = performance.now();

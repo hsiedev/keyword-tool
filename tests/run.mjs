@@ -206,7 +206,20 @@ globalThis.fetch = async (u, o = {}) => {
     globalThis.__embSent = (globalThis.__embSent || 0) + req.length;
     return new Response(JSON.stringify({ embeddings: req.map((q) => ({ values: q.content.parts[0].text.includes('자동차') ? [1, 0.05, 0] : [0, 1, 0] })) }));
   }
-  if (s.includes('generativelanguage.googleapis.com')) return new Response(GEMINI_SSE(o));
+  if (s.includes('generativelanguage.googleapis.com')) {
+    const target = new URL(s);
+    if(target.pathname==='/v1beta/models') {
+      globalThis.catalogCalls=(globalThis.catalogCalls||0)+1;
+      return Response.json({models:['gemini-3.8-flash','gemini-test-alt','gemini-blocked'].map(x=>({name:'models/'+x,supportedGenerationMethods:['generateContent']}))});
+    }
+    const prompt = JSON.parse(o.body||'{}').contents?.[0]?.parts?.[0]?.text || '';
+    if(prompt.includes('allowedCodes')) {
+      (globalThis.diagCalls||=[]).push({url:s,prompt});
+      if(s.includes('gemini-blocked'))return new Response('{}',{status:404});
+      return new Response('data: '+JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify([{code:'cpc',value:999},{code:'fabricated'},{code:'cpc'}])}]}}]})+'\n\n');
+    }
+    return new Response(GEMINI_SSE(o));
+  }
   if (s.includes('api.searchad.naver.com')) globalThis.__adCalls = [...(globalThis.__adCalls || []), (o.method || 'GET') + ' ' + new URL(s).pathname];
   if (s.includes('api.searchad.naver.com/ncc/campaigns')) return new Response(JSON.stringify([{ nccCampaignId: 'cmp-1', name: '운전자보험_PL', campaignTp: 'WEB_SITE', status: 'ELIGIBLE', userLock: false }]));
   if (s.includes('api.searchad.naver.com/ncc/adgroups')) return new Response(JSON.stringify([{ nccAdgroupId: 'grp-1', name: '비교', status: 'ELIGIBLE' }]));
@@ -455,12 +468,15 @@ await test('입찰 트래킹: 다음 달 동일 일수 제안, ID 연결과 누�
     eq(readRequest({...q,prior:{from:'2026-02-01',to:'2026-02-07'}},today).comparable,false);
   });
   await test('입찰 진단: 현재 경쟁 수준과 이력 분리·소량 검색수·허용된 AI 후보만 표시',async()=>{
-    let at='2026-10-07', aiInput, dataQ;const dir=path.join(TMP,'bid-diag-test');
-    const handle=createBidDiagnosis({dataDir:dir,today:()=>at,hasAd:()=>true,hasTrend:()=>true,hasModel:()=>true,modelName:()=> '테스트 모델',lookup:async()=>({monthlyPcQcCnt:'< 10',monthlyMobileQcCnt:50,compIdx:at==='2026-10-07'?'중간':'높음',plAvgDepth:5}),series:async query=>{dataQ=query;return data;},interpret:async x=>{aiInput=x;return {arr:[{code:'demand_down',bid:777},{code:'fabricated'},{code:'competition'},{code:'demand_down'}],model:'테스트 모델'};}});
+    let at='2026-10-07', aiInput, dataQ, aiModel;const dir=path.join(TMP,'bid-diag-test');
+    const handle=createBidDiagnosis({dataDir:dir,today:()=>at,hasAd:()=>true,hasTrend:()=>true,modelOptions:()=>[{provider:'gemini',model:'test-default',label:'테스트 기본'},{provider:'codex',model:'test-selected',label:'테스트 선택'}],lookup:async()=>({monthlyPcQcCnt:'< 10',monthlyMobileQcCnt:50,compIdx:at==='2026-10-07'?'중간':'높음',plAvgDepth:5}),series:async query=>{dataQ=query;return data;},interpret:async (x,_signal,choice)=>{aiInput=x;aiModel=choice;return {arr:[{code:'demand_down',bid:777},{code:'fabricated'},{code:'competition'},{code:'demand_down'}],model:'테스트 모델'};}});
     const call=(url,body)=>handle({method:'POST'},{once(){},off(){}},new URL(url,'http://localhost'),async()=>body,(_res,status,j)=>({status,j}));
     const seed=(await call('/api/bid-diagnosis',{...q,prior:null,current:prior})).j;eq(seed.market.previous,null);eq(seed.market.current.pc,'< 10');eq(seed.ticket,null);
     at='2026-11-07';const j=(await call('/api/bid-diagnosis',q)).j;eq(j.market.current.comp,'높음');eq(j.market.previous.comp,'중간');eq(dataQ.device,'mo');ok(j.ticket);eq(j.metrics.after.cpc,600);
-    const a=(await call('/api/bid-diagnosis/explain',{ticket:j.ticket})).j;
+    eq(j.models.map(x=>x.model),['test-default','test-selected']);eq(j.defaultModel,{provider:'gemini',model:'test-default'});eq(aiModel,undefined);
+    await (async()=>{let status;try{await call('/api/bid-diagnosis/explain',{ticket:j.ticket,provider:'codex',model:'unknown'});}catch(e){status=e.status;}eq(status,400);eq(aiModel,undefined);})();
+    const a=(await call('/api/bid-diagnosis/explain',{ticket:j.ticket,provider:'codex',model:'test-selected'})).j;
+    eq(a.model,'테스트 선택');eq(aiModel.model,'test-selected');
     eq(a.notes.map(x=>x.code),['demand_down','competition']);ok(!JSON.stringify(a).includes('777'));ok(!JSON.stringify(aiInput).includes('CC테스트'));ok(!JSON.stringify(j).includes('CC테스트'));
     const files=await fs.promises.readdir(path.join(dir,'bid-market'));eq(files.length,1);
   });
@@ -482,6 +498,39 @@ await test('입찰 수동 검토: 보류와 편집, CSV 보호 분리', async()=
   const bytes=fs.readFileSync(path.join(TMP,'public','ko_edit_keyword_bid_template.csv'));
   const csv=R.csvFiles(bytes,[{id:n.id,gid:n.gid,kw:n.kw,bid:R.finalBid(r,'450'),before:n.bid}])[0];
   ok(Buffer.from(csv).subarray(0,bytes.length).equals(bytes));ok(new TextDecoder('euc-kr',{fatal:true}).decode(csv).includes('검증키워드,450\r\n'));
+});
+
+await test('입찰 진단: 근거 먼저 표시, 선택 모델만 실행하고 대체 모델 호출 금지',async()=>{
+  const local={Origin:'http://localhost:'+PORT};
+  await post('/api/config',{geminiKey:'diag-fake-key',geminiModel:'gemini-3.8-flash',aiProvider:'gemini'},local);
+  globalThis.diagCalls=[];
+  const cap=await (await get('/api/bid-diagnosis')).json();
+  eq(cap.defaultModel,{provider:'gemini',model:'gemini-3.8-flash'});
+  eq(globalThis.catalogCalls||0,0);
+  eq((await get('/api/ai/models?provider=gemini')).status,200);
+  const evidence=await (await post('/api/bid-diagnosis',{
+    keyword:'hideFromAI',id:'DO-NOT-SEND-ID',device:'mo',prior:{from:'2025-01-01',to:'2025-01-07'},current:{from:'2025-01-08',to:'2025-01-14'},
+    before:{imp:200,clicks:40,cost:20000,excel:'DO-NOT-SEND-WORKBOOK'},after:{imp:200,clicks:40,cost:30000,bid:12345}
+  },local)).json();
+  eq(globalThis.diagCalls.length,0);eq(globalThis.catalogCalls,1);
+  ok(evidence.ticket);ok(evidence.models.some(x=>x.provider==='gemini'&&x.model==='gemini-test-alt'));
+  const send=(p,m,ticket=evidence.ticket,headers=local)=>post('/api/bid-diagnosis/explain',{ticket,provider:p,model:m},headers);
+  eq((await send('gemini','gemini-test-alt',evidence.ticket,{Origin:'https://foreign.invalid'})).status,403);
+  eq((await send('gemini','gemini-test-alt','invalid')).status,400);
+  eq((await send('gemini',undefined)).status,400);
+  eq((await send('gemini','--another-model')).status,400);
+  eq((await send('gemini','gemini-invented')).status,400);
+  eq((await send('codex','gemini-test-alt')).status,400);
+  eq(globalThis.diagCalls.length,0);
+  const result=await (await send('gemini','gemini-test-alt')).json();
+  eq(result.model,'Gemini (API 키) · gemini-test-alt');eq(result.notes.map(x=>x.code),['cpc']);
+  ok(globalThis.diagCalls[0].url.includes('/gemini-test-alt:'));eq(globalThis.diagCalls.length,1);
+  const safePrompt=globalThis.diagCalls[0].prompt;
+  for(const secret of ['hideFromAI','DO-NOT-SEND','bid','12345'])ok(!safePrompt.includes(secret),safePrompt);
+  const blocked=await (await send('gemini','gemini-blocked')).json();
+  eq(blocked.notes,[]);eq(globalThis.diagCalls.length,2);ok(globalThis.diagCalls[1].url.includes('/gemini-blocked:'));
+  await post('/api/config',{geminiKey:'different-fake-key'},local);
+  eq((await send('gemini','gemini-test-alt')).status,400);eq(globalThis.diagCalls.length,2);
 });
 
 // ---------------------------------------------------------------- 결과
