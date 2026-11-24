@@ -466,6 +466,24 @@ await test('입찰 트래킹: 다음 달 동일 일수 제안, ID 연결과 누�
   });
 }
 
+await test('입찰 수동 검토: 보류와 편집, CSV 보호 분리', async()=>{
+  const R=(await import(pathToFileURL(path.join(TMP,'public','bid-rules.js')).href)).default;
+  const n={kw:'검증키워드',kk:'검증키워드',id:'nkw-a001-01-000000000000001',gid:'grp-a001-01-000000000000001',group:'내광고그룹',bid:500,status:'노출가능',type:'키워드',modified:'2026-11-23'};
+  const d={kw:n.kw,kk:n.kk,id:n.id,gid:n.gid,group:n.group,clicks:80,cost:50000,conv:0};
+  const cfg={group:n.group,device:'mo',scopeOK:true,cpa:'6500',from:'2026-11-01',to:'2026-11-24',nFrom:'2026-11-01',nTo:'2026-11-24',download:'2026-11-24'};
+  const run=(daily=[d],naver=[n],settings=cfg)=>R.evaluate({daily,naver,settings},'2026-11-24');
+  const normal=run(),r=normal.rows[0];eq(r.holdCode,'modified');eq(R.finalBid(r,'450'),450);eq(normal.p.exportErrors,[]);
+  for(const v of ['','455','0','69','100010','4.5e2','450.0','500'])eq(R.finalBid(r,v),null);
+  eq(run([{...d,clicks:0,cost:0,conv:null}]).rows[0].holdCode,'noSample');eq(run([{...d,conv:null}]).rows[0].holdCode,'missingConversion');
+  for(const patch of [{cpa:''},{nFrom:'2026-11-02'}]){const x=run([d],[n],{...cfg,...patch});eq(x.rows[0].holdCode,'settings');eq(x.p.exportErrors,[]);}
+  for(const patch of [{scopeOK:false},{nTo:'2026-11-01',download:'2026-11-02'}])ok(run([d],[n],{...cfg,...patch}).p.exportErrors.length>0);
+  ok(run([d],[{...n,gid:'grp-a001-01-000000000000002'}]).p.exportErrors.length>0);
+  for(const ns of [[n,{...n}],[{...n,status:'중지'}],[{...n,bid:455}],[{...n,type:'기본'}]])eq(R.finalBid(run([d],ns).rows[0],'450'),null);
+  const bytes=fs.readFileSync(path.join(TMP,'public','ko_edit_keyword_bid_template.csv'));
+  const csv=R.csvFiles(bytes,[{id:n.id,gid:n.gid,kw:n.kw,bid:R.finalBid(r,'450'),before:n.bid}])[0];
+  ok(Buffer.from(csv).subarray(0,bytes.length).equals(bytes));ok(new TextDecoder('euc-kr',{fatal:true}).decode(csv).includes('검증키워드,450\r\n'));
+});
+
 // ---------------------------------------------------------------- 결과
 console.log('\n키워드 분석기 자동 테스트\n' + results.join('\n'));
 console.log(`\n통과 ${pass} · 실패 ${fail}`);

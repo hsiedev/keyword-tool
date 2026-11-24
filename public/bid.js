@@ -1,12 +1,13 @@
 (() => {
   const R=window.BidRules, $=id=>document.getElementById(id), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const labels={daily:'데일리리포트',naver:'네이버 키워드 파일',previous:'이전 데일리리포트'};
-  const states={up:'상향',down:'하향',keep:'유지',hold:'보류'};
+  const states={up:'상향',down:'하향',keep:'유지',hold:'자동 추천 보류'};
+  const holdLabels={match:'매칭 실패·중복',id:'ID 확인',bid:'현재가 확인',status:'노출 상태 확인',type:'입찰가 유형 확인',settings:'분석 조건 확인',noSample:'클릭·비용 표본 없음',missing:'집계 확인',missingConversion:'신청 미확인',modifiedUnknown:'수정시각 미확인',modified:'성과 기간 중 수정 기록',smallSample:'표본 부족'};
   const keys=['group','device','cpa','from','to','nFrom','nTo','download','pFrom','pTo','scopeOK'];
   const newId=()=>crypto.randomUUID();
   const fresh=()=>({id:newId(),files:{},title:'',settings:{},at:0});
-  const exported=new Map();
-  let doc=fresh(), result=null, list=[], sel=new Set(), applied=new Set(), pg=0, filt='', query='', loads={}, serial=0, opening=0;
+  const exported=new Map(), edits=new Map();
+  let doc=fresh(), result=null, list=[], sel=new Set(), applied=new Map(), pg=0, filt='', query='', loads={}, serial=0, opening=0;
   const v=document.createElement('div');
   v.id='bidView'; v.className='hidden';
   const source=k=>'<div class="card bid-source"><h3>'+labels[k]+'</h3><div class="drop"><label class="ext">파일 선택<input id="bidFile-'+k+'" type="file" accept=".xlsx,.xlsm,.csv,.tsv" hidden></label><span class="muted"> · 엑셀 / CSV</span></div><details><summary>엑셀 표 붙여넣기</summary><label class="muted" for="bidPaste-'+k+'">머리글을 포함해 붙여넣으세요.</label><textarea id="bidPaste-'+k+'" class="inp" rows="3"></textarea><button type="button" class="btn sm" id="bidRead-'+k+'">붙여넣기 읽기</button></details><p class="muted bid-source-status" id="bidInfo-'+k+'" role="status"></p><label id="bidSheetBox-'+k+'" class="hidden">시트 <select class="hsel" id="bidSheet-'+k+'"></select></label><button type="button" class="btn sm hidden" id="bidRemove-'+k+'">자료 빼기</button></div>';
@@ -15,7 +16,7 @@
     +'<div class="card bid-step"><h3>분석 기준</h3><div class="bid-fields"><label>광고그룹 이름<input class="inp" id="bid-group" placeholder="예: 광고그룹 이름" maxlength="150"></label><label>기기<select class="inp" id="bid-device"><option value="">선택</option><option value="pc">PC</option><option value="mo">모바일</option><option value="both">PC·모바일 합산</option></select></label><label>목표 CPA (원)<input class="inp" id="bid-cpa" type="number" min="1" step="1" placeholder="예: 6500"></label></div><p class="muted">보고서의 비용 기준(VAT·마크업 포함 여부)과 같은 기준의 목표 CPA를 입력하세요.</p>'
     +'<fieldset><legend>데일리리포트 성과 기간</legend><div class="bid-fields">'+date('from','성과 시작일')+date('to','성과 종료일')+'</div></fieldset><fieldset><legend>네이버 파일</legend><div class="bid-fields">'+date('nFrom','조회 시작일')+date('nTo','조회 종료일')+date('download','다운로드일')+'</div><p class="muted">네이버에서 데일리와 같은 기간을 조회한 파일을 넣으세요. 조회 종료일과 다운로드일은 별개예요.</p></fieldset><label class="bid-check"><input id="bid-scopeOK" type="checkbox"> 두 파일이 같은 광고그룹·기기 기준임을 확인했어요.</label><div id="bidPeriod" class="muted" role="status"></div>'
     +'<details class="bid-step" id="bidOptional"><summary>이전 기간과 비교 (선택 · 순위 하락 확인 및 상향 판단)</summary><p class="muted">같은 그룹·기기에서, 현재와 같은 길이의 겹치지 않는 이전 데일리리포트를 넣으세요.</p><div class="bid-fields">'+date('pFrom','이전 시작일')+date('pTo','이전 종료일')+'</div>'+source('previous')+'</details></div><div class="bid-tools"><button type="button" class="btn pri" id="bidRun">입찰 조정 분석</button><span role="status" id="bidStatus" class="muted"></span></div></div>'
-    +'<section class="sec hidden" id="bidResults"><h2>키워드별 검토</h2><p class="muted" id="bidSummary"></p><div id="bidWarnings"></div><div class="bid-tools"><label>결과 <select id="bidFilter" class="hsel"><option value="">전체</option><option value="down">하향</option><option value="up">상향</option><option value="keep">유지</option><option value="hold">보류</option><option value="naver">네이버 파일에만 있음</option><option value="applied">적용 완료</option></select></label><label>키워드 <input id="bidSearch" class="inp" type="search" placeholder="검색"></label><button type="button" class="btn sm" id="bidPick">현재 필터의 변경 후보 선택</button><button type="button" class="btn pri" id="bidApply">선택 적용</button></div><p class="muted" id="bidSelection" role="status"></p><div id="bidRows"></div><div class="bid-tools" id="bidPages"><button type="button" id="bidBack" class="btn sm">이전</button><span id="bidPage"></span><button type="button" id="bidNext" class="btn sm">다음</button></div><div class="bid-tools"><button type="button" id="bidCsv" class="btn pri">네이버 양식 CSV 다운로드</button><button type="button" id="bidTxt" class="btn">검토 TXT 다운로드</button><button type="button" id="bidUndo" class="btn sm">적용 해제</button><button type="button" class="btn" id="bidTrackSave">트래킹에 저장</button><span id="bidDownloadHelp" class="muted"></span></div></section></div></main></div>';
+    +'<section class="sec hidden" id="bidResults"><h2>키워드별 검토</h2><p class="muted" id="bidSummary"></p><p class="muted">자동 추천가는 목표 CPA 규칙으로 계산해요. AI 판단은 각 행의 [시장·성과 진단]에서 원인 해석에만 사용해요.</p><div id="bidWarnings"></div><p id="bidHolds" class="muted"></p><div class="bid-tools"><label>결과 <select id="bidFilter" class="hsel"><option value="">전체</option><option value="down">하향</option><option value="up">상향</option><option value="keep">유지</option><option value="hold">보류</option><option value="naver">네이버 파일에만 있음</option><option value="applied">적용 완료</option></select></label><label>키워드 <input id="bidSearch" class="inp" type="search" placeholder="검색"></label><button type="button" class="btn sm" id="bidPick">현재 필터의 변경 후보 선택</button><button type="button" class="btn pri" id="bidApply">선택 적용</button></div><p class="muted" id="bidSelection" role="status"></p><div id="bidRows"></div><div class="bid-tools" id="bidPages"><button type="button" id="bidBack" class="btn sm">이전</button><span id="bidPage"></span><button type="button" id="bidNext" class="btn sm">다음</button></div><div class="bid-tools"><button type="button" id="bidCsv" class="btn pri">네이버 양식 CSV 다운로드</button><button type="button" id="bidTxt" class="btn">검토 TXT 다운로드</button><button type="button" id="bidUndo" class="btn sm">적용 해제</button><button type="button" class="btn" id="bidTrackSave">트래킹에 저장</button><span id="bidDownloadHelp" class="muted"></span></div></section></div></main></div>';
   $('main').after(v);
   const node=(k,id)=>$('bid'+k+'-'+id);
   const isoToday=()=>R.dayKst();
@@ -29,10 +30,10 @@
   function writeForm(){ $('bidTitle').value=doc.title; for(const k of keys) {const e=node('',k);if(k==='scopeOK')e.checked=!!doc.settings[k];else e.value=doc.settings[k]||'';if(e.type==='date')e.max=isoToday();} }
   function paintPeriod(){
     const s=doc.settings,p=R.period(s);
-    const note=!(s.from&&s.to&&s.nFrom&&s.nTo)?'두 파일을 조회한 실제 기간을 각각 입력하세요.':p.same?'두 조회 기간 일치':'두 조회 기간 불일치 · 진단은 가능하지만 변경 적용은 보류해요.';
+    const note=!(s.from&&s.to&&s.nFrom&&s.nTo)?'두 파일을 조회한 실제 기간을 각각 입력하세요.':p.same?'두 조회 기간 일치':'두 조회 기간 불일치 · 자동 추천은 보류해요.';
     $('bidPeriod').textContent=note;
   }
-  function invalidate(){ if(result) say('입력값이 바뀌었어요. 다시 분석하면 새 변경안이 나와요.'); serial++; result=null; pg=0; sel.clear(); applied.clear(); exported.clear(); $('bidResults').classList.add('hidden'); }
+  function invalidate(){ if(result) say('입력값이 바뀌었어요. 다시 분석하면 새 변경안이 나와요.'); serial++; result=null; pg=0; sel.clear(); applied.clear(); exported.clear(); edits.clear(); $('bidResults').classList.add('hidden'); }
   for(const k of keys) node('',k).addEventListener('input',()=>{readForm();invalidate();paintPeriod();});
   $('bidTitle').oninput=readForm;
   function paintFile(k){
@@ -78,33 +79,49 @@
     if(save){doc.at=Date.now(); const saved=doc, rev=serial; dbCall('readwrite',s=>s.put(saved)).then(listCases).catch(()=>{if(rev===serial)say('이 브라우저에 내역을 저장하지 못했어요. 이번 결과는 계속 사용할 수 있어요.');});}
   }
   $('bidRun').onclick=()=>run();
-  const eligible=r=>Boolean(r?.n && (r.state==='up'||r.state==='down'));
+  const draft=r=>edits.has(r.n?.id)?edits.get(r.n.id):String(r.bid??'');
+  const final=r=>R.finalBid(r,draft(r));
+  const canApply=r=>!result.p.exportErrors.length&&final(r)!=null;
+  const amountText=(r,value)=>{
+    const next=R.manualBid(value);
+    if(next==null)return value?'70~100,000원 · 10원 단위로 입력':'최종가를 입력하면 증감이 표시돼요.';
+    const change=next-r.n.bid;
+    return change===0?'현재가와 같아서 CSV에 넣지 않아요.':delta({delta:change,percent:change/r.n.bid});
+  };
   function rowsFiltered(){
     if(!result)return [];
     const needle=query.normalize('NFKC').toLowerCase().replace(/\s+/g,'');
-    if(filt==='naver')return result.naverOnly.filter(n=>n.kk.includes(needle)).map(n=>({n,state:'hold',reason:'데일리 성과가 없어서 변경하지 않아요.'}));
+    if(filt==='naver')return result.naverOnly.filter(n=>n.kk.includes(needle)).map(n=>({n,state:'hold',reason:'데일리 성과와 매칭되지 않아 변경에서 제외해요.',editBlock:'데일리 성과와 매칭되지 않아 변경에서 제외해요.'}));
     return result.rows.filter(r=>r.d.kk.includes(needle)&&(!filt||(filt==='applied'?applied.has(r.n?.id):filt===r.state)));
   }
-  function exportables(){return rowsFiltered().filter(r=>eligible(r)&&applied.has(r.n.id));}
+  function exportables(){return rowsFiltered().filter(r=>canApply(r)&&applied.get(r.n.id)===final(r)).map(r=>({id:r.n.id,gid:r.n.gid,kw:r.n.kw,bid:applied.get(r.n.id),before:r.n.bid}));}
+  const sameExport=(a,b)=>a.length===b.length&&a.every((r,i)=>r.id===b[i].id&&r.bid===b[i].bid);
   function controls(){
-    const current=rowsFiltered(), count=current.filter(eligible).length, out=exportables().length;
+    const current=rowsFiltered(), count=current.filter(canApply).length, out=exportables().length;
     $('bidPick').disabled=!count; $('bidApply').disabled=!sel.size; $('bidUndo').disabled=!applied.size; $('bidCsv').disabled=!out; $('bidTxt').disabled=!current.length;
     $('bidSelection').textContent='선택 '+num(sel.size)+'개 · 적용 '+num(applied.size)+'개 · 현재 필터에서 CSV에 들어갈 행 '+num(out)+'개';
     $('bidDownloadHelp').textContent=out>10000?'10,000행 단위로 '+Math.ceil(out/10000)+'개 파일을 준비해요.': 'CSV는 현재 필터의 적용된 행만 담아요.';
   }
   function renderRow(r,i){
-    const {d,n}=r, approved=applied.has(n?.id), choice=eligible(r), label=states[r.state];
-    const amounts=choice?won(n.bid)+' → '+won(r.bid)+' · '+delta(r):(n?'현재 '+won(n.bid):'현재 입찰가 없음');
+    const {d,n}=r, id=n?.id, label=states[r.state], kw=esc(d?.kw||n.kw);
+    const edit=R.canEdit(r), choice=canApply(r), value=edit?draft(r):'';
+    const mark=applied.has(id)?' · 적용됨':'';
+    const price='<div class="bid-review-prices"><div><small>현재가</small><b>'+won(n?.bid)+'</b></div><div><small>자동 추천가</small><b>'+ (r.bid==null?'없음':won(r.bid))+'</b></div><div>'+(edit?'<label for="bidManual-'+i+'"><small>최종 입찰가 (원)</small></label><input id="bidManual-'+i+'" data-bid-manual="'+i+'" class="inp bid-manual" type="text" inputmode="numeric" autocomplete="off" maxlength="7" placeholder="직접 입력" value="'+esc(value)+'">':'<small>최종 입찰가</small><b>변경 제외</b>')+'</div></div>';
+    const choiceUI=edit?'<div class="bid-final-meta"><label><input type="checkbox" data-bid-id="'+esc(id)+'" '+(sel.has(id)?'checked ':'')+(choice?'':'disabled ')+'aria-label="'+kw+' 변경 선택"> 변경 선택</label><output class="muted" data-bid-amount="'+i+'" for="bidManual-'+i+'">'+esc(amountText(r,value))+'</output></div>':'';
     const metrics=d?'클릭 '+num(d.clicks)+' · 신청 '+num(d.conv)+' · 비용 '+won(d.cost)+' · CPA '+(r.cpa==null?'해당 없음':won(r.cpa))+' · 추정 ROAS '+percent(r.roas):'네이버 클릭 '+num(n.clicks)+' · 노출 '+num(n.imp);
     const details=d?'<details><summary>근거 수치 보기</summary><p>데일리 순위 '+num(d.rank)+' · 순방문 '+num(d.visits)+' · 실제 CPC '+won(r.cpc)+' · 허용 CPC '+won(r.allowed)+'</p>'+(n?'<p>네이버 키워드 ID '+esc(n.id||'미확인')+' · 통검 순위 PC '+num(n.pc)+' / 모바일 '+num(n.mo)+' · 수정 '+esc(n.modified||'미확인')+'</p>':'')+'</details>':'';
-    return '<article class="card bid-result"><div class="bid-line"><div>'+(choice?'<label class="bid-choice"><input type="checkbox" data-bid-id="'+esc(n.id)+'" '+(sel.has(n.id)?'checked':'')+' aria-label="'+esc(d.kw)+' 변경 선택">':'')+'<b>'+esc(d?.kw||n.kw)+'</b>'+(choice?'</label>':'')+' <span class="bid-pill">'+label+(approved?' · 적용됨':'')+'</span></div><strong>'+esc(amounts)+'</strong></div><p>'+esc(metrics)+'</p><p class="muted">'+esc(r.reason)+'</p>'+(r.notes?.length?'<ul class="muted">'+r.notes.map(n=>'<li>'+esc(n)+'</li>').join('')+'</ul>':'')+details+'<button type="button" class="btn sm bid-step" data-bid-diag="'+i+'">시장·성과 진단</button></article>'; 
+    return '<article class="card bid-result"><div><b>'+kw+'</b> <span class="bid-pill">'+label+'</span><span class="muted" data-bid-mark="'+i+'">'+mark+'</span></div>'+price+choiceUI+'<p class="'+(r.state==='hold'?'bid-warning':'muted')+'">'+esc(r.reason)+'</p><p class="muted">'+esc(metrics)+'</p>'+(r.notes?.length?'<ul class="muted">'+r.notes.map(n=>'<li>'+esc(n)+'</li>').join('')+'</ul>':'')+details+'<button type="button" class="btn sm bid-step" data-bid-diag="'+i+'">시장·성과 진단</button></article>';
   }
   function paint(){
     if(!result)return;
     $('bidResults').classList.remove('hidden');
     const {rows,matched,naverOnly,p,discrep}=result;
     $('bidSummary').textContent='데일리 '+num(rows.length)+'개 · 매칭 '+num(matched)+'개 · 네이버에만 '+num(naverOnly.length)+'개 · 상향 '+num(rows.filter(r=>r.state==='up').length)+'개 / 하향 '+num(rows.filter(r=>r.state==='down').length)+'개';
-    $('bidWarnings').innerHTML=p.errors.map(m=>'<p class="bid-warning">'+esc(m)+'</p>').join('')+(discrep?'<p class="muted">'+num(discrep)+'개 키워드의 클릭수가 자료 간에 달라요. 성과는 데일리 수치만 사용했어요.</p>':'')+(doc.files.previous&&!p.before?'<p class="bid-warning">이전 기간이 비어 있거나 길이가 다르거나 현재와 겹쳐 비교하지 않아요.</p>':'');
+    const blocked=p.exportErrors.length>0;
+    const counts=new Map();for(const r of rows)if(r.holdCode)counts.set(r.holdCode,(counts.get(r.holdCode)||0)+1);
+    const holds=[...counts].sort((a,b)=>b[1]-a[1]).map(([k,n])=>holdLabels[k]+' '+num(n)+'개');
+    $('bidHolds').textContent=holds.length?'자동 추천 보류 '+num(rows.filter(r=>r.holdCode).length)+'개: '+holds.join(' · '):'';
+    $('bidWarnings').innerHTML=(blocked?'<p class="bid-warning"><b>CSV 내보내기 잠김:</b> '+esc(p.exportErrors.join(' '))+'</p>':'')+p.errors.filter(m=>!p.exportErrors.includes(m)).map(m=>'<p class="muted">자동 추천: '+esc(m)+'</p>').join('')+(discrep?'<p class="muted">'+num(discrep)+'개 키워드의 클릭수가 자료 간에 달라요. 성과는 데일리 수치만 사용했어요.</p>':'')+(doc.files.previous&&!p.before?'<p class="bid-warning">이전 기간이 비어 있거나 길이가 다르거나 현재와 겹쳐 비교하지 않아요.</p>':'');
     const rr=rowsFiltered(), max=Math.max(1,Math.ceil(rr.length/50));pg=Math.min(pg,max-1);
     const showing=rr.slice(pg*50,(pg+1)*50);
     $('bidRows').innerHTML=showing.map(renderRow).join('')||'<p class="muted">이 조건에 맞는 키워드가 없어요.</p>';
@@ -114,28 +131,38 @@
       const metric=d=>d?Object.fromEntries(['imp','clicks','visits','conv','cost','value','rank'].map(k=>[k,d[k]])):null;
       window.BidDiagnosis.open({keyword:(row.d||row.n).kw,device:s.device,current:{from:s.from,to:s.to},prior:s.scopeOK?{from:s.pFrom,to:s.pTo}:null,after:metric(row.d),before:prior.length===1 && result.p.before && s.scopeOK && !result.p.errors.some(e=>e.includes('광고그룹'))?metric(prior[0]):null});
     });
+    $('bidRows').querySelectorAll('[data-bid-manual]').forEach(input=>input.oninput=()=>{
+      const i=+input.dataset.bidManual,r=showing[i],id=r.n.id;edits.set(id,input.value);serial++;
+      if(applied.has(id)&&applied.get(id)!==final(r))applied.delete(id);
+      const row=input.closest('article'), check=row.querySelector('[data-bid-id]');
+      check.disabled=!canApply(r);
+      if(check.disabled){sel.delete(id);check.checked=false;}
+      row.querySelector('[data-bid-mark]').textContent=applied.has(id)?' · 적용됨':'';
+      row.querySelector('[data-bid-amount]').textContent=amountText(r,input.value);
+      controls();
+    });
     $('bidRows').querySelectorAll('[data-bid-id]').forEach(x=>x.onchange=()=>{if(x.checked)sel.add(x.dataset.bidId);else sel.delete(x.dataset.bidId);controls();});controls();
   }
   $('bidFilter').onchange=e=>{filt=e.target.value;pg=0;sel.clear();paint();};
   $('bidSearch').oninput=e=>{query=e.target.value;pg=0;sel.clear();paint();};
   $('bidBack').onclick=()=>{pg=Math.max(0,pg-1);paint();};$('bidNext').onclick=()=>{pg++;paint();};
-  $('bidPick').onclick=()=>{rowsFiltered().filter(eligible).forEach(r=>sel.add(r.n.id));paint();};
-  function gate(){const p=R.period(doc.settings);if(!p.errors.length)return true; window.toast?.(p.errors[0],'error');return false;}
-  $('bidApply').onclick=()=>{if(!result||!gate())return;rowsFiltered().filter(r=>eligible(r)&&sel.has(r.n.id)).forEach(r=>applied.add(r.n.id));sel.clear();paint();};
-  $('bidUndo').onclick=()=>{applied.clear();sel.clear();paint();};
+  $('bidPick').onclick=()=>{rowsFiltered().filter(canApply).forEach(r=>sel.add(r.n.id));paint();};
+  function gate(){const problem=result?.p.exportErrors[0]||R.period(doc.settings).exportErrors[0];if(!problem)return Boolean(result);window.toast?.(problem,'error');return false;}
+  $('bidApply').onclick=()=>{if(!result||!gate())return;rowsFiltered().filter(r=>canApply(r)&&sel.has(r.n.id)).forEach(r=>applied.set(r.n.id,final(r)));serial++;sel.clear();paint();};
+  $('bidUndo').onclick=()=>{serial++;applied.clear();sel.clear();paint();};
   function dl(blob,name){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),10000);}
   $('bidCsv').onclick=async()=>{
     if(!gate())return;const rev=serial, selected=exportables(), b=$('bidCsv'); b.disabled=true;
-    try {const template=await fetch('ko_edit_keyword_bid_template.csv');if(!template.ok)throw Error('네이버 CSV 원본을 불러오지 못했어요.');const bytes=new Uint8Array(await template.arrayBuffer());const live=exportables();if(rev!==serial||!gate()||selected.length!==live.length||selected.some((r,i)=>r!==live[i]))return;
-      const files=R.csvFiles(bytes,selected.map(r=>({id:r.n.id,gid:r.n.gid,kw:r.n.kw, bid:r.bid,before:r.n.bid})));
-      if(files.length===1){dl(new Blob([files[0]],{type:'text/csv;charset=windows-949'}),'ko_edit_keyword_bid_template.csv');selected.forEach(r=>exported.set(r.n.id,r.bid));}
+    try {const template=await fetch('ko_edit_keyword_bid_template.csv');if(!template.ok)throw Error('네이버 CSV 원본을 불러오지 못했어요.');const bytes=new Uint8Array(await template.arrayBuffer());const live=exportables();if(rev!==serial||!gate()||!sameExport(selected,live))return;
+      const files=R.csvFiles(bytes,selected);
+      if(files.length===1){dl(new Blob([files[0]],{type:'text/csv;charset=windows-949'}),'ko_edit_keyword_bid_template.csv');selected.forEach(r=>exported.set(r.id,r.bid));}
       else { // Browser multiple-download permissions can block bulk downloads. Offer each part explicitly.
-        $('bidDownloadHelp').replaceChildren(...files.map((f,i)=>{const a=document.createElement('button');a.type='button';a.className='btn sm';a.textContent=(i+1)+'번 파일';a.onclick=()=>{if(rev===serial&&gate()){dl(new Blob([f],{type:'text/csv;charset=windows-949'}),'ko_edit_keyword_bid_template_'+(i+1)+'.csv');selected.slice(i*10000,(i+1)*10000).forEach(r=>exported.set(r.n.id,r.bid));}};return a;}));return;}
+        $('bidDownloadHelp').replaceChildren(...files.map((f,i)=>{const a=document.createElement('button');a.type='button';a.className='btn sm';a.textContent=(i+1)+'번 파일';a.onclick=()=>{if(rev===serial&&gate()&&sameExport(selected,exportables())){dl(new Blob([f],{type:'text/csv;charset=windows-949'}),'ko_edit_keyword_bid_template_'+(i+1)+'.csv');selected.slice(i*10000,(i+1)*10000).forEach(r=>exported.set(r.id,r.bid));}};return a;}));return;}
     }catch(e){window.toast?.(e.message,'error');}finally{b.disabled=!exportables().length;}
   };
   $('bidTxt').onclick=()=>{
     const s=doc.settings;const summary=[title(doc),'광고그룹 '+s.group+' · 기기 '+({pc:'PC',mo:'모바일',both:'PC·모바일'}[s.device]||'미입력'),'목표 CPA '+(s.cpa?won(+s.cpa):'미입력'),'성과 기간 '+s.from+' ~ '+s.to+' / 네이버 조회 '+s.nFrom+' ~ '+s.nTo+' / 다운로드 '+s.download,''];
-    for(const r of rowsFiltered())summary.push((r.d?.kw||r.n.kw).replace(/\s+/g,'')+' | '+states[r.state]+(applied.has(r.n?.id)?' · 적용됨':'')+' | '+(eligible(r)?won(r.n.bid)+' → '+won(r.bid)+' · '+delta(r):r.n?won(r.n.bid):'입찰가 없음')+'\r\n'+r.reason+(r.notes?.length?'\r\n'+r.notes.join('\r\n'):''),'');
+    for(const r of rowsFiltered())summary.push((r.d?.kw||r.n.kw).replace(/\s+/g,'')+' | '+states[r.state]+(applied.has(r.n?.id)?' · 적용됨':'')+' | '+(r.n?'현재 '+won(r.n.bid)+' · 자동 추천 '+(r.bid==null?'없음':won(r.bid))+' · 최종 '+(R.manualBid(draft(r))==null?'미입력':won(R.manualBid(draft(r))))+' · 승인 '+(applied.has(r.n.id)?won(applied.get(r.n.id)):'없음'):'입찰가 없음')+'\r\n'+r.reason+(r.notes?.length?'\r\n'+r.notes.join('\r\n'):''),'');
     dl(new Blob(['\ufeff'+summary.join('\r\n')],{type:'text/plain;charset=utf-8'}),'입찰가_검토.txt');
   };
   window.__BID={show(on){v.classList.toggle('hidden',!on);if(!on)return;for(const id of ['main','banners','tabs'])$(id)?.classList.add('hidden');history.replaceState(null,'',location.pathname+location.search+'#bid');},hide(){v.classList.add('hidden');}};
@@ -143,7 +170,7 @@
     if(!result)throw Error('입찰 조정 분석부터 실행해 주세요.');
     const s=doc.settings,p=R.period(s), groups=[...new Set(get('naver').map(n=>n.gid).filter(Boolean))];
     if(!p.same||!s.scopeOK||groups.length>1||result.p.errors.some(e=>e.includes('광고그룹')))throw Error('두 파일의 조회 기간, 광고그룹·기기를 맞춘 뒤 저장해 주세요.');
-    const base=(n,d,r)=>({kw:d?.kw||n.kw,id:n?.id,bid:n?.bid,approved:applied.has(n?.id)?r?.bid:null,csv:exported.get(n?.id),status:n?.status,state:r?.state,reason:r?[r.reason,...(r.notes||[])].join(' · '):'',metric:d||null});
+    const base=(n,d,r)=>({kw:d?.kw||n.kw,id:n?.id,bid:n?.bid,approved:applied.get(n?.id)??null,csv:exported.get(n?.id),status:n?.status,state:r?.state,reason:r?[r.reason,...(r.notes||[])].join(' · '):'',metric:d||null});
     const rows=[...result.rows.map(r=>base(r.n,r.d,r)),...result.naverOnly.map(n=>base(n))];
     return window.BidTrackRules.normalize({title:title(doc),group:s.group,gid:groups[0],device:s.device,from:s.from,to:s.to,nFrom:s.nFrom,nTo:s.nTo,download:s.download,target:Number(s.cpa),rows});
   }

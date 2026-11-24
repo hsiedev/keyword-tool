@@ -711,3 +711,12 @@ html.dark .modal .set-sec input.sw.sw:not(:checked){background:#4b4b4b}
 .bid-diag-dialog p{margin:5px 0;}
 .bid-diag-card{margin-top:9px;}
 .bid-diag-dialog li+li{margin-top:8px;}
+
+/* 입찰가 검토: 가격을 키워드 바로 아래에 붙여 표시 */
+.bid-review-prices{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px 18px;margin:9px 0;}
+.bid-review-prices>div{min-width:78px;}
+.bid-review-prices small{display:block;color:var(--muted-fg);}
+.bid-review-prices b,.bid-final-meta output,.bid-manual{font-variant-numeric:tabular-nums;}
+.bid-manual.inp{width:112px;max-width:100%;box-sizing:border-box;padding:4px 7px;}
+.bid-final-meta{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;margin:5px 0;}
+.bid-final-meta input{vertical-align:middle;}

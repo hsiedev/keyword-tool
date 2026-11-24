@@ -69,14 +69,15 @@
     const same=Boolean(dailyOK && naverOK && start===nf && end===nt);
     const prev0=iso(s.pFrom), prev1=iso(s.pTo);
     const before=Boolean(dailyOK && prev0 && prev1 && prev0<=prev1 && prev1<start && days(end,start)===days(prev1,prev0));
-    const errors=[];
-    if(!text(s.group)||!['pc','mo','both'].includes(s.device)||!s.scopeOK) errors.push('같은 광고그룹·기기에서 내려받은 자료인지 확인해 주세요.');
+    const errors=[], exportErrors=[];
+    const both=message=>{errors.push(message);exportErrors.push(message);};
+    if(!text(s.group)||!['pc','mo','both'].includes(s.device)||!s.scopeOK) both('같은 광고그룹·기기에서 내려받은 자료인지 확인해 주세요.');
     if(!(num(s.cpa)>0)) errors.push('목표 CPA를 입력해 주세요.');
     if(!dailyOK || !naverOK) errors.push('데일리 성과 기간과 네이버 조회 기간(시작~종료)을 확인해 주세요.');
     else if(!same) errors.push('두 조회 기간이 달라요. 각 파일을 같은 기간으로 다시 조회한 뒤 변경안을 확정해 주세요.');
-    if(!dl || dl>today || (naverOK && dl<nt)) errors.push('네이버 파일 다운로드일을 확인해 주세요. 조회 종료일 이후(당일 포함)여야 해요.');
-    else if(days(today,dl)>7) errors.push('다운로드일이 7일보다 오래됐어요. 최신 입찰가 파일로 바꿔 주세요.');
-    return {same,before,start,end,download:dl,errors};
+    if(!dl || dl>today || (naverOK && dl<nt)) both('네이버 파일 다운로드일을 확인해 주세요. 조회 종료일 이후(당일 포함)여야 해요.');
+    else if(days(today,dl)>7) both('다운로드일이 7일보다 오래됐어요. 최신 입찰가 파일로 바꿔 주세요.');
+    return {same,before,start,end,download:dl,errors,exportErrors};
   }
   const bidOK = n => Number.isInteger(n) && n>=70 && n<=100000 && n%10===0;
   const idOK = (v,p) => new RegExp('^'+p+'-[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)+$').test(v);
@@ -107,15 +108,23 @@
   function evaluate({daily, naver, previous=[], settings}, today) {
     const p=period(settings,today), target=num(settings.cpa), scope=key(settings.group);
     const d=daily.filter(r=>r.id || r.kk!==scope), dPrev=previous.filter(r=>r.id || r.kk!==scope);
-    if ([d, naver, dPrev].some(rows=>['gid','group'].some(k=>new Set(rows.map(x=>key(x[k])).filter(Boolean)).size>1))) p.errors.push('한 파일에 광고그룹이 여러 개 있어요. 그룹별로 나눠서 넣어 주세요.');
-    if(d.some(x=>x.group && key(x.group)!==scope) || naver.some(x=>x.group && key(x.group)!==scope) || dPrev.some(x=>x.group && key(x.group)!==scope)) p.errors.push('입력한 광고그룹 이름과 파일의 그룹명이 달라요.');
+    const multi=rows=>['gid','group'].some(k=>new Set(rows.map(x=>key(x[k])).filter(Boolean)).size>1);
+    const scopeBad=rows=>rows.some(x=>x.group && key(x.group)!==scope);
+    const currentGroups=new Set([...d,...naver].map(x=>key(x.gid)).filter(Boolean));
+    if(multi(d)||multi(naver)||currentGroups.size>1) p.exportErrors.push('현재 파일의 광고그룹이 여러 개이거나 서로 달라요. 같은 그룹의 자료를 넣어 주세요.');
+    if(scopeBad(d)||scopeBad(naver)) p.exportErrors.push('입력한 광고그룹 이름과 현재 파일의 그룹명이 달라요.');
+    if(multi(dPrev)||scopeBad(dPrev)||dPrev.some(x=>x.gid&&currentGroups.size&&!currentGroups.has(key(x.gid)))) {
+      p.before=false;
+      p.errors.push('이전 파일의 광고그룹을 확인해 주세요.');
+    }
+    for(const msg of p.exportErrors) if(!p.errors.includes(msg))p.errors.push(msg);
     const {matches,naverOnly}=match(d,naver), old=indexed(dPrev,'kk');
     const total=d.reduce((a,x)=>[a[0]+(x.cost||0),a[1]+(x.visits!=null ? x.visits : 0),a[2]+(x.visits!=null ? x.clicks||0 : 0)], [0,0,0]);
     const rows=matches.map(({d,n,issue})=>{
       const cpa=ratio(d.cost,d.conv), roas=ratio(d.value,d.cost), cpc=ratio(d.cost,d.clicks), allowed=target && d.conv>0 ? target*d.conv/d.clicks : null;
       const visit=ratio(d.visits,d.clicks), rest=ratio(total[1]-(d.visits||0),total[2]-(d.visits!=null?d.clicks||0:0));
       const notes=[]; const stats={d,n,cpa,roas,cpc,allowed:Number.isFinite(allowed)?allowed:null,notes};
-      const hold=reason=>({...stats,state:'hold',reason});
+      const hold=(holdCode,reason,block=false)=>({...stats,state:'hold',holdCode,reason,editBlock:block?reason:''});
       const keep=reason=>({...stats,state:'keep',reason});
       if(d.cost>0 && total[0]>0 && d.cost/total[0]>=0.2) notes.push('비용 집중: 데일리 전체 비용의 '+pct(d.cost/total[0]));
       if(visit!=null && rest!=null && d.clicks>=20 && visit<rest*0.75) notes.push('방문/클릭이 낮아요 ('+pct(visit)+', 다른 키워드 '+pct(rest)+'). 유입 추적·랜딩을 점검하세요. 순방문과 클릭의 집계 방식은 달라요.');
@@ -125,17 +134,19 @@
       const prev=old.get(d.kk);
       const past=p.before && prev?.length===1 && sameScope(d,prev[0]) && (!prev[0].id || !n?.id || prev[0].id===n.id) ? prev[0] : null;
       if(past?.imp>=100 && d.imp!=null && d.imp<=past.imp*.7) notes.push('비교 기간보다 광고 노출이 '+pct(1-d.imp/past.imp)+' 줄었어요. 이 자료만으로 시장 수요 감소나 경쟁 심화는 구분할 수 없어요.');
-      if(issue) return hold(issue);
-      if(!idOK(n.id,'nkw') || (n.gid && !idOK(n.gid,'grp'))) return hold('네이버 키워드/광고그룹 ID 형식을 확인해 주세요.');
-      if(!bidOK(n.bid)) return hold('현재 입찰가가 네이버 규격에 맞지 않아요.');
-      if(!['노출가능','노출중'].includes(key(n.status))) return hold('노출 불가 또는 상태 미확인: '+(n.status||'미표기'));
-      if(n.type && key(n.type)!=='키워드' && key(n.type)!=='키워드입찰가') return hold('개별 입찰가가 아닌 유형은 변경 대상에서 제외했어요.');
-      if(p.errors.length) return hold('기간·목표·파일 범위를 확인해 주세요.');
-      if([d.clicks,d.cost,d.conv].some(x=>x==null) || d.conv>d.clicks) return hold('비용·클릭·신청이 누락됐거나 수치가 맞지 않아요.');
-      if(!d.clicks || !d.cost) return hold('비용 또는 클릭 표본이 없어요.');
+      if(issue) return hold('match',issue,true);
+      if(!idOK(n.id,'nkw') || (n.gid && !idOK(n.gid,'grp'))) return hold('id','네이버 키워드/광고그룹 ID 형식을 확인해 주세요.',true);
+      if(!bidOK(n.bid)) return hold('bid','현재 입찰가가 네이버 규격에 맞지 않아요.',true);
+      if(!['노출가능','노출중'].includes(key(n.status))) return hold('status','노출 불가 또는 상태 미확인: '+(n.status||'미표기'),true);
+      if(n.type && key(n.type)!=='키워드' && key(n.type)!=='키워드입찰가') return hold('type','개별 입찰가가 아닌 유형은 변경 대상에서 제외했어요.',true);
+      if(p.errors.length) return hold('settings','자동 추천 조건을 확인해 주세요: '+p.errors[0]);
+      if(d.clicks===0 || d.cost===0) return hold('noSample','클릭 또는 비용이 0이라 자동 추천에 쓸 표본이 없어요.');
+      if(d.clicks==null || d.cost==null) return hold('missing','클릭 또는 비용을 확인할 수 없어요.');
+      if(d.conv==null) return hold('missingConversion','신청이 빈칸이거나 올바르지 않아 확인할 수 없어요.');
+      if(d.conv>d.clicks) return hold('missing','신청 수가 클릭 수보다 많아요. 집계 기준을 확인해 주세요.');
       const mod=modDay(n.modified);
-      if (!mod) return hold('최근 변경 여부를 알 수 없어요. 수정시각이 있는 파일로 확인해 주세요.');
-      if (mod>=p.start) return hold('성과 시작일 이후에 수정 이력이 있어요 ('+mod+'). 수정 이후 데이터만 모아서 다시 판단하세요.');
+      if (!mod) return hold('modifiedUnknown','수정 기록을 확인할 수 없어 자동 추천을 보류했어요.');
+      if (mod>=p.start) return hold('modified','성과 시작일 이후 수정 기록 ('+mod+'). 무엇이 바뀌었는지 확인할 수 없어 자동 추천을 보류했어요.');
       function change(direction, rate, reason) {
         const delta=Math.floor((n.bid*rate+1e-8)/10)*10;
         const bid=Math.max(70,Math.min(100000,n.bid+(direction==='up'?delta:-delta)));
@@ -144,7 +155,7 @@
       }
       if (d.conv===0 && d.clicks>=30 && d.cost>=2*target) return change('down',.1,'30클릭 이상·목표 CPA의 2배 이상을 썼지만 신청 0건. 추적·랜딩 확인 후 비용을 줄이는 테스트예요.');
       if (d.conv>=3 && d.clicks>=30 && cpa>=1.25*target) return change('down',.1,'신청 3건 이상·30클릭 이상에서 CPA가 목표를 25% 이상 넘었어요. 클릭비와 순위의 변화를 확인하는 테스트예요.');
-      if (d.conv<3 || d.clicks<20) return hold('표본이 작아요. 전환 최소 3건과 클릭 20건을 모은 뒤 다시 봐요.');
+      if (d.conv<3 || d.clicks<20) return hold('smallSample','표본이 작아요. 전환 최소 3건과 클릭 20건을 모은 뒤 다시 봐요.');
       // Previous/current rank both come from the daily report, not from a different Naver surface.
       if (cpa<=.8*target && cpc<=.8*allowed && past?.rank && d.rank && past.imp>=100 && d.imp>=100 && d.rank-past.rank>=1 && d.value>0) {
         return change('up',.05,'CPA가 목표보다 20% 이상 낮지만 같은 길이의 이전 기간보다 평균순위가 '+(d.rank-past.rank).toFixed(1)+'위 밀렸어요. 순위 회복 여부를 확인하는 소폭 테스트예요.');
@@ -185,7 +196,17 @@
     }
     return files;
   }
-  const api={header,parseSheet,period,evaluate,csvFiles,bidOK,dayKst};
+  function manualBid(value){
+    const s=text(value);
+    return /^\d{1,6}$/.test(s) && bidOK(Number(s)) ? Number(s) : null;
+  }
+  function canEdit(row){return Boolean(row?.d&&row.n&&!row.editBlock);}
+  function finalBid(row,value){
+    if(!canEdit(row))return null;
+    const n=manualBid(value);
+    return n===row.n.bid?null:n;
+  }
+  const api={header,parseSheet,period,evaluate,csvFiles,bidOK,dayKst,manualBid,canEdit,finalBid};
   if(typeof module==='object' && module.exports) module.exports=api;
   else window.BidRules=api;
 })();

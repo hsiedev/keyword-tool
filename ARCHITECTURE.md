@@ -111,3 +111,5 @@ start.bat → server.mjs (127.0.0.1:8787)
 #### 시장·성과 진단
 
 `bid-diagnosis.mjs`가 `/api/bid-diagnosis`에서 정확히 일치하는 광고 키워드 도구 데이터와 기기별 데이터랩 상대 지수를 받는다. 경쟁 관측치는 `data/bid-market/`의 해시 기반 키워드·날짜별 파일로 저장한다(GitHub 제외). 비교 기간 종료 7일 이내의 관측값과 실제 CPC가 함께 올랐을 때만 경쟁 심화 후보를 허용한다. `/api/bid-diagnosis/explain`은 5분짜리 티켓으로 제한된 수치만 설정된 모델에 보내며, 화면의 문구는 서버가 생성하고 AI는 승인된 후보 코드만 순서대로 반환한다. `public/bid-diagnosis.js`는 별도 진단 UI이고 CPA 엔진 및 CSV에는 영향을 주지 않는다.
+
+입찰 검토에서는 자동 추천 보류 사유(`holdCode`), 행별 편집 차단(`editBlock`), 작업 단위 CSV 차단(`exportErrors`)을 분리한다. CSV는 행별 승인 시점의 최종가만 담으며, 편집하면 기존 승인이 무효가 된다. 트래킹은 승인값과 CSV에 포함된 값을 별도로 남긴다. AI 해석은 가격·승인·CSV 상태를 변경하지 않는다.
