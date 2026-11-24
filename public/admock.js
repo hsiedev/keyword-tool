@@ -514,15 +514,15 @@ function safeUrl(u) { u = String(u || '').trim(); if (!/^(data:image\/|https?:\/
     side.innerHTML = `<button class="btn pri newbtn" id="mNew">+ 새 캠페인</button>
       ${H.err ? `<div style="font-size:11px;color:#b45309;padding:4px 6px;line-height:1.5">${e2(H.err)}</div>` : ''}
       ${list.sort((a, b) => b.updatedAt - a.updatedAt).map((m) => `<div class="sit ${cur?.id === m.id ? 'on' : ''}" data-mid="${e2(m.id)}" title="${e2(m.name)} (우클릭: 이름 변경·삭제)"><div class="sn"><span class="mk-type ${m.type}">${m.type === 'bs' ? '브검' : 'PL'}</span><span>${e2(m.name)}</span></div><div class="sm">${CH[m.type] || ''} · 광고그룹 ${m.groups || 0} · ${fmtD(m.updatedAt)}</div></div>`).join('') || '<div class="muted" style="padding:6px 10px;font-size:12px">만든 캠페인이 여기 쌓여요</div>'}`;
-    $('#mNew').onclick = async (e) => { const a = await menu(e, [['pl', '파워링크 캠페인'], ['bs', '브랜드검색 캠페인']]); if (a) createCampaign(a); };
+    $('#mNew').onclick = () => { H.cur = null; M.group = null; M.edit = null; localStorage.removeItem('mockCur'); draw(); $('#mkTitle')?.focus(); };
     $$('.sit', side).forEach((el) => {
       el.onclick = () => openDoc(el.dataset.mid);
       el.oncontextmenu = async (e) => { e.preventDefault(); const a = await menu(e, [['rename', '이름 변경'], ['del', '삭제', 'danger']]); if (a) campAction(a, el.dataset.mid); };
     });
   }
-  async function createCampaign(type) {
+  async function createCampaign(type, title) {
     const n = H.list.filter((m) => m.type === type).length + 1;
-    const d = newCampaign(type, `${CH[type]} 캠페인 ${n}`);
+    const d = newCampaign(type, window.WorkTitle.clean(title) || `${CH[type]} 캠페인 ${n}`);
     H.cur = d; M.group = d.groups[0].id; M.tab = type === 'pl' ? 'ads' : 'bs'; M.edit = null;
     if (type === 'pl') { const ad = newAd(); d.groups[0].ads.push(ad); M.edit = ad.id; }
     await save(true, d);
@@ -554,10 +554,14 @@ function safeUrl(u) { u = String(u || '').trim(); if (!/^(data:image\/|https?:\/
     const d = D();
     if (!d) {
       body.innerHTML = `<div class="sec"><h2>광고 목업 <span class="muted" style="font-size:13px;font-weight:500">네이버 광고주센터처럼 캠페인 › 광고그룹 › 소재를 만들고, 검색 결과 모양으로 미리 봐요</span></h2>
+${window.WorkTitle.field('mkTitle')}
         <div class="mk-start"><button class="mk-big" data-new="pl"><b>파워링크 캠페인</b><span>제목·설명 소재, 확장 소재(추가제목·홍보문구·서브링크·이미지), 지금 노출 중인 경쟁 광고 사이에서 보기</span></button>
         <button class="mk-big" data-new="bs"><b>브랜드검색 캠페인</b><span>PC 라이트형 · PC 프리미엄형 · 모바일 라이트형 · 모바일 스토리 템플릿, 이미지 규격 검사</span></button></div>
         <div class="muted" style="margin-top:12px">AI 카피 생성기의 카피를 [목업]으로 바로 넣을 수도 있어요. 모양은 실제 네이버 화면을 재서 맞춘 근사치예요.</div></div>`;
-      $$('[data-new]', body).forEach((b) => (b.onclick = () => createCampaign(b.dataset.new)));
+      $$('[data-new]', body).forEach((b) => (b.onclick = () => {
+        $$('[data-new]', body).forEach(btn => { btn.disabled = true; });
+        createCampaign(b.dataset.new, $('#mkTitle').value);
+      }));
       return;
     }
     if (!G()) return drawCampaign(body, d);

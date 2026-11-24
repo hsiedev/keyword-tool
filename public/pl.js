@@ -113,7 +113,7 @@
     if (!rows.some((r) => r.on)) return toast('검사할 키워드를 체크하세요', 'warn');
     if (!S.devices.length) return toast('PC나 모바일 중 하나는 골라주세요', 'warn');
     try {
-      const j = await api('/api/pl/start', { urls, rows, devices: S.devices, nPc: S.nPc, nMo: S.nMo, name: $('#plName')?.value || '', reports: S.draft.reports, period: S.draft.period });
+      const j = await api('/api/pl/start', { urls, rows, devices: S.devices, nPc: S.nPc, nMo: S.nMo, name: window.WorkTitle.clean(S.draft.title), custom: Boolean(window.WorkTitle.clean(S.draft.title)), reports: S.draft.reports, period: S.draft.period });
       S.draft = { rows: [], file: '', paste: '', reports: [], period: {} };
       await loadJobs(); await openJob(j.id);
     } catch (e) { toast(e.message, 'warn'); }
@@ -409,7 +409,8 @@
   function newHTML() {
     const rows = S.draft.rows, on = rows.filter((r) => r.on).length, C = cntTxt();
     const view = rows.slice(0, 300);
-    return `<div class="grid g2">
+    return `${window.WorkTitle.field('plName')}
+    <div class="grid g2">
       <div class="card"><h3>① 내 광고 · 조건</h3>
         <label class="muted" style="display:block">내 파워링크 URL <span style="font-size:12px">(고유번호·추적값 없어도 돼요. PC·모바일 주소가 다르면 둘 다, 한 줄에 하나)</span></label>
         <textarea id="plUrls" class="inp" rows="2" placeholder="https://www.example.com/event">${e2(S.urls)}</textarea>
@@ -434,13 +435,14 @@
     ${rows.length ? `<div class="card" style="margin-top:14px">
       <div class="pl-bar"><button class="btn" data-pick="ok">노출가능만</button><button class="btn" data-pick="all">전체</button><button class="btn" data-pick="none">모두 해제</button><button class="btn" data-find title="키워드 찾기 (Ctrl+F)">⌕ 키워드 찾기</button>
         <span class="muted" id="plEta">${C.bar}</span><span style="flex:1"></span>
-        <input id="plName" class="inp" style="width:220px" placeholder="분석 이름 (비우면 자동)">
         <button class="btn" id="plClr">목록 비우기</button><button class="btn pri" id="plGo">분석 시작</button></div>
       <div class="tbl-wrap" style="max-height:420px;margin-top:10px"><table class="rel"><thead><tr><th style="width:34px"><input type="checkbox" id="plAll" ${rows.every((r) => r.on) ? 'checked' : ''}></th><th>#</th><th class="l">키워드</th><th class="l">상태</th><th>현재 입찰가</th><th>계정 PC 평균순위</th><th>계정 모바일 평균순위</th></tr></thead>
       <tbody>${view.map((r, i) => `<tr data-kw="${e2(r.kw)}"><td><input type="checkbox" data-on="${i}" ${r.on ? 'checked' : ''}></td><td class="muted">${i + 1}</td><td class="l"><b>${e2(r.kw)}</b></td><td class="l ${r.state && r.state !== '노출가능' ? 'muted' : ''}">${e2(r.state || '')}</td><td>${r.bid == null ? '' : n0(r.bid) + '원'}</td><td>${r.acctPc || ''}</td><td>${r.acctMo || ''}</td></tr>`).join('')}</tbody></table>
       ${rows.length > view.length ? `<div class="muted" style="padding:8px">… 나머지 ${(rows.length - view.length).toLocaleString('ko-KR')}개는 표에서 생략 (체크 상태는 그대로 반영)</div>` : ''}</div></div>` : ''}`;
   }
   function bindNew() {
+    $('#plName').value = S.draft.title || '';
+    $('#plName').oninput = (e) => { S.draft.title = e.target.value; };
     $$('[data-period]', $('#plBody')).forEach(x => x.oninput = () => { S.draft.period[x.dataset.period] = x.value; });
     $$('[data-find]').forEach((b) => (b.onclick = () => Finder.open()));
     $('#plUrls').oninput = (e) => { S.urls = e.target.value; localStorage.setItem('plUrls', S.urls); };
@@ -472,7 +474,7 @@
     $$('[data-pick]').forEach((b) => (b.onclick = () => { const k = b.dataset.pick; S.draft.rows.forEach((r) => (r.on = k === 'all' ? true : k === 'none' ? false : !r.state || window.PowerlinkColumns.clean(r.state) === '노출가능')); draw(); }));
     $('#plAll').onchange = () => { const on = !S.draft.rows.every((r) => r.on); S.draft.rows.forEach((r) => (r.on = on)); draw(); };
     $$('[data-on]').forEach((c) => (c.onchange = () => { S.draft.rows[+c.dataset.on].on = c.checked; const C = cntTxt(); $('#plCnt').textContent = C.head; $('#plEta').textContent = C.bar; $('#plAll').checked = S.draft.rows.every((r) => r.on); }));
-    $('#plClr').onclick = () => { S.draft = { rows: [], file: '', paste: '', reports: [], period: {} }; draw(); };
+    $('#plClr').onclick = () => { S.draft = { title: S.draft.title, rows: [], file: '', paste: '', reports: [], period: {} }; draw(); };
     $('#plGo').onclick = start;
   }
 

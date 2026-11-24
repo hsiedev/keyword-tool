@@ -29,6 +29,8 @@
   }
   function loadInto(s) {
     H.cur = s;
+    $('#bTitle').closest('.work-title').classList.toggle('hidden', !s.draft);
+    $('#bTitle').value = s.draft && s.custom ? s.name : '';
     if (!s.draft) H.cache.set(s.id, s);
     B.rows = new Map(); B.order = [];
     for (const r of s.rows || []) { if (r && r.keyword && !B.rows.has(r.keyword)) { B.rows.set(r.keyword, r); B.order.push(r.keyword); } }
@@ -148,7 +150,7 @@
       const s = H.cur, kws = inputKeywords();
       let msg = '초기화했어요 (지난 분석은 왼쪽 내역에 있어요)';
       if (s?.draft && kws.length) {
-        delete s.draft; s.name = '작성 중 · ' + autoName(kws); s.input = kws.join('\n');
+        delete s.draft; if (!s.custom) s.name = '작성 중 · ' + autoName(kws); s.input = kws.join('\n');
         persist(true);
         msg = `넣어 둔 키워드 ${kws.length.toLocaleString('ko-KR')}개를 '${s.name}' 탭으로 저장하고 초기화했어요`;
       }
@@ -252,6 +254,7 @@
     v.className = 'hidden';
     v.innerHTML = `<div class="ai-wrap"><aside class="side" id="bSide"></aside><main class="ai-main" style="max-width:1280px">
       <div class="sec"><h2>대량 키워드 분석 <span class="muted" style="font-size:13px;font-weight:500">키워드 목록을 넣으면 검색량·광고 효율·입찰가·발행량을 한 표로 정리해요</span></h2>
+${window.WorkTitle.field('bTitle')}
         <div class="grid g2">
           <div class="card"><h3>키워드 넣기 <span class="muted" id="bCount"></span></h3>
             <div class="drop" id="bDrop">txt · 엑셀(xlsx) · csv 파일을 끌어다 놓거나 <label class="ext" style="cursor:pointer">파일 선택<input type="file" id="bFile" accept=".xlsx,.xlsm,.csv,.txt,.tsv,.xls" multiple hidden></label>
@@ -322,6 +325,7 @@
     dz.ondrop = (e) => { e.preventDefault(); dz.classList.remove('over'); addFiles([...e.dataTransfer.files]); };
     $('#bPaste').oninput = (e) => { B.paste = e.target.value; drawCount(); };
     for (const k of ['bids', 'blog']) { const cb = $('#bo_' + k); cb.checked = B.opt[k]; cb.onchange = () => (B.opt[k] = cb.checked); }
+    $('#bTitle').oninput = (e) => { if (H.cur?.draft) { if (!window.WorkTitle.apply(H.cur, e.target.value)) H.cur.name = '새 분석'; drawSide(); } };
     $('#bRun').onclick = () => start();
     $('#bResume').onclick = () => start(true);
     $('#bClear').onclick = () => { B.files = []; B.paste = ''; $('#bPaste').value = ''; drawInput(); };
@@ -415,7 +419,7 @@
       if (B.order.length || !H.cur) { const vc = { ...B.vc }; clearTimeout(saveT); loadInto(newSession()); B.vc = vc; }
       B.rows = new Map(kws.map((k) => [k, { keyword: k, skipped: true }]));
       B.order = kws; B.page = 1; B.sel = new Set(); B.f.v = '';
-      delete H.cur.draft; H.cur.createdAt = Date.now();
+      delete H.cur.draft; $('#bTitle').closest('.work-title').classList.add('hidden'); H.cur.createdAt = Date.now();
       if (!H.cur.custom) H.cur.name = autoName(kws);
       B.info = { at: Date.now(), partial: true, resume: { next: 0, opt: { ...B.opt }, summary: {} } };
     }

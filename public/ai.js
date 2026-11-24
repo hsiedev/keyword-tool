@@ -60,7 +60,7 @@
   }
   const autoName = (s) => (s.form.topic || '').trim().split('\n')[0].slice(0, 30) || splitList(s.form.examples)[0] || (s.form.extra || '').trim().replace(/\s+/g, ' ').slice(0, 24) || '새 탭';
   // 새 탭은 어느 칸이든 내용을 적으면 바로 기록에 올라가요
-  const hasContent = (c) => c.items.length || ['topic', 'examples', 'extra'].some((k) => String(c.form[k] || '').trim());
+  const hasContent = (c) => c.custom || c.items.length || ['topic', 'examples', 'extra'].some((k) => String(c.form[k] || '').trim());
   function save() {
     const c = AI.cur;
     if (!c) return;
@@ -302,6 +302,7 @@
       <aside class="side" id="aiSide"></aside>
       <main class="ai-main">
         <div class="sec"><h2>AI 키워드 생성기</h2>
+${window.WorkTitle.field('aiTitle')}
           <div class="grid g2">
             <div class="card"><h3>① 브리프 <span class="muted" id="aiTabName"></span></h3>
               <label class="muted">무엇을, 누구에게, 왜 찾는지, 빼고 싶은 것까지 자유롭게 써 주세요. AI가 읽고 탐색 계획을 세운 뒤 네이버 실제 검색 데이터에서 찾아요.</label>
@@ -513,6 +514,8 @@
       downloadTxt(viewRows().map((it) => it.keyword), `${name}_${tag ? tag + '_' : ''}${new Date().toISOString().slice(0, 10)}`);
     };
 
+    $('#aiTitle').oninput = (e) => { if (AI.cur) { window.WorkTitle.apply(AI.cur, e.target.value); save(); } };
+
     // 우클릭 메뉴 닫기
     document.addEventListener('click', (e) => { if (!e.target.closest('#aiCtx')) $('#aiCtx').classList.add('hidden'); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('#aiCtx').classList.add('hidden'); });
@@ -583,6 +586,7 @@
     AI.cur = s;
     AI.filter = '전체'; AI.vfilter = '전체'; AI.sort = { key: '', dir: 1 }; AI.fb?.reset();
     fillForm(s.form);
+    $('#aiTitle').value = s.custom ? s.name : '';
     drawPlan();
     $('#aiMsg').textContent = '';
     $('#aiProg').classList.add('hidden');
@@ -656,7 +660,7 @@
     const finish = (ok) => {
       if (done) return; done = true;
       const v = inp.value.trim();
-      if (ok && v) { s.name = v.slice(0, 40); s.custom = true; persist(); }
+      if (ok && v) { s.name = v.slice(0, 40); s.custom = true; if (AI.cur === s) $('#aiTitle').value = s.name; persist(); }
       drawSide();
       if (s === AI.cur) $('#aiTabName').textContent = '';
     };

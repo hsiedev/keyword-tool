@@ -662,3 +662,10 @@ html.dark .modal .set-sec input.sw.sw:not(:checked){background:#4b4b4b}
 .header-panel{position:absolute;right:0;top:calc(100% + 8px);display:grid;gap:4px;padding:6px;width:max-content;min-width:150px;max-width:min(320px,90vw);box-shadow:var(--shadow-sm)}
 .header-panel .btn{height:auto;min-height:30px;text-align:left;justify-content:flex-start;white-space:normal}.header-panel .header-job{display:grid;justify-items:start;line-height:1.4}.header-job .muted{font-size:12px}
 #activeWork summary{border-color:var(--accent)}
+
+/* 새 작업 화면 공통 제목 입력 */
+.work-title { margin:0 0 14px; }
+.work-title label { display:block; font-weight:600; margin-bottom:4px; }
+.work-title label span { margin-left:4px; font-size:12px; font-weight:400; }
+.work-title input.inp { display:block; width:100%; max-width:360px; box-sizing:border-box; }
+.work-title small { display:block; margin-top:4px; font-size:12px; }

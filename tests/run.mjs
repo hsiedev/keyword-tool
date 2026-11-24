@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import vm from 'node:vm';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -380,6 +381,20 @@ await test('브리프 생성: 씨앗마다 키워드 도구 조회 후 번갈아
     for (const n of ['xl/drawings/drawing1.xml', 'xl/media/image1.jpeg', 'xl/worksheets/_rels/sheet1.xml.rels', '[Content_Types].xml']) ok(t.includes(n), n + ' 없음');
   });
 }
+await test('새 작업 제목: 다섯 화면에 공통 입력 사용 및 공백은 자동 제목', () => {
+  const ctx = { window: {} };
+  vm.runInNewContext(fs.readFileSync(path.join(TMP, 'public', 'work-title.js'), 'utf8'), ctx);
+  const { field, apply } = ctx.window.WorkTitle;
+  for (const [file, id] of [['pl','plName'],['bulk','bTitle'],['ai','aiTitle'],['copy','cpTitle'],['admock','mkTitle']]) {
+    ok(fs.readFileSync(path.join(TMP, 'public', file + '.js'), 'utf8').includes("WorkTitle.field('" + id + "')"));
+    ok(field(id).includes('for="' + id + '"'));
+  }
+  const doc = {};
+  eq(apply(doc, '  11월 PC 이벤트  '), '11월 PC 이벤트');
+  eq(doc, { custom: true, name: '11월 PC 이벤트' });
+  eq(apply(doc, '   '), ''); eq(doc.custom, false);
+  eq(apply(doc, '가'.repeat(61)).length, 60);
+});
 // ---------------------------------------------------------------- 결과
 console.log('\n키워드 분석기 자동 테스트\n' + results.join('\n'));
 console.log(`\n통과 ${pass} · 실패 ${fail}`);

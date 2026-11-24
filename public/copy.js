@@ -42,7 +42,7 @@
     if (!d) return;
     d.updatedAt = Date.now();
     if (!d.custom) d.name = autoName(d);
-    if (d.draft && !d.items.length && !F().keywords.trim() && !F().brand.name.trim()) { drawSide(); return; }
+    if (d.draft && !d.custom && !d.items.length && !F().keywords.trim() && !F().brand.name.trim()) { drawSide(); return; }
     clearTimeout(saveT);
     const run = async () => {
       try {
@@ -153,6 +153,7 @@
     v.className = 'hidden';
     v.innerHTML = `<div class="ai-wrap"><aside class="side" id="cSide"></aside><main class="ai-main" style="max-width:1360px">
       <div class="sec"><h2>AI 카피 생성기 <span class="muted" style="font-size:13px;font-weight:500">파워링크·브랜드검색 문구를 네이버 규격에 맞춰 만들고, PC가 규격·표현을 바로 검사해요</span></h2>
+${window.WorkTitle.field('cpTitle')}
       <div class="cp-layout">
         <div class="cp-left">
           <div class="card"><h3>광고 형식</h3>
@@ -216,6 +217,7 @@
   }
 
   function bind() {
+    $('#cpTitle').oninput = (e) => { if (D()) { window.WorkTitle.apply(D(), e.target.value); save(); } };
     $$('#cpCh button').forEach((b) => (b.onclick = () => { if (F().ch === b.dataset.ch) return; F().ch = b.dataset.ch; F().format = Object.keys(S.FORMATS).find((k) => S.FORMATS[k].ch === b.dataset.ch); drawForm(); save(); }));
     $('#cpFmt').onchange = (e) => { F().format = e.target.value; drawForm(); drawList(); save(); };
     $$('[data-b]').forEach((el) => (el.oninput = () => { F().brand[el.dataset.b] = el.value; save(); clearTimeout(el._t); el._t = setTimeout(drawList, 400); }));
@@ -269,6 +271,7 @@
   // ---------------------------------------------------------------- 입력 영역
   function drawForm() {
     const fm = F();
+    if (document.activeElement !== $('#cpTitle')) $('#cpTitle').value = D()?.custom ? D().name : '';
     $$('#cpCh button').forEach((b) => b.classList.toggle('on', b.dataset.ch === fm.ch));
     $('#cpFmt').innerHTML = Object.entries(S.FORMATS).filter(([, v]) => v.ch === fm.ch).map(([k, v]) => `<option value="${k}" ${k === fm.format ? 'selected' : ''}>${esc(v.name)}</option>`).join('');
     const Fm = S.FORMATS[fm.format];
