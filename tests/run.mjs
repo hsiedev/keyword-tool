@@ -432,6 +432,18 @@ await test('새 작업 제목: 다섯 화면에 공통 입력 사용 및 공백�
   });
 }
 
+await test('입찰 트래킹: 다음 달 동일 일수 제안, ID 연결과 누락 구분', async () => {
+  const T=(await import(pathToFileURL(path.join(TMP,'public','bid-track-rules.js')).href)).default;
+  const id=i=>'nkw-a001-01-'+String(i).padStart(15,'0');
+  const a={title:'검증',group:'검증그룹',device:'mo',from:'2025-11-01',to:'2025-11-24',nFrom:'2025-11-01',nTo:'2025-11-24',download:'2025-11-24',target:6500,rows:[{kw:'테스트',id:id(1),bid:500,approved:450,csv:450,metric:{conv:0,cost:20000}},{kw:'사라짐',id:id(2),bid:520},{kw:'모름'}]};
+  const b={...a,from:'2025-12-01',to:'2025-12-24',nFrom:'2025-12-01',nTo:'2025-12-24',download:'2025-12-24',rows:[{kw:'테스트',id:id(1),bid:450,metric:{conv:5,cost:20000}},{kw:'새로있음',id:id(3),bid:650}]};
+  eq(T.suggest(a),{from:b.from,to:b.to});eq(T.suggest({...a,from:'2025-01-01',to:'2025-01-31'}),null);
+  const x=T.compare(T.normalize(a),T.normalize(b));eq(x.comparable,true);eq(x.rows.map(r=>r.status),['both','absent','new','unknown']);eq(x.rows[0].delta,-50);eq(x.rows[0].before.csv,450);eq(x.rows[0].before.metric.conv,0);eq(x.rows[1].after,undefined);
+  eq(T.compare(T.normalize(a),{...T.normalize(b),to:'2025-12-20'}).comparable,false);
+  for (const other of [{...b,device:'pc'},{...b,group:'다른그룹'},{...b,rows:b.rows.slice(1)}]){let rejected=false;try{T.compare(T.normalize(a),T.normalize(other));}catch{rejected=true;}ok(rejected);}
+  let duplicate=false;try{T.normalize({...a,rows:[a.rows[0],a.rows[0]]});}catch{duplicate=true;}ok(duplicate);
+});
+
 // ---------------------------------------------------------------- 결과
 console.log('\n키워드 분석기 자동 테스트\n' + results.join('\n'));
 console.log(`\n통과 ${pass} · 실패 ${fail}`);
