@@ -92,12 +92,12 @@
     $('bidSelection').textContent='선택 '+num(sel.size)+'개 · 적용 '+num(applied.size)+'개 · 현재 필터에서 CSV에 들어갈 행 '+num(out)+'개';
     $('bidDownloadHelp').textContent=out>10000?'10,000행 단위로 '+Math.ceil(out/10000)+'개 파일을 준비해요.': 'CSV는 현재 필터의 적용된 행만 담아요.';
   }
-  function renderRow(r){
+  function renderRow(r,i){
     const {d,n}=r, approved=applied.has(n?.id), choice=eligible(r), label=states[r.state];
     const amounts=choice?won(n.bid)+' → '+won(r.bid)+' · '+delta(r):(n?'현재 '+won(n.bid):'현재 입찰가 없음');
     const metrics=d?'클릭 '+num(d.clicks)+' · 신청 '+num(d.conv)+' · 비용 '+won(d.cost)+' · CPA '+(r.cpa==null?'해당 없음':won(r.cpa))+' · 추정 ROAS '+percent(r.roas):'네이버 클릭 '+num(n.clicks)+' · 노출 '+num(n.imp);
     const details=d?'<details><summary>근거 수치 보기</summary><p>데일리 순위 '+num(d.rank)+' · 순방문 '+num(d.visits)+' · 실제 CPC '+won(r.cpc)+' · 허용 CPC '+won(r.allowed)+'</p>'+(n?'<p>네이버 키워드 ID '+esc(n.id||'미확인')+' · 통검 순위 PC '+num(n.pc)+' / 모바일 '+num(n.mo)+' · 수정 '+esc(n.modified||'미확인')+'</p>':'')+'</details>':'';
-    return '<article class="card bid-result"><div class="bid-line"><div>'+(choice?'<label class="bid-choice"><input type="checkbox" data-bid-id="'+esc(n.id)+'" '+(sel.has(n.id)?'checked':'')+' aria-label="'+esc(d.kw)+' 변경 선택">':'')+'<b>'+esc(d?.kw||n.kw)+'</b>'+(choice?'</label>':'')+' <span class="bid-pill">'+label+(approved?' · 적용됨':'')+'</span></div><strong>'+esc(amounts)+'</strong></div><p>'+esc(metrics)+'</p><p class="muted">'+esc(r.reason)+'</p>'+(r.notes?.length?'<ul class="muted">'+r.notes.map(n=>'<li>'+esc(n)+'</li>').join('')+'</ul>':'')+details+'</article>';
+    return '<article class="card bid-result"><div class="bid-line"><div>'+(choice?'<label class="bid-choice"><input type="checkbox" data-bid-id="'+esc(n.id)+'" '+(sel.has(n.id)?'checked':'')+' aria-label="'+esc(d.kw)+' 변경 선택">':'')+'<b>'+esc(d?.kw||n.kw)+'</b>'+(choice?'</label>':'')+' <span class="bid-pill">'+label+(approved?' · 적용됨':'')+'</span></div><strong>'+esc(amounts)+'</strong></div><p>'+esc(metrics)+'</p><p class="muted">'+esc(r.reason)+'</p>'+(r.notes?.length?'<ul class="muted">'+r.notes.map(n=>'<li>'+esc(n)+'</li>').join('')+'</ul>':'')+details+'<button type="button" class="btn sm bid-step" data-bid-diag="'+i+'">시장·성과 진단</button></article>'; 
   }
   function paint(){
     if(!result)return;
@@ -106,8 +106,14 @@
     $('bidSummary').textContent='데일리 '+num(rows.length)+'개 · 매칭 '+num(matched)+'개 · 네이버에만 '+num(naverOnly.length)+'개 · 상향 '+num(rows.filter(r=>r.state==='up').length)+'개 / 하향 '+num(rows.filter(r=>r.state==='down').length)+'개';
     $('bidWarnings').innerHTML=p.errors.map(m=>'<p class="bid-warning">'+esc(m)+'</p>').join('')+(discrep?'<p class="muted">'+num(discrep)+'개 키워드의 클릭수가 자료 간에 달라요. 성과는 데일리 수치만 사용했어요.</p>':'')+(doc.files.previous&&!p.before?'<p class="bid-warning">이전 기간이 비어 있거나 길이가 다르거나 현재와 겹쳐 비교하지 않아요.</p>':'');
     const rr=rowsFiltered(), max=Math.max(1,Math.ceil(rr.length/50));pg=Math.min(pg,max-1);
-    $('bidRows').innerHTML=rr.slice(pg*50,(pg+1)*50).map(renderRow).join('')||'<p class="muted">이 조건에 맞는 키워드가 없어요.</p>';
+    const showing=rr.slice(pg*50,(pg+1)*50);
+    $('bidRows').innerHTML=showing.map(renderRow).join('')||'<p class="muted">이 조건에 맞는 키워드가 없어요.</p>';
     $('bidPage').textContent=(pg+1)+' / '+max+' 페이지';$('bidBack').disabled=pg===0;$('bidNext').disabled=pg+1>=max;$('bidPages').classList.toggle('hidden',max===1);
+    $('bidRows').querySelectorAll('[data-bid-diag]').forEach(btn=>btn.onclick=()=>{
+      const row=showing[+btn.dataset.bidDiag],s=doc.settings, prior=get('previous').filter(d=>d.kk===(row.d||row.n).kk && (!d.id||d.id===row.n?.id) && (!d.gid||!row.n?.gid||d.gid===row.n.gid));
+      const metric=d=>d?Object.fromEntries(['imp','clicks','visits','conv','cost','value','rank'].map(k=>[k,d[k]])):null;
+      window.BidDiagnosis.open({keyword:(row.d||row.n).kw,device:s.device,current:{from:s.from,to:s.to},prior:s.scopeOK?{from:s.pFrom,to:s.pTo}:null,after:metric(row.d),before:prior.length===1 && result.p.before && s.scopeOK && !result.p.errors.some(e=>e.includes('광고그룹'))?metric(prior[0]):null});
+    });
     $('bidRows').querySelectorAll('[data-bid-id]').forEach(x=>x.onchange=()=>{if(x.checked)sel.add(x.dataset.bidId);else sel.delete(x.dataset.bidId);controls();});controls();
   }
   $('bidFilter').onchange=e=>{filt=e.target.value;pg=0;sel.clear();paint();};

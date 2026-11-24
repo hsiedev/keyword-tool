@@ -444,6 +444,28 @@ await test('입찰 트래킹: 다음 달 동일 일수 제안, ID 연결과 누�
   let duplicate=false;try{T.normalize({...a,rows:[a.rows[0],a.rows[0]]});}catch{duplicate=true;}ok(duplicate);
 });
 
+{
+  const {createBidDiagnosis,readRequest,trendSummary}=await import(pathToFileURL(path.join(TMP,'bid-diagnosis.mjs')).href);
+  const today='2026-11-24', prior={from:'2026-10-01',to:'2026-10-07'}, current={from:'2026-11-01',to:'2026-11-07'};
+  const q={keyword:' CC 테스트 ',device:'mo',prior,current,before:{imp:1300,clicks:80,visits:60,conv:6,cost:24000,value:60000},after:{imp:1500,clicks:55,visits:30,conv:2,cost:33000,value:20000}};
+  const data=[...Array.from({length:7},(_,i)=>({period:'2026-10-0'+(i+1),ratio:40})),...Array.from({length:7},(_,i)=>({period:'2026-11-0'+(i+1),ratio:20}))];
+  await test('입찰 진단: 같은 조건의 두 기간만 비교하며 관측 누락은 0으로 바꾸지 않음',()=>{
+    const p=readRequest(q,today);eq(p.keyword,'CC테스트');eq(p.comparable,true);eq(trendSummary(data,p).delta,-.5);eq(trendSummary(data.slice(1),p).delta,null);
+    eq(readRequest({...q,prior:{...prior,to:'2026-10-31'}},today).prior,null);
+    eq(readRequest({...q,prior:{from:'2026-02-01',to:'2026-02-07'}},today).comparable,false);
+  });
+  await test('입찰 진단: 현재 경쟁 수준과 이력 분리·소량 검색수·허용된 AI 후보만 표시',async()=>{
+    let at='2026-10-07', aiInput, dataQ;const dir=path.join(TMP,'bid-diag-test');
+    const handle=createBidDiagnosis({dataDir:dir,today:()=>at,hasAd:()=>true,hasTrend:()=>true,hasModel:()=>true,modelName:()=> '테스트 모델',lookup:async()=>({monthlyPcQcCnt:'< 10',monthlyMobileQcCnt:50,compIdx:at==='2026-10-07'?'중간':'높음',plAvgDepth:5}),series:async query=>{dataQ=query;return data;},interpret:async x=>{aiInput=x;return {arr:[{code:'demand_down',bid:777},{code:'fabricated'},{code:'competition'},{code:'demand_down'}],model:'테스트 모델'};}});
+    const call=(url,body)=>handle({method:'POST'},{once(){},off(){}},new URL(url,'http://localhost'),async()=>body,(_res,status,j)=>({status,j}));
+    const seed=(await call('/api/bid-diagnosis',{...q,prior:null,current:prior})).j;eq(seed.market.previous,null);eq(seed.market.current.pc,'< 10');eq(seed.ticket,null);
+    at='2026-11-07';const j=(await call('/api/bid-diagnosis',q)).j;eq(j.market.current.comp,'높음');eq(j.market.previous.comp,'중간');eq(dataQ.device,'mo');ok(j.ticket);eq(j.metrics.after.cpc,600);
+    const a=(await call('/api/bid-diagnosis/explain',{ticket:j.ticket})).j;
+    eq(a.notes.map(x=>x.code),['demand_down','competition']);ok(!JSON.stringify(a).includes('777'));ok(!JSON.stringify(aiInput).includes('CC테스트'));ok(!JSON.stringify(j).includes('CC테스트'));
+    const files=await fs.promises.readdir(path.join(dir,'bid-market'));eq(files.length,1);
+  });
+}
+
 // ---------------------------------------------------------------- 결과
 console.log('\n키워드 분석기 자동 테스트\n' + results.join('\n'));
 console.log(`\n통과 ${pass} · 실패 ${fail}`);

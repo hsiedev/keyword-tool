@@ -1,3 +1,4 @@
+import { createBidDiagnosis } from './bid-diagnosis.mjs';
 import { createBidTracking } from './bid-tracking.mjs';
 // 로컬 키워드 분석기 서버 (외부 패키지 없이 Node.js 18+ 에서 실행)
 // 실행: node server.mjs  ->  http://localhost:8787
@@ -93,7 +94,7 @@ const ymd = (d) => d.toISOString().slice(0, 10);
 const addDays = (d, n) => new Date(d.getTime() + n * 86400e3);
 
 // ---------------------------------------------------------------- 네이버 검색광고 API
-async function adRequest(method, uri, { query, body } = {}) {
+async function adRequest(method, uri, { query, body, signal } = {}) {
   assertAdAllowed(method, uri); // 읽기·예상치 호출만 (광고 켜기/끄기·입찰가 변경 등은 네트워크로 보내기 전에 차단)
   const url = 'https://api.searchad.naver.com' + uri + (query ? '?' + new URLSearchParams(query) : '');
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -109,6 +110,7 @@ async function adRequest(method, uri, { query, body } = {}) {
         'Content-Type': 'application/json; charset=UTF-8',
       },
       body: body ? JSON.stringify(body) : undefined,
+      signal,
     });
     if (res.status === 429) { await sleep(800 * (attempt + 1)); continue; }
     const text = await res.text();
@@ -259,7 +261,7 @@ function toHub(p) {
   if (m) return `/search/v1/${m[1]}${m[2] || ''}`;
   return p;
 }
-async function openApi(p, body) {
+async function openApi(p, body, signal) {
   const hub = config.openProvider !== 'legacy';
   const url = hub ? 'https://naverapihub.apigw.ntruss.com' + toHub(p) : 'https://openapi.naver.com' + p;
   const auth = hub
@@ -273,6 +275,7 @@ async function openApi(p, body) {
         ...(body ? { 'Content-Type': 'application/json' } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
+      signal,
     });
     if (res.status === 429) { await sleep(600 * (attempt + 1)); continue; }
     const text = await res.text();
@@ -866,6 +869,26 @@ async function llmJson(prompt, schema, { temperature = 0.9, system } = {}) {
   const { arr, model } = await cliStream(p, { system: system || '설명 없이 JSON만 출력한다.', prompt, schema }, () => {}, undefined, {});
   return { data: arr, model, tried: [] };
 }
+const BID_DIAG = createBidDiagnosis({
+  dataDir: path.join(__dirname,'data'), hasAd, hasTrend:hasOpen, hasModel:hasAI,
+  modelName:()=> [PROVIDERS[provider()].name, PROVIDERS[provider()].model()].filter(Boolean).join(' · '),
+  today:()=>ymd(kstNow()),
+  async lookup(keyword,signal){
+    const j=await adRequest('GET','/keywordstool',{query:{hintKeywords:keyword,showDetail:'1'},signal});
+    return (j.keywordList||[]).find(r=>normKw(r.relKeyword).normalize('NFKC')===normKw(keyword));
+  },
+  async series(q,signal){
+    const j=await openApi('/v1/datalab/search',{
+      startDate:q.prior.from,endDate:q.current.to,timeUnit:'date',...(q.device==='both'?{}:{device:q.device}),keywordGroups:[{groupName:'target',keywords:[q.keyword]}],
+    },signal);
+    return j.results?.find(r=>r.title==='target')?.data||[];
+  },
+  async interpret({codes,evidence},signal){
+    const system='광고 성과의 원인 후보를 우선순위로 정렬한다. 입력의 허용 코드 중 근거가 강하고 먼저 확인할 최대 3개만 선택한다. 데이터랩은 절대량이 아니고 경쟁 지표는 조회일 관측값이며 인과관계를 판단할 수 없다. 입찰 금액은 제안하지 않는다. 허용 코드 외에는 출력하지 않는다.';
+    const schema={type:'ARRAY',items:{type:'OBJECT',required:['code'],properties:{code:{type:'STRING',enum:codes}}}};
+    return llmStream({system,prompt:JSON.stringify({allowedCodes:codes,evidence}),schema,temperature:0.1},()=>{},signal,{total:Math.min(3,codes.length)});
+  },
+});
 async function providerModels(p) {
   if (p === 'gemini') return geminiModels();
   if (p === 'agy' || p === 'codex') return (await cliModels(p, config)).map((m) => m.id);
@@ -1400,7 +1423,7 @@ function guard(req, u) {
 }
 
 // ---------------------------------------------------------------- 버전: 서버 코드가 바뀌었는지 (다시 시작 필요 여부)
-const SERVER_FILES = ['server.mjs', 'bid-tracking.mjs', 'public/bid-track-rules.js', 'ai-cli.mjs', 'github-sync.mjs', 'sections.mjs', 'settings-defaults.mjs', 'copy-core.mjs', 'public/copy-spec.js', 'google-core.mjs', 'powerlink-core.mjs', 'powerlink-compare.mjs', 'public/pl-columns.js'];
+const SERVER_FILES = ['server.mjs', 'bid-tracking.mjs', 'bid-diagnosis.mjs', 'public/bid-track-rules.js', 'ai-cli.mjs', 'github-sync.mjs', 'sections.mjs', 'settings-defaults.mjs', 'copy-core.mjs', 'public/copy-spec.js', 'google-core.mjs', 'powerlink-core.mjs', 'powerlink-compare.mjs', 'public/pl-columns.js'];
 const codeHash = () => {
   const h = crypto.createHash('sha1');
   for (const f of SERVER_FILES) { try { h.update(fs.readFileSync(path.join(__dirname, f))); } catch {} }
@@ -1428,6 +1451,7 @@ const server = http.createServer(async (req, res) => {
       setTimeout(() => process.exit(99), 300); // start.bat이 코드 99를 받으면 다시 실행
       return;
     }
+    if (['/api/bid-diagnosis','/api/bid-diagnosis/explain'].includes(u.pathname)) return await BID_DIAG(req,res,u,readBody,send);
     if (u.pathname === '/api/bid-tracking') return await TRACK(req, res, u, readBody, send);
     if (u.pathname.startsWith('/api/pl/')) return PL.handle(req, res, u, readBody, send);
     if (u.pathname === '/api/suggest') {

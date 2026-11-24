@@ -702,3 +702,12 @@ html.dark .modal .set-sec input.sw.sw:not(:checked){background:#4b4b4b}
 .bid-track-metrics dt { color:var(--muted-foreground); font-size:12px; }
 .bid-track-metrics dd { margin:0; font-weight:600; font-variant-numeric:tabular-nums; }
 #btBase,#btOther { text-overflow:ellipsis; }
+
+/* 입찰가: 선택 키워드 진단 */
+.bid-diag-dialog{width:min(660px,calc(100vw - 24px));max-height:calc(100dvh - 32px);overflow:auto;box-sizing:border-box;color:var(--foreground);background:var(--card);border:1px solid var(--border);overflow-wrap:anywhere;}
+.bid-diag-dialog::backdrop{background:var(--overlay);}
+.bid-diag-dialog h2{font-size:19px;margin:0;}
+.bid-diag-dialog h3{font-size:15px;margin:0 0 6px;}
+.bid-diag-dialog p{margin:5px 0;}
+.bid-diag-card{margin-top:9px;}
+.bid-diag-dialog li+li{margin-top:8px;}

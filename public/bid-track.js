@@ -37,13 +37,13 @@
       clear();const i=$('btBase').value,j=$('btOther').value,r=rev;msg('기록을 읽는 중…');
       try{const [a,b]=await Promise.all([api(i),api(j)]);if(r!==rev)return; result={...T.compare(a.snapshot,b.snapshot),a:a.snapshot,b:b.snapshot};msg('');paint();}catch(e){if(r===rev)msg(e.message);}
     };
-    function render(row,ok){
+    function render(row,ok,i){
       const {before:a,after:b,delta:d,status}=row, m=a?.metric, f=b?.metric;
       const tag=status==='new'?'기준 파일에 없음':status==='absent'?'비교 파일에 없음':status==='unknown'?'ID 미확인':a.csv!=null&&b.bid!=null?(a.csv===b.bid?'CSV와 실제 입찰가 일치':'CSV와 실제 입찰가 불일치'):'양쪽 파일에서 확인';
       const pair=(t,x)=>'<div><dt>'+t+'</dt><dd>'+x+'</dd></div>';
       const change=d==null?'—':signed(d)+'원 ('+(d>0?'+':d<0?'−':'')+pct(Math.abs(d)/a.bid)+')';
       const metrics=(m||f)?'<p>'+ (ok?'':'<b>참고 · 직접 증감 비교 안 함</b> · ')+'노출 '+span(m?.imp,f?.imp)+' · 클릭 '+span(m?.clicks,f?.clicks)+' · 신청 '+span(m?.conv,f?.conv)+' · 순위 '+span(m?.rank,f?.rank,v=>n(v,1))+'</p><p>비용 '+span(m?.cost,f?.cost,won)+' · CPA '+span(ratio(m?.cost,m?.conv),ratio(f?.cost,f?.conv),won)+' · 추정 ROAS '+span(ratio(m?.value,m?.cost),ratio(f?.value,f?.cost),pct)+'</p>':'<p class="muted">일치하는 데일리 성과 없음</p>';
-      return '<article class="card bid-result"><div class="bid-line"><b>'+esc(row.kw)+'</b><span class="bid-pill">'+tag+'</span></div><dl class="bid-track-metrics">'+pair('기준 입찰가',won(a?.bid))+pair('기준 승인안',won(a?.approved))+pair('기준 CSV 값',won(a?.csv))+pair('비교 파일 입찰가',won(b?.bid))+pair('입찰가 변화',change)+'</dl>'+metrics+(a?.reason?'<details><summary>기준 분석 근거</summary><p class="muted">'+esc(a.reason)+'</p></details>':'')+'</article>';
+      return '<article class="card bid-result"><div class="bid-line"><b>'+esc(row.kw)+'</b><span class="bid-pill">'+tag+'</span></div><dl class="bid-track-metrics">'+pair('기준 입찰가',won(a?.bid))+pair('기준 승인안',won(a?.approved))+pair('기준 CSV 값',won(a?.csv))+pair('비교 파일 입찰가',won(b?.bid))+pair('입찰가 변화',change)+'</dl>'+metrics+(a?.reason?'<details><summary>기준 분석 근거</summary><p class="muted">'+esc(a.reason)+'</p></details>':'')+'<button type="button" class="btn sm bid-step" data-bt-diag="'+i+'">시장·성과 진단</button></article>'; 
     }
     const roas=r=>ratio(r?.metric?.value,r?.metric?.cost);
     function paint(){
@@ -54,7 +54,8 @@
       for(const o of $('btFilter').options)if(o.value.startsWith('roas'))o.disabled=!comparable;
       if(f.startsWith('roas')&&!comparable)$('btFilter').value='';
       const filtered=rows.filter(r=>r.kw.toLowerCase().includes(q)&&(!f||(f==='up'?r.delta>0:f==='down'?r.delta<0:f.startsWith('roas')?(!comparable||roas(r.before)!=null&&roas(r.after)!=null&&(f==='roasUp'?roas(r.after)>roas(r.before):roas(r.after)<roas(r.before))):r.status===f)));
-      const max=Math.max(1,Math.ceil(filtered.length/50));pg=Math.min(pg,max-1);$('btRows').innerHTML=filtered.slice(pg*50,(pg+1)*50).map(r=>render(r,comparable)).join('')||'<p class="muted">이 조건에 해당하는 키워드가 없어요.</p>';
+      const max=Math.max(1,Math.ceil(filtered.length/50));pg=Math.min(pg,max-1);const showing=filtered.slice(pg*50,(pg+1)*50);$('btRows').innerHTML=showing.map((r,i)=>render(r,comparable,i)).join('')||'<p class="muted">이 조건에 해당하는 키워드가 없어요.</p>';
+      $('btRows').querySelectorAll('[data-bt-diag]').forEach(btn=>btn.onclick=()=>{const row=showing[+btn.dataset.btDiag];window.BidDiagnosis.open({keyword:row.kw,device:b.device,current:{from:b.from,to:b.to},prior:comparable?{from:a.from,to:a.to}:null,before:row.before?.metric,after:row.after?.metric});});
       $('btPages').classList.toggle('hidden',max===1);$('btPage').textContent=(pg+1)+' / '+max;$('btBack').disabled=pg===0;$('btNext').disabled=pg+1>=max;
     }
     $('btFilter').onchange=$('btSearch').oninput=()=>{pg=0;paint();};$('btBack').onclick=()=>{pg--;paint();};$('btNext').onclick=()=>{pg++;paint();};

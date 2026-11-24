@@ -107,3 +107,7 @@ start.bat → server.mjs (127.0.0.1:8787)
 #### 입찰가 트래킹 저장소
 
 `bid-tracking.mjs`가 `/api/bid-tracking`에서 스냅샷 등록과 조회를 제공한다. UUID를 가진 기록을 프로젝트 `data/bid-tracking/`에 원자적으로 저장하며 브라우저 검토 내역과 GitHub 백업에서 분리된다. `public/bid-track-rules.js`는 저장값의 허용 범위와 광고그룹/기기/키워드 ID 기반 비교를 담당하고, `public/bid-track.js`는 월별 비교 결과를 그린다. 승인안·내보낸 CSV 값·다음 파일의 관측 입찰가는 별개이며 기간 길이가 다르거나 겹치면 성과 변화 필터를 비활성화한다.
+
+#### 시장·성과 진단
+
+`bid-diagnosis.mjs`가 `/api/bid-diagnosis`에서 정확히 일치하는 광고 키워드 도구 데이터와 기기별 데이터랩 상대 지수를 받는다. 경쟁 관측치는 `data/bid-market/`의 해시 기반 키워드·날짜별 파일로 저장한다(GitHub 제외). 비교 기간 종료 7일 이내의 관측값과 실제 CPC가 함께 올랐을 때만 경쟁 심화 후보를 허용한다. `/api/bid-diagnosis/explain`은 5분짜리 티켓으로 제한된 수치만 설정된 모델에 보내며, 화면의 문구는 서버가 생성하고 AI는 승인된 후보 코드만 순서대로 반환한다. `public/bid-diagnosis.js`는 별도 진단 UI이고 CPA 엔진 및 CSV에는 영향을 주지 않는다.
