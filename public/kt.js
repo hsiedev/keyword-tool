@@ -63,7 +63,7 @@
       <div class="page-head"><h2>키워드 도구</h2><p>네이버 검색광고 키워드 도구와 같은 데이터예요. 키워드 5개까지 한 번에, 시즌·내 사이트 기준으로도 연관 키워드를 찾아요.</p></div>
       <div class="card kt-q">
         <div class="kt-q-main">
-          <label class="fl" for="ktHints">키워드 <span class="muted" id="ktHintN"></span></label>
+          <label class="fl" for="ktHints"><span class="fl-t">키워드 <span class="muted" id="ktHintN"></span></span></label>
           <div class="kt-q-row">
             <input id="ktHints" class="inp kt-hints" placeholder="예: 신용카드추천, 체크카드발급, 카드혜택 (쉼표로 구분 · 최대 5개)" autocomplete="off">
             <button class="btn pri kt-go" id="ktGo">조회</button>
@@ -71,11 +71,11 @@
           <div class="kt-chips" id="ktChips"></div>
         </div>
         <div class="kt-q-opts">
-          <label class="fl">시즌 월 <span class="muted">그 달에 많이 찾는 키워드</span>
+          <label class="fl"><span class="fl-t">시즌 월 <span class="muted">그 달에 많이 찾는 키워드</span></span>
             <select id="ktMonth" class="inp"><option value="">선택 안 함</option>${Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}">${i + 1}월</option>`).join('')}</select></label>
-          <label class="fl">시즌 테마 <span class="muted">키워드 없이도 조회 가능</span>
+          <label class="fl"><span class="fl-t">시즌 테마 <span class="muted">키워드 없이도 조회 가능</span></span>
             <select id="ktEvent" class="inp">${themeOptions()}</select></label>
-          <label class="fl">내 사이트 기준 <span class="muted">광고 계정에 등록된 사이트</span>
+          <label class="fl"><span class="fl-t">내 사이트 기준 <span class="muted">광고 계정에 등록된 사이트</span></span>
             <select id="ktSite" class="inp"><option value="">선택 안 함</option></select></label>
         </div>
         <label class="inl kt-split"><input type="checkbox" class="sw" id="ktSplit"> 키워드마다 따로도 조회 <span class="muted">결과가 더 많아지고, 어떤 키워드에서 나왔는지 보여줘요</span></label>
@@ -231,7 +231,7 @@
         <div class="tbl-wrap kt-tbl"><table class="rel" id="ktTbl">
           <thead><tr class="kt-grp"><th rowspan="2" class="ck"><input type="checkbox" id="ktAll" title="보이는 키워드 전체 선택 · 다시 누르면 해제"></th><th rowspan="2">#</th><th rowspan="2" class="l s" data-s="keyword">키워드${arrow('keyword')}</th>${hints.length > 1 && S.res.q.split ? `<th rowspan="2" class="l s" data-s="from">찾은 기준${arrow('from')}</th>` : ''}<th colspan="3">월간 검색량</th><th colspan="2">월평균 클릭수</th><th colspan="2">월평균 클릭률</th><th rowspan="2" class="s" data-s="comp">경쟁${arrow('comp')}</th><th rowspan="2" class="s" data-s="adDepth" title="월평균 노출 광고 수">노출 광고${arrow('adDepth')}</th></tr>
           <tr>${['pc', 'mo', 'total', 'pcClk', 'moClk', 'pcCtr', 'moCtr'].map((k) => `<th class="s" data-s="${k}">${COLS.find((c) => c[0] === k)[1]}${arrow(k)}</th>`).join('')}</tr></thead>
-          <tbody>${shown.map((r, i) => `<tr class="${r.hint ? 'kt-hint' : ''}${S.checked.has(r.keyword) ? ' sel' : ''}"><td class="ck"><input type="checkbox" data-k="${esc(r.keyword)}" ${S.checked.has(r.keyword) ? 'checked' : ''}></td><td class="muted">${i + 1}</td><td class="l kwc"><a href="#" data-go="${esc(r.keyword)}">${esc(r.keyword)}</a>${r.hint ? ' <span class="chip">입력</span>' : ''}</td>${hints.length > 1 && S.res.q.split ? `<td class="l kt-from">${(r.from || []).length ? r.from.map((h) => `<span class="chip">${esc(h)}</span>`).join(' ') : '<span class="muted">함께</span>'}</td>` : ''}<td>${lowTxt(r.pc, r.pcLow)}</td><td>${lowTxt(r.mo, r.moLow)}</td><td><b>${num(r.total)}</b></td><td>${r.pcClk}</td><td>${r.moClk}</td><td>${r.pcCtr}%</td><td>${r.moCtr}%</td><td><span class="comp c${COMP[r.comp] || 0}">${esc(r.comp)}</span></td><td>${r.adDepth}</td></tr>`).join('') || `<tr><td colspan="14" class="muted" style="padding:28px">필터에 맞는 키워드가 없어요</td></tr>`}</tbody></table></div>
+          <tbody>${shown.map((r, i) => `<tr class="${r.hint ? 'kt-hint' : ''}${S.checked.has(r.keyword) ? ' sel' : ''}"><td class="ck"><input type="checkbox" data-k="${esc(r.keyword)}" ${S.checked.has(r.keyword) ? 'checked' : ''}></td><td class="muted">${i + 1}</td><td class="l kwc"><a href="#" data-go="${esc(r.keyword)}">${esc(r.keyword)}</a>${r.hint ? ' <span class="kt-badge">입력</span>' : ''}</td>${hints.length > 1 && S.res.q.split ? `<td class="l kt-from">${(r.from || []).length ? r.from.map((h) => `<span class="chip">${esc(h)}</span>`).join(' ') : '<span class="muted">함께</span>'}</td>` : ''}<td>${lowTxt(r.pc, r.pcLow)}</td><td>${lowTxt(r.mo, r.moLow)}</td><td><b>${num(r.total)}</b></td><td>${r.pcClk}</td><td>${r.moClk}</td><td>${r.pcCtr}%</td><td>${r.moCtr}%</td><td><span class="comp c${COMP[r.comp] || 0}">${esc(r.comp)}</span></td><td>${r.adDepth}</td></tr>`).join('') || `<tr><td colspan="14" class="muted" style="padding:28px">필터에 맞는 키워드가 없어요</td></tr>`}</tbody></table></div>
         ${list.length > shown.length ? `<div class="kt-more"><button class="btn" id="ktMore">${num(Math.min(200, list.length - shown.length))}개 더 보기</button> <span class="muted">${num(shown.length)} / ${num(list.length)}개 표시</span></div>` : ''}
         <p class="muted kt-note">검색량은 네이버 키워드 도구의 최근 30일 값이에요. '&lt; 10'은 10회 미만(합계는 5로 계산). 클릭수·클릭률은 광고 기준 평균이에요. 키워드를 누르면 키워드 분석으로 열려요.</p>
       </div>`;
