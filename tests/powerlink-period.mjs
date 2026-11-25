@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { createPowerlink, buildXlsx } from '../powerlink-core.mjs';
+import { createPowerlink, buildXlsx, buildReportColumns } from '../powerlink-core.mjs';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pl-period-'));
 try {
   const mk = id => ({ id, name: id, urls: ['https://example.test/'], createdAt: Date.now(), devices: ['pc'], status: 'done', nPc: 3, rows: [{ kw: '테스트 키워드', key: '테스트키워드', done: true, res: { pc: { avg: id.endsWith('a') ? 2 : 4, n: 4, seen: 4 } } }] });
@@ -21,6 +21,19 @@ try {
   const p = (day,end) => ({start:'2026-10-'+day,end:'2026-10-'+end});
   assert.equal((await call('/api/pl/report',{id:a.id,period:p('01','02'),reports:sa})).s,200);
   assert.equal((await call('/api/pl/report',{id:b.id,period:p('03','06'),reports:sb})).s,200);
+  const cols = await call('/api/pl/report-columns?id='+a.id);
+  assert.equal(cols.s,200);
+  assert.deepEqual(cols.v.columns.map(x=>x.id), ['raw:노출수','raw:임의열','raw:클릭수']);
+  assert.deepEqual(cols.v.rows, [['테스트키워드', { 0:100, 1:'  원본 공백  ', 2:10 }]]);
+  assert.deepEqual(buildReportColumns([],a.rows),{columns:[],rows:[]});
+  const ambig = [{name:'x',sheets:[{name:'s',rows:[['키워드','금액','금액'],['테스트 키워드',0,2],['테스트 키워드','',3]]}]}];
+  assert.deepEqual(buildReportColumns(ambig,a.rows).rows, [['테스트키워드',{0:null}]]);
+  assert.equal((await call('/api/pl/report-columns?id=pl00000000000')).s,404);
+  const ambiguousKey = [{sheets:[{rows:[['키워드','등록 키워드','금액'],['테스트 키워드','다른 키워드',99]]}]}];
+  assert.deepEqual(buildReportColumns(ambiguousKey,a.rows),{columns:[],rows:[]});
+  const named = [{sheets:[{rows:[['키워드','전환(직접)','전환-직접'],['테스트 키워드',0,2],['테스트 키워드','','']]}]}];
+  const distinct = buildReportColumns(named,a.rows);
+  assert.deepEqual(Object.fromEntries(distinct.columns.map((x,i)=>[x.label,distinct.rows[0][1][i]])),{'전환(직접)':0,'전환-직접':2});
   const {s,v:c} = await call('/api/pl/compare',{a:a.id,b:b.id});
   assert.equal(s,200); assert.equal(c.summary.matched,1); assert.equal(c.summary.duplicates,1); assert.equal(c.summary.ca,5); assert.equal(c.summary.cb,1);
   assert.equal(c.rank[0].down,1); assert.match(c.notes.join(' '),/노출량 변화.*CTR 변화/);

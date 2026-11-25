@@ -18,6 +18,7 @@
     dev: localStorage.getItem('plDev') === 'mo' ? 'mo' : 'pc',
     thread: [], prev: null, band: 0,
     q: '', onlyMiss: false, sort: { key: 'i', dir: 1 }, page: 1, timer: 0, perfBusy: false,
+    reportView: null, columnEdit: null,
   };
   const PG = 100;
   const BANDS = { pc: [['', '전체'], ['1-3', '1~3위'], ['4-10', '4~10위'], ['11-', '11위~']], mo: [['', '전체'], ['1-3', '1~3위'], ['4-5', '4~5위'], ['6-', '6위~']] };
@@ -91,9 +92,12 @@
   async function openJob(id) {
     try { const j = await api('/api/pl/job?id=' + encodeURIComponent(id)); S.job = j.job; S.cur = id; S.thread = j.thread || []; S.prev = j.prev || null; S.running = j.running ? { id, ...j.running } : (S.running?.id === id ? null : S.running); }
     catch (e) { toast(e.message, 'warn'); S.cur = null; S.job = null; }
+    if (S.reportView?.id !== S.cur) S.reportView = null;
+    if (S.columnEdit?.id !== S.cur) S.columnEdit = null;
     localStorage.setItem('plCur', S.cur || '');
     S.page = 1;
     draw(); poll();
+    loadReportView();
     ensurePerf(); // 지금 고른 n위의 예상 실적이 아직 없으면 (예: 재분석은 첫 분석 때의 n위로만 받아 둠)
   }
   function poll() {
@@ -160,7 +164,7 @@
       ${rest.map(group).join('') || '<div class="muted" style="padding:6px 10px;font-size:12px">분석할 때마다 여기 쌓여요</div>'}
       <div class="pl-usage" id="plUsage">${usageHTML()}</div>`;
     bindUsage();
-    $('#pSideNew').onclick = () => { clearTimeout(S.timer); S.cur = null; S.job = null; S.thread = []; S.prev = null; localStorage.setItem('plCur', ''); draw(); };
+    $('#pSideNew').onclick = () => { clearTimeout(S.timer); S.cur = null; S.job = null; S.columnEdit = null; S.reportView = null; S.thread = []; S.prev = null; localStorage.setItem('plCur', ''); draw(); };
     $$('[data-pid]', side).forEach((el) => {
       el.onclick = () => openJob(el.dataset.pid);
       el.oncontextmenu = (e) => { e.preventDefault(); const m = S.jobs.find((x) => x.id === el.dataset.pid); if (m) showCtx(e, m); };
@@ -214,7 +218,7 @@
           if (!await uiConfirm(`'${sub ? subName(m) : m.name}' 분석을 삭제할까요? 순위 결과와 캡처가 같이 지워져요.${kidsN ? `\n이 분석의 재분석 ${kidsN}개도 함께 지워져요.` : ''}`)) return;
           const r = await api('/api/pl/delete', { id: m.id });
           const gone = S.cur === m.id || (!sub && S.jobs.some((x) => x.parentId === m.id && x.id === S.cur));
-          if (gone) { clearTimeout(S.timer); S.cur = null; S.job = null; localStorage.setItem('plCur', ''); }
+          if (gone) { clearTimeout(S.timer); S.cur = null; S.job = null; S.columnEdit = null; S.reportView = null; localStorage.setItem('plCur', ''); }
           await loadJobs(); draw();
           toast(r.deleted > 1 ? `${r.deleted}개(재분석 포함)를 지웠어요` : '지웠어요', 'ok');
         }
@@ -323,7 +327,10 @@
         try {
           const files = [...$('input[type=file]', bg).files];
           const data = await api('/api/pl/report', { id, period: getPeriod(bg), reports: await Promise.all(files.map(readReport)) });
-          if (S.job?.id === id) S.job.report = data.report;
+          if (S.job?.id === id) {
+            S.job.report = data.report;
+            if (files.length) { S.reportView = null; loadReportView(); }
+          }
           onSaved?.(data.report);
           $('[data-close]', bg).click(); toast('실적 자료와 기간을 저장했어요.', 'ok');
         } catch (x) { status.textContent = x.message; btn.disabled = false; }
@@ -396,11 +403,16 @@
   function draw() {
     const box = $('#plBody');
     if (!box) return;
+    const colFocus = editorFocus($('#plColumnsPanel', box)), colScroll = $('#plColumnsList', box)?.scrollTop;
     drawSide();
     box.innerHTML = `<div class="sec"><h2>파워링크 분석기 <span class="muted" style="font-size:13px;font-weight:500">내 파워링크가 실제 네이버 검색 화면(로그아웃 상태)에서 몇 위인지 · AI 없이 이 PC에서 직접 검색</span></h2>
       ${compareLauncher()}${S.job ? jobHTML() : newHTML()}</div>`;
     $('#plCompare').onclick = openCompare;
     S.job ? bindJob() : bindNew();
+    if (S.job && editOf(S.job)) {
+      $('#plColumnsList').scrollTop = colScroll || 0;
+      restoreEditorFocus(colFocus);
+    }
   }
 
   // ---- 새 분석
@@ -499,19 +511,190 @@
     };
     return rows.slice().sort((a, b) => { const x = val(a), y = val(b); return (typeof x === 'string' ? x.localeCompare(y, 'ko') : x - y) * S.sort.dir; });
   }
+  // ---- 결과 열 맞춤: 열 ID와 표시 상태만 이 브라우저에 저장한다.
+  const COL_KEY = 'plResultColumns.v1';
+  const BASE_COLS = [['i', '#'], ['rank', '순위'], ['cap', '순위 캡처'], ['bid', '현재 입찰가'], ['nbid', '순위별 입찰가'], ['clk', '순위별 예상 (월)']];
+  const BASE_IDS = BASE_COLS.map(c => c[0]);
+  const defaults = () => BASE_IDS.map(k => [k, true]);
+  function savedColumns() {
+    try {
+      const out = [], seen = new Set(), parsed = JSON.parse(localStorage.getItem(COL_KEY) || 'null');
+      if (Array.isArray(parsed)) for (const [k, on] of parsed.filter(Array.isArray)) {
+        if (typeof k !== 'string' || typeof on !== 'boolean' || seen.has(k) || !(BASE_IDS.includes(k) || k.startsWith('raw:'))) continue;
+        out.push([k, on]); seen.add(k);
+      }
+      return out.length ? out : defaults();
+    } catch { return defaults(); }
+  }
+  let columnPrefs = savedColumns();
+  const editOf = j => S.columnEdit?.id === j?.id ? S.columnEdit : null;
+  const viewOf = j => S.reportView?.id === j?.id ? S.reportView : null;
+  const reportKey = kw => String(kw ?? '').replace(/\s+/g, '').toUpperCase();
+  function loadReportView() {
+    const j = S.job;
+    if (!j?.report?.files?.length || viewOf(j)) return;
+    const state = S.reportView = { id: j.id, status: 'loading', columns: [], rows: new Map() };
+    api('/api/pl/report-columns?id=' + encodeURIComponent(j.id)).then(data => {
+      state.rows = new Map(data.rows); state.columns = data.columns; state.status = 'ready';
+    }).catch(() => { state.status = 'error'; }).finally(() => {
+      if (viewOf(S.job) === state && $('#plColumns') && !$('#plView').classList.contains('hidden')) {
+        refreshColumnEditor(true); refreshJobTable();
+      }
+    });
+  }
+  function columnLayout(j, n, pref = editOf(j)?.items || columnPrefs) {
+    const base = BASE_COLS.map(([id, label]) => ({ id, label: id === 'nbid' ? n + '위 입찰가' : id === 'clk' ? n + '위 예상 (월)' : label }));
+    const cols = [...base, ...(viewOf(j)?.columns || []).map((c, i) => ({ ...c, raw: i }))];
+    const map = new Map(cols.map(c => [c.id, c])), out = [];
+    for (const [id, on] of pref) if (map.has(id)) { out.push({ ...map.get(id), on }); map.delete(id); }
+    for (const col of map.values()) out.push({ ...col, on: col.raw == null });
+    return out;
+  }
+  function updatedPrefs(layout, old) {
+    // 다른 보고서에만 있는 열은 목록에서 숨기되 순서 슬롯은 유지한다.
+    const active = new Set(layout.map(c => c.id)), next = layout.map(c => [c.id, c.on]);
+    let i = 0;
+    return [...old.map(pair => active.has(pair[0]) ? next[i++] : pair), ...next.slice(i)];
+  }
+  const searchKey = s => String(s).normalize('NFKC').replace(/\s+/g, '').toUpperCase();
+  function columnListHTML(layout, q) {
+    const matches = layout.filter(c => searchKey(c.label).includes(searchKey(q)));
+    const keyword = searchKey('키워드').includes(searchKey(q));
+    return (keyword ? '<li class="pl-col-item"><span></span><label><input type="checkbox" checked disabled>키워드</label><small class="muted">고정</small></li>' : '') + matches.map((c, i) =>
+      '<li class="pl-col-item" data-col-key="' + e2(c.id) + '"><span class="pl-col-grip" title="끌어서 이동" draggable="true" aria-hidden="true">⠿</span><label><input type="checkbox" ' + (c.on ? 'checked' : '') + '>' + e2(c.label) + '</label><small class="muted">' + (c.raw != null ? '보고서 원본' : '분석') + '</small><div class="pl-col-move"><button type="button" class="btn sm" data-move="-1" aria-label="' + e2(c.label + ' 위로') + '" ' + (!i ? 'disabled' : '') + '>↑</button><button type="button" class="btn sm" data-move="1" aria-label="' + e2(c.label + ' 아래로') + '" ' + (i === matches.length - 1 ? 'disabled' : '') + '>↓</button></div></li>'
+    ).join('') + (!keyword && !matches.length ? '<li class="muted pl-col-none">검색한 열이 없어요.</li>' : '');
+  }
+  function columnStatusHTML(j) {
+    const view = viewOf(j);
+    if (view?.status === 'error') return '보고서 열을 불러오지 못했어요. <button type="button" class="btn sm" id="plColumnsRetry">다시 불러오기</button>';
+    if (view?.status === 'ready') return view.columns.length ? '보고서 원본 값은 PC·모바일 탭과 별개예요.' : '머리글이 있는 보고서 열을 찾지 못했어요.';
+    return j.report?.files?.length ? '보고서 열 불러오는 중…' : '실적 파일을 연결하면 보고서 원본 열도 선택할 수 있어요.';
+  }
+  function columnPanelHTML(j, n) {
+    const edit = editOf(j);
+    return '<section class="pl-col-panel" id="plColumnsPanel" aria-labelledby="plColumnTitle" ' + (edit ? '' : 'hidden') + '><div class="pl-bar"><b id="plColumnTitle">표에 표시할 열</b><span style="flex:1"></span><input class="inp pl-col-search" type="search" id="plColumnsSearch" aria-label="열 이름 찾기" placeholder="열 이름 찾기" value="' + e2(edit?.q || '') + '"></div><p class="muted pl-col-help">체크로 표시하고, 끌거나 ↑↓ 버튼으로 순서를 바꿔요.</p><ul id="plColumnsList" class="pl-col-list" aria-label="열 목록">' + (edit ? columnListHTML(columnLayout(j, n), edit.q) : '') + '</ul><div class="pl-bar pl-col-footer"><button type="button" class="btn sm" id="plColumnsReset">기본값으로</button><span style="flex:1"></span><button type="button" class="btn sm" id="plColumnsCancel">취소</button><button type="button" class="btn pri sm" id="plColumnsSave">저장</button></div><div class="muted pl-col-help" id="plColumnsStatus" role="status">' + columnStatusHTML(j) + '</div></section>';
+  }
+  function editorFocus(root) {
+    const active = document.activeElement;
+    if (!root?.contains(active)) return null;
+    return { id: active.id, key: active.closest('[data-col-key]')?.dataset.colKey, move: active.dataset.move, start: active.id === 'plColumnsSearch' ? active.selectionStart : null, end: active.id === 'plColumnsSearch' ? active.selectionEnd : null };
+  }
+  function restoreEditorFocus(focus) {
+    if (!focus) return;
+    const row = focus.key && $$('#plColumnsList [data-col-key]').find(x => x.dataset.colKey === focus.key);
+    const button = row && focus.move ? $(`[data-move="${focus.move}"]`, row) : null;
+    const target = focus.id ? document.getElementById(focus.id) : button && !button.disabled ? button : row && $('input', row);
+    target?.focus({ preventScroll: true });
+    if (focus.start != null) target?.setSelectionRange(focus.start, focus.end);
+  }
+  function refreshColumnEditor(status = false) {
+    const edit = editOf(S.job), list = $('#plColumnsList');
+    if (!edit || !list) return;
+    if (status) $('#plColumnsStatus').innerHTML = columnStatusHTML(S.job);
+    const scroll = list.scrollTop, focus = editorFocus(list);
+    list.innerHTML = columnListHTML(columnLayout(S.job, nOf(S.dev)), edit.q);
+    list.scrollTop = scroll;
+    restoreEditorFocus(focus);
+  }
+  function bindColumnEditor() {
+    const trigger = $('#plColumns'), panel = $('#plColumnsPanel'), list = $('#plColumnsList'), search = $('#plColumnsSearch');
+    const edit = () => editOf(S.job);
+    const close = () => {
+      S.columnEdit = null; panel.hidden = true; trigger.setAttribute('aria-expanded', 'false'); refreshJobTable(); trigger.focus({ preventScroll: true });
+    };
+    trigger.onclick = () => {
+      if (edit()) return close();
+      S.columnEdit = { id: S.job.id, items: columnPrefs.map(pair => [...pair]), q: '' };
+      panel.hidden = false; trigger.setAttribute('aria-expanded', 'true'); search.value = '';
+      refreshColumnEditor(true); search.focus({ preventScroll: true });
+    };
+    search.oninput = () => { edit().q = search.value; refreshColumnEditor(); };
+    $('#plColumnsCancel').onclick = close;
+    panel.onkeydown = e => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+    $('#plColumnsReset').onclick = () => { edit().items = defaults(); edit().q = ''; search.value = ''; refreshColumnEditor(); refreshJobTable(); };
+    $('#plColumnsSave').onclick = () => {
+      const next = updatedPrefs(columnLayout(S.job, nOf(S.dev)), edit().items);
+      try { localStorage.setItem(COL_KEY, JSON.stringify(next)); }
+      catch { toast('열 설정을 저장하지 못했어요. 브라우저 저장 공간을 확인해 주세요.', 'warn'); return; }
+      columnPrefs = next;
+      if (S.sort.key !== 'kw' && S.sort.key !== 'i' && !next.some(([k, on]) => k === S.sort.key && on)) S.sort = { key: 'i', dir: 1 };
+      close();
+      toast('열 순서와 표시 설정을 저장했어요.', 'ok');
+    };
+    $('#plColumnsStatus').onclick = e => {
+      if (e.target.id !== 'plColumnsRetry') return;
+      S.reportView = null; loadReportView(); refreshColumnEditor(true);
+    };
+    const from = e => e.target.closest('[data-col-key]')?.dataset.colKey;
+    const set = layout => { edit().items = updatedPrefs(layout, edit().items); refreshColumnEditor(); refreshJobTable(); };
+    list.onchange = e => {
+      const id = from(e); if (!id || e.target.type !== 'checkbox') return;
+      const layout = columnLayout(S.job, nOf(S.dev)); layout.find(c => c.id === id).on = e.target.checked;
+      edit().items = updatedPrefs(layout, edit().items); refreshJobTable();
+    };
+    const move = (id, target) => {
+      if (!target || id === target) return;
+      const layout = columnLayout(S.job, nOf(S.dev));
+      const a = layout.findIndex(c => c.id === id), b = layout.findIndex(c => c.id === target);
+      if (a >= 0 && b >= 0) { const [item] = layout.splice(a, 1); layout.splice(b, 0, item); set(layout); }
+    };
+    list.onclick = e => {
+      const step = +e.target.dataset.move, id = from(e);
+      if (!step || !id) return;
+      const visible = $$('[data-col-key]', list).map(row => row.dataset.colKey);
+      move(id, visible[visible.indexOf(id) + step]);
+      document.activeElement?.closest('[data-col-key]')?.scrollIntoView({ block: 'nearest' });
+    };
+    let drag;
+    const clean = () => $('.pl-col-over', list)?.classList.remove('pl-col-over');
+    list.ondragstart = e => { drag = from(e); if (drag) { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', drag); } };
+    list.ondragover = e => { if (drag && from(e)) { e.preventDefault(); clean(); e.target.closest('[data-col-key]').classList.add('pl-col-over'); } };
+    list.ondrop = e => { if (drag && from(e)) { e.preventDefault(); move(drag, from(e)); } drag = null; clean(); };
+    list.ondragend = () => { drag = null; clean(); };
+  }
+
+  const rankSelect = (dev, n) => `<select id="plN" aria-label="예상 순위" class="hsel" style="height:26px;padding:0 22px 0 6px">${Array.from({ length: MAXN[dev] }, (_, i) => `<option value="${i + 1}" ${n === i + 1 ? 'selected' : ''}>${i + 1}위</option>`).join('')}</select>`;
+  const toolbarRankHTML = (layout, dev, n) => layout.some(c => c.id === 'nbid') ? '' : `<label class="muted">예상 순위 ${rankSelect(dev, n)}</label>`;
+  function resultTableHTML(j, dev, n, view, run, layout) {
+    const P = j.perf?.[`${dev}:${n}`] || {}, report = viewOf(j);
+    const th = (k, label, l) => `<th class="${l ? 'l' : ''}" data-k="${k}" style="cursor:pointer">${label} ${S.sort.key === k ? (S.sort.dir > 0 ? '▲' : '▼') : '<span class="muted">↕</span>'}</th>`;
+    const head = c => c.raw != null ? `<th class="pl-raw-head" title="보고서 원본 · ${e2(c.label)}">${e2(c.label)}</th>` : c.id === 'nbid' ? th('nbid', rankSelect(dev, n) + ' 입찰가') : ['rank', 'bid', 'clk'].includes(c.id) ? th(c.id, c.label) : `<th>${e2(c.label)}</th>`;
+    return `<table class="rel pl-tbl"><thead><tr><th class="l pl-key-col" data-k="kw" style="cursor:pointer">키워드 ${S.sort.key === 'kw' ? (S.sort.dir > 0 ? '▲' : '▼') : '<span class="muted">↕</span>'}</th>${layout.map(head).join('')}</tr></thead><tbody>${view.map((r) => {
+        const x = r.res?.[dev], nb = j.bids?.[r.key]?.[dev]?.[n - 1], p = P[r.key];
+        const pv = S.prev?.ranks?.[r.key]?.[dev];
+        const chg = !x || !x.n || pv == null ? '' : !x.seen && pv ? '<span class="pl-chg dn">빠짐</span>' : x.seen && !pv ? '<span class="pl-chg up">새로 노출</span>' : x.seen && pv ? (Math.abs(pv - x.avg) < 0.05 ? '<span class="pl-chg">변화 없음</span>' : `<span class="pl-chg ${x.avg < pv ? 'up' : 'dn'}">${x.avg < pv ? '▲' : '▼'}${Math.round(Math.abs(pv - x.avg) * 10) / 10}</span>`) : '';
+        const rank = !x ? `<span class="muted">${run ? '대기' : '-'}</span>` : x.seen ? `<b class="pl-rk ${x.avg <= 3 ? 'pl-top' : ''}">${x.avg}위</b><div class="muted" style="font-size:11px">${x.min === x.max ? '' : `${x.min}~${x.max}위 · `}${x.seen}/${x.n}회 노출${x.mainCount != null && x.avg > x.mainCount ? ' · 통합검색 밖' : ''}</div>${x.match && x.match.score < 3 ? `<div class="pl-warn" title="${e2(x.match.display)}">${x.match.score === 1 ? '도메인만 일치' : '경로 다름'}</div>` : ''}`
+          : `<span class="pl-miss">미노출</span><div class="muted" style="font-size:11px">${x.n}회 모두 · 광고 ${x.total || 0}개 중</div>`;
+        const cap = x?.cap && j.purged ? '<span class="muted" style="font-size:12px">캡처 지움</span>' : x?.cap ? `<img class="pl-th" loading="lazy" src="/api/pl/img?id=${e2(j.id)}&f=${e2(x.cap.focus || x.cap.thumb)}" data-full="/api/pl/img?id=${e2(j.id)}&f=${e2(x.cap.file)}" data-t="${e2(r.kw)} · ${DEVN[dev]} · 캡처 당시 ${x.cap.rank ? x.cap.rank + '위' : '미노출'}${x.cap.where === 'more' ? ' (광고 더보기)' : ''}" alt=""><div class="muted" style="font-size:11px">캡처 당시 ${x.cap.rank ? x.cap.rank + '위' : '미노출'}${x.cap.where === 'more' ? ' · 더보기' : ''}</div>` : x?.capErr ? `<span class="muted" title="${e2(x.capErr)}">캡처 실패</span>` : '';
+        const diff = r.bid != null && nb != null ? nb - r.bid : null;
+        const cells = {
+          i: `<td class="muted">${r.i}</td>`,
+          rank: `<td>${rank}${chg ? `<div title="앞 분석(${e2(S.prev?.name || '')}) ${pv ? pv + '위' : '미노출'} 대비">${chg}</div>` : ''}</td>`,
+          cap: `<td class="pl-cap">${cap}</td>`,
+          bid: `<td>${r.bid == null ? '<span class="muted">-</span>' : n0(r.bid) + '원'}${(() => { const ob = S.prev?.ranks?.[r.key]?.bid; return ob != null && r.bid != null && ob !== r.bid ? `<div class="pl-chg ${r.bid > ob ? 'dn' : 'up'}" title="앞 분석의 입찰가" style="font-weight:500;display:block">전 ${n0(ob)}원</div>` : ''; })()}</td>`,
+          nbid: `<td>${nb == null ? `<span class="muted" title="${e2(j.bids?.[r.key]?.[dev + 'Err'] || '')}">-</span>` : `${n0(nb)}원${diff ? `<div class="${diff > 0 ? 'pl-up' : 'pl-dn'}" style="font-size:11px">${diff > 0 ? '+' : ''}${n0(diff)}원</div>` : ''}`}</td>`,
+          clk: `<td>${!p ? '<span class="muted">-</span>' : p.err ? `<span class="muted" title="${e2(p.err)}">조회 실패</span>` : `클릭 ${n0(p.clk)}회<div class="muted" style="font-size:11px">노출 ${n0(p.imp)} · 비용 ${n0(p.cost)}원</div>`}</td>`,
+        };
+        const raw = report?.rows.get(reportKey(r.kw));
+        const rawCell = c => {
+          const v = raw?.[c.raw];
+          return '<td class="pl-raw-cell">' + (v === null ? '<span class="muted" title="같은 키워드와 열에 값이 여러 개라 확인이 필요해요">중복</span>' : v === undefined ? '<span class="muted" title="보고서에 값이 없어요">-</span>' : '<span title="' + e2(v) + '">' + e2(v) + '</span>') + '</td>';
+        };
+        return `<tr data-kw="${e2(r.kw)}"><td class="l pl-key-col"><b>${e2(r.kw)}</b></td>${layout.map(c => c.raw == null ? cells[c.id] : rawCell(c)).join('')}</tr>`;
+      }).join('')}</tbody></table>`;
+  }
+
   function jobHTML() {
     const j = S.job, dev = j.devices.includes(S.dev) ? S.dev : j.devices[0], n = nOf(dev);
     S.dev = dev;
     const all = j.rows.filter((r) => r.on !== false), done = all.filter((r) => r.done).length;
     const run = j.status === 'running';
-    const P = j.perf?.[`${dev}:${n}`] || {};
     const stats = (() => { const xs = all.map((r) => r.res?.[dev]).filter((x) => x && x.n); const seen = xs.filter((x) => x.seen); return { n: xs.length, seen: seen.length, top3: seen.filter((x) => x.avg <= 3).length, avg: seen.length ? (seen.reduce((a, x) => a + x.avg, 0) / seen.length).toFixed(1) : '-' }; })();
     const left = all.length - done, per = j.devices.length * (j.runs + 1.3) * gapS(), eta = left * per;
     const rows = rowsView(), pages = Math.max(1, Math.ceil(rows.length / PG));
     S.page = Math.min(S.page, pages);
     const view = rows.slice((S.page - 1) * PG, S.page * PG);
-    const th = (k, label, l) => `<th class="${l ? 'l' : ''}" data-k="${k}" style="cursor:pointer">${label} ${S.sort.key === k ? (S.sort.dir > 0 ? '▲' : '▼') : '<span class="muted">↕</span>'}</th>`;
-    const nSel = `<select id="plN" class="hsel" style="height:26px;padding:0 22px 0 6px">${Array.from({ length: MAXN[dev] }, (_, i) => `<option value="${i + 1}" ${n === i + 1 ? 'selected' : ''}>${i + 1}위</option>`).join('')}</select>`;
+    const layout = columnLayout(j, n).filter(c => c.on);
     return `<div class="card">
       <div class="pl-bar"><b style="font-size:15px">${e2(j.name)}</b><span class="muted">${new Date(j.createdAt).toLocaleString('ko-KR')} · URL ${j.urls.map(e2).join(', ')} · ${j.runs}회 평균${j.source ? ` · <span title="재분석 때 넣은 파일">새 입찰가: ${e2(j.source.file)} (바뀜 ${j.source.changed}개)</span>` : ''}</span><span style="flex:1"></span>
         ${run ? '<button class="btn" id="plStop">중지</button>' : `${j.status !== 'done' ? '<button class="btn pri" id="plResume">이어서 하기</button>' : ''}<button class="btn" id="plRerun" title="같은 키워드 · URL · 기기로 다시 검사해서 이 분석 아래(스레드)에 붙여요">같은 키워드로 재분석</button>`}
@@ -536,24 +719,30 @@
         <label class="inl"><input type="checkbox" id="plMiss" ${S.onlyMiss ? 'checked' : ''}> 미노출만</label>
         <button class="btn" data-find title="키워드 찾기 (Ctrl+F) · 치고 Enter → 그 줄로 이동">⌕ 키워드 찾기</button>
         <span style="flex:1"></span><span class="muted">${rows.length.toLocaleString('ko-KR')}개 표시</span>
+        <span id="plColumnsRank">${toolbarRankHTML(layout, dev, n)}</span>
+        <button type="button" class="btn" id="plColumns" aria-expanded="${!!editOf(j)}" aria-controls="plColumnsPanel">열 맞춤 설정 <small class="muted" id="plColumnsCount">${layout.length + 1}개</small></button>
       </div>
-      <div class="tbl-wrap" style="margin-top:10px" id="plTblWrap"><table class="rel pl-tbl"><thead><tr><th>#</th>${th('kw', '키워드', 1)}${th('rank', '순위')}<th>순위 캡처</th>${th('bid', '현재 입찰가')}<th data-k="nbid" style="cursor:pointer">${nSel} 입찰가 ${S.sort.key === 'nbid' ? (S.sort.dir > 0 ? '▲' : '▼') : '<span class="muted">↕</span>'}</th>${th('clk', `${n}위 예상 (월)`)}</tr></thead>
-      <tbody>${view.map((r) => {
-        const x = r.res?.[dev], nb = j.bids?.[r.key]?.[dev]?.[n - 1], p = P[r.key];
-        const pv = S.prev?.ranks?.[r.key]?.[dev];
-        const chg = !x || !x.n || pv == null ? '' : !x.seen && pv ? '<span class="pl-chg dn">빠짐</span>' : x.seen && !pv ? '<span class="pl-chg up">새로 노출</span>' : x.seen && pv ? (Math.abs(pv - x.avg) < 0.05 ? '<span class="pl-chg">변화 없음</span>' : `<span class="pl-chg ${x.avg < pv ? 'up' : 'dn'}">${x.avg < pv ? '▲' : '▼'}${Math.round(Math.abs(pv - x.avg) * 10) / 10}</span>`) : '';
-        const rank = !x ? `<span class="muted">${run ? '대기' : '-'}</span>` : x.seen ? `<b class="pl-rk ${x.avg <= 3 ? 'pl-top' : ''}">${x.avg}위</b><div class="muted" style="font-size:11px">${x.min === x.max ? '' : `${x.min}~${x.max}위 · `}${x.seen}/${x.n}회 노출${x.mainCount != null && x.avg > x.mainCount ? ' · 통합검색 밖' : ''}</div>${x.match && x.match.score < 3 ? `<div class="pl-warn" title="${e2(x.match.display)}">${x.match.score === 1 ? '도메인만 일치' : '경로 다름'}</div>` : ''}`
-          : `<span class="pl-miss">미노출</span><div class="muted" style="font-size:11px">${x.n}회 모두 · 광고 ${x.total || 0}개 중</div>`;
-        const cap = x?.cap && j.purged ? '<span class="muted" style="font-size:12px">캡처 지움</span>' : x?.cap ? `<img class="pl-th" loading="lazy" src="/api/pl/img?id=${e2(j.id)}&f=${e2(x.cap.focus || x.cap.thumb)}" data-full="/api/pl/img?id=${e2(j.id)}&f=${e2(x.cap.file)}" data-t="${e2(r.kw)} · ${DEVN[dev]} · 캡처 당시 ${x.cap.rank ? x.cap.rank + '위' : '미노출'}${x.cap.where === 'more' ? ' (광고 더보기)' : ''}" alt=""><div class="muted" style="font-size:11px">캡처 당시 ${x.cap.rank ? x.cap.rank + '위' : '미노출'}${x.cap.where === 'more' ? ' · 더보기' : ''}</div>` : x?.capErr ? `<span class="muted" title="${e2(x.capErr)}">캡처 실패</span>` : '';
-        const diff = r.bid != null && nb != null ? nb - r.bid : null;
-        return `<tr data-kw="${e2(r.kw)}"><td class="muted">${r.i}</td><td class="l"><b>${e2(r.kw)}</b></td><td>${rank}${chg ? `<div title="앞 분석(${e2(S.prev?.name || '')}) ${pv ? pv + '위' : '미노출'} 대비">${chg}</div>` : ''}</td><td class="pl-cap">${cap}</td>
-          <td>${r.bid == null ? '<span class="muted">-</span>' : n0(r.bid) + '원'}${(() => { const ob = S.prev?.ranks?.[r.key]?.bid; return ob != null && r.bid != null && ob !== r.bid ? `<div class="pl-chg ${r.bid > ob ? 'dn' : 'up'}" title="앞 분석의 입찰가" style="font-weight:500;display:block">전 ${n0(ob)}원</div>` : ''; })()}</td>
-          <td>${nb == null ? `<span class="muted" title="${e2(j.bids?.[r.key]?.[dev + 'Err'] || '')}">-</span>` : `${n0(nb)}원${diff ? `<div class="${diff > 0 ? 'pl-up' : 'pl-dn'}" style="font-size:11px">${diff > 0 ? '+' : ''}${n0(diff)}원</div>` : ''}`}</td>
-          <td>${!p ? '<span class="muted">-</span>' : p.err ? `<span class="muted" title="${e2(p.err)}">조회 실패</span>` : `클릭 ${n0(p.clk)}회<div class="muted" style="font-size:11px">노출 ${n0(p.imp)} · 비용 ${n0(p.cost)}원</div>`}</td></tr>`;
-      }).join('')}</tbody></table></div>
+      ${columnPanelHTML(j, n)}
+      <div class="tbl-wrap" style="margin-top:10px" id="plTblWrap">${resultTableHTML(j, dev, n, view, run, layout)}</div>
       ${pages > 1 ? `<div class="pager">${Array.from({ length: pages }, (_, i) => `<button class="${S.page === i + 1 ? 'on' : ''}" data-pg="${i + 1}">${i + 1}</button>`).join('')}</div>` : ''}
       <div class="muted" style="font-size:12px;margin-top:8px;line-height:1.7">순위 = 키워드마다 ${j.runs}번 검색한 평균 (노출된 회차만). 캡처는 순위 검색과 별도로 한 번 더 열어서 찍어서 순위가 조금 다를 수 있어요. ${n}위 입찰가 = 네이버 검색광고 API '순위별 평균 입찰가'(최근 4주), 아래 +/− 는 현재 입찰가와의 차이. ${n}위 예상 = 그 입찰가로 냈을 때 네이버 예상 실적(월). 로그인 여부·지역·시간대에 따라 실제 화면과 다를 수 있어요.</div>
     </div>`;
+  }
+  function refreshJobTable() {
+    const wrap = $('#plTblWrap'), j = S.job;
+    if (!wrap || !j) return;
+    const dev = S.dev, n = nOf(dev), layout = columnLayout(j, n).filter(c => c.on), all = rowsView();
+    const x = wrap.scrollLeft, y = wrap.scrollTop;
+    $('#plColumnsRank').innerHTML = toolbarRankHTML(layout, dev, n);
+    $('#plColumnsCount').textContent = (layout.length + 1) + '개';
+    wrap.innerHTML = resultTableHTML(j, dev, n, all.slice((S.page - 1) * PG, S.page * PG), j.status === 'running', layout);
+    wrap.scrollLeft = x; wrap.scrollTop = y; bindResultTable();
+  }
+  function bindResultTable() {
+    $('#plN').onclick = (e) => e.stopPropagation();
+    $('#plN').onchange = (e) => { const v = +e.target.value; if (S.dev === 'pc') { S.nPc = v; localStorage.setItem('plNPc', v); } else { S.nMo = v; localStorage.setItem('plNMo', v); } draw(); ensurePerf(); };
+    $$('#plTblWrap th[data-k]').forEach((t) => (t.onclick = () => { const k = t.dataset.k; S.sort = { key: k, dir: S.sort.key === k ? -S.sort.dir : k === 'kw' || k === 'rank' ? 1 : -1 }; draw(); }));
+    $$('.pl-th').forEach((im) => (im.onclick = () => showImg(im.dataset.full, im.dataset.t)));
   }
   function bindJob() {
     bindReport();
@@ -567,10 +756,7 @@
     $$('[data-sd]').forEach((b) => (b.onclick = () => { S.dev = b.dataset.sd; localStorage.setItem('plDev', S.dev); S.page = 1; draw(); ensurePerf(); }));
     $$('[data-band]').forEach((b) => (b.onclick = () => { S.band = +b.dataset.band; S.page = 1; draw(); }));
     $('#plMiss').onchange = (e) => { S.onlyMiss = e.target.checked; S.page = 1; draw(); };
-    $('#plN').onclick = (e) => e.stopPropagation();
-    $('#plN').onchange = (e) => { const v = +e.target.value; if (S.dev === 'pc') { S.nPc = v; localStorage.setItem('plNPc', v); } else { S.nMo = v; localStorage.setItem('plNMo', v); } draw(); ensurePerf(); };
-    $$('#plTblWrap th[data-k]').forEach((t) => (t.onclick = () => { const k = t.dataset.k; S.sort = { key: k, dir: S.sort.key === k ? -S.sort.dir : k === 'kw' || k === 'rank' ? 1 : -1 }; draw(); }));
-    $$('.pl-th').forEach((im) => (im.onclick = () => showImg(im.dataset.full, im.dataset.t)));
+    bindColumnEditor(); bindResultTable();
     $$('[data-pg]').forEach((b) => (b.onclick = () => { S.page = +b.dataset.pg; draw(); $('#plTblWrap').scrollIntoView({ block: 'start' }); }));
   }
   // n을 바꾸면 그 순위 입찰가의 예상 실적을 가져옴 (한 번 가져온 건 저장)
@@ -646,7 +832,7 @@
   })();
 
   // ---------------------------------------------------------------- 메뉴 열기·닫기
-  window.__RESET_pl = () => { clearTimeout(S.timer); S.cur = null; S.job = null; S.draft = { rows: [], file: '', paste: '', reports: [], period: {} }; localStorage.setItem('plCur', ''); draw(); scrollTo(0, 0); return '초기화했어요 (지난 분석은 왼쪽 내역에 있어요)'; };
+  window.__RESET_pl = () => { clearTimeout(S.timer); S.cur = null; S.job = null; S.columnEdit = null; S.reportView = null; S.draft = { rows: [], file: '', paste: '', reports: [], period: {} }; localStorage.setItem('plCur', ''); draw(); scrollTo(0, 0); return '초기화했어요 (지난 분석은 왼쪽 내역에 있어요)'; };
   function showPl(on) {
     if (on) { $('#aiView')?.classList.add('hidden'); window.__hideDup?.(); window.__hideBulk?.(); window.__hideCopy?.(); window.__hideMock?.(); }
     $('#plView').classList.toggle('hidden', !on);

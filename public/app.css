@@ -591,7 +591,28 @@ html.dark .btn.ok-btn{color:#4ade80;border-color:rgba(74,222,128,.45)}
 .pl-opts{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:10px;font-size:13px}
 .pl-opts .hsel{height:30px;padding:0 24px 0 8px}
 .pl-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+table.rel.pl-tbl{min-width:0}
 .pl-tbl td{vertical-align:middle}
+.pl-tbl .pl-key-col{position:sticky;left:0;z-index:1;background:var(--card);border-right:1px solid var(--border);min-width:108px;max-width:200px;white-space:normal;overflow-wrap:anywhere}
+.pl-tbl thead .pl-key-col{z-index:3;background:var(--muted)}
+.pl-tbl tr:hover td.pl-key-col{background:color-mix(in oklab,var(--muted) 60%,var(--card))}
+.pl-tbl .pl-raw-head,.pl-tbl .pl-raw-cell{max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pl-tbl .pl-raw-head{border-bottom-color:var(--accent)}
+#plColumnsCount{margin-left:4px;font-weight:400}
+#plColumnsRank:empty,.pl-col-panel[hidden]{display:none}
+#plColumnsRank label{display:flex;align-items:center;gap:5px}
+.pl-col-panel{border:1px solid var(--border);border-radius:var(--radius);margin-top:10px;padding:10px 12px;background:var(--card)}
+.pl-col-panel .pl-col-search{width:min(160px,100%);height:30px}
+.pl-col-help{font-size:12px;margin:4px 0}
+.pl-col-list{margin:8px 0;padding:0;list-style:none;max-height:238px;overflow:auto;border-top:1px solid var(--border)}
+.pl-col-item{display:grid;grid-template-columns:19px minmax(0,1fr) 70px 57px;gap:5px;align-items:center;min-height:35px;border-bottom:1px solid var(--border)}
+.pl-col-item label{display:flex;align-items:center;gap:6px;min-width:0;overflow-wrap:anywhere;cursor:pointer}
+.pl-col-item label input{margin:0;flex:none}
+.pl-col-item small{font-size:11px;white-space:nowrap}
+.pl-col-grip{font-size:16px;cursor:grab;color:var(--muted-fg);user-select:none}
+.pl-col-over{border-top:2px solid var(--accent)}
+.pl-col-move{display:flex;gap:3px}.pl-col-move .btn{padding:0;width:26px;height:24px;min-height:0}
+.pl-col-footer{margin-top:4px}.pl-col-none{padding:8px}
 .pl-cap{width:300px;text-align:center}
 .pl-th{display:block;margin:0 auto 3px;max-width:280px;max-height:190px;object-fit:contain;border:1px solid var(--border);border-radius:6px;cursor:zoom-in;background:#fff}
 .pl-th:hover{outline:2px solid var(--accent)}

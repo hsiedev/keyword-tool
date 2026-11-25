@@ -1,5 +1,5 @@
 import plColumns from './public/pl-columns.js';
-import { comparePowerlink, periodOf, reports } from './powerlink-compare.mjs';
+import { comparePowerlink, keyOf, periodOf, reports } from './powerlink-compare.mjs';
 // 파워링크 분석기 (AI 없이 이 PC에서 크롤링)
 // - 순위: 로그아웃 상태의 네이버 '광고 더보기' 페이지 HTML을 받아 광고 순서를 읽음 (PC 최대 25위, 모바일 최대 15위). 가볍고 빠름
 //         같은 키워드를 여러 번(기본 4회) 검색해서 평균 순위를 냄 (검색할 때마다 순위가 조금씩 바뀜)
@@ -237,6 +237,45 @@ export function buildXlsx(sheets) {
     { name: 'xl/styles.xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="${M}"><fonts count="2"><font><sz val="10"/><name val="맑은 고딕"/></font><font><b/><sz val="10"/><name val="맑은 고딕"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE5E7EB"/></patternFill></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="3"><xf fontId="0" fillId="0"/><xf fontId="1" fillId="2" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf fontId="0" fillId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs></styleSheet>` },
   );
   return zip([...files, ...media]);
+}
+
+// 원본 표시 전용: 머리글 기준으로 연결하고 값이나 원본 파일은 수정하지 않는다.
+export function buildReportColumns(rawFiles, selectedRows) {
+  const columns = new Map(), observed = new Map();
+  const selected = new Set((selectedRows || []).filter(r => r && r.on !== false).map(r => keyOf(r.kw)).filter(Boolean));
+  const headerKey = v => v.normalize('NFKC').replace(/[\s\u200B-\u200D\uFEFF]+/g, '').toUpperCase();
+  const total = /^(합계|총계|소계|전체|총합계|전체합계|TOTALS?|키워드[\d,]+개결과)$/i;
+  for (const file of rawFiles || []) for (const sheet of file?.sheets || []) {
+    const rows = sheet.rows || [], found = plColumns.find(rows);
+    if (!found) continue;
+    const { at, col: { kw } } = found, header = rows[at];
+    if (header.filter(cell => plColumns.columns([cell]).kw >= 0).length !== 1) continue;
+    const repeated = new Set(), seen = new Set(), fields = [];
+    for (let i = 0; i < header.length; i++) {
+      if (i === kw) continue;
+      const label = String(header[i] ?? '').trim(), key = headerKey(label);
+      if (!key || total.test(key)) continue;
+      const id = 'raw:' + key;
+      fields.push([id, i]);
+      if (seen.has(id)) repeated.add(id); else seen.add(id);
+      if (!columns.has(id)) columns.set(id, { id, label });
+    }
+    for (let ri = at + 1; ri < rows.length; ri++) {
+      const row = rows[ri]; if (!Array.isArray(row)) continue;
+      const key = keyOf(row[kw]);
+      if (!selected.has(key) || total.test(key)) continue;
+      for (const [id, ci] of fields) {
+        const v = row[ci];
+        if (v == null || (typeof v === 'string' && !v.trim())) continue;
+        let cells = observed.get(key);
+        if (!cells) observed.set(key, cells = new Map());
+        cells.set(id, repeated.has(id) || cells.has(id) ? null : v);
+      }
+    }
+  }
+  const ordered = [...columns.values()].sort((a, b) => a.id.localeCompare(b.id));
+  const indices = new Map(ordered.map((col, i) => [col.id, i]));
+  return { columns: ordered, rows: [...observed].map(([key, values]) => [key, Object.fromEntries([...values].map(([id, v]) => [indices.get(id), v]))]) };
 }
 
 // ---------------------------------------------------------------- 작업 관리
@@ -611,6 +650,12 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
         const j = load(u.searchParams.get('id'));
         if (!j) return send(res, 404, { error: '없는 작업이에요' });
         return send(res, 200, { job: j, running: RUN?.id === j.id ? { note: RUN.note, cur: RUN.cur } : null, thread: threadOf(j), prev: prevRanks(j) });
+      }
+      if (p === '/api/pl/report-columns') {
+        if (req.method !== 'GET') return send(res, 405, { error: '조회만 할 수 있어요' });
+        const j = load(u.searchParams.get('id'));
+        if (!j) return send(res, 404, { error: '없는 작업이에요' });
+        return send(res, 200, buildReportColumns(loadReports(j), j.rows));
       }
       if (p === '/api/pl/report-file') {
         const j = load(u.searchParams.get('id'));
