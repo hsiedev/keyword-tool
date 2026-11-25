@@ -891,7 +891,7 @@ ${window.WorkTitle.field('aiTitle')}
     if (fb) { turn={text:String(fb.text).slice(0,600),liked:fb.liked||[],mode:fb.mode,at:Date.now(),result:'진행 중'}; session.feedback.push(turn); session.feedback=session.feedback.slice(-12); }
     const fbList=fbTexts(session);
     const liked=[...new Set([...session.feedback.flatMap(f=>f.liked||[]),...session.items.filter(it=>it.decision?.pass).map(it=>it.keyword)])].slice(-80);
-    const keep=redo?session.items.filter(it=>it.decision?.pass||(fb.liked||[]).includes(it.keyword)):[];
+    const keep=redo?session.items.filter(it=>it.decision?.pass||(fb.liked||[]).includes(it.keyword)):[], keepN=keep.length;
     const replacing=!more && session.items.length>0;
     const avoid=[...refs,...(more ? session.items.map(it=>it.keyword) : keep.map(it=>it.keyword))];
     const rejected=[...(session.rejected||[]),...(replacing ? session.items.filter(isBad).map(it=>({keyword:it.keyword,reason:'이전 결과 부적합'})) : [])].slice(-150);
@@ -992,7 +992,7 @@ ${window.WorkTitle.field('aiTitle')}
       if (replacing && !ready.length) {P.finish('조건에 맞는 새 후보 없음'); msg('조건에 맞는 새 후보가 없어 기존 결과를 그대로 뒀어요.'); if (turn) turn.result='새 후보 없음 · 기존 결과 유지'; return;}
       if (replacing) {const ks=new Set(keep);rejectItems(session.items.filter(x=>!ks.has(x)));session.items=keep;AI.tailFilter=AI.targetFilter=AI.reviewFilter='';}
       const r=addItems(ready);
-      if (turn) turn.result=`${r.added}개 추가${redo&&keep.length?` (남긴 ${keep.length}개 포함 ${session.items.length}개)`:''}`;
+      if (turn) turn.result=`${r.added}개 추가${redo&&keepN?` (남긴 ${keepN}개 포함 ${session.items.length}개)`:''}`;
       const dupEx = notNeg.length - got.length + r.dropped;
       const fresh = new Set(r.keys);
       const nData=ready.filter(it=>fresh.has(it.keyword)&&dmap.has(lookup(it.keyword))).length;
