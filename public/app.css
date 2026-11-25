@@ -761,3 +761,16 @@ html.dark .modal .set-sec input.sw.sw:not(:checked){background:#4b4b4b}
 .bid-row-dialog header{justify-content:space-between}
 .bid-row-dialog h2,.bid-row-dialog p,.bid-row-dialog li{overflow-wrap:anywhere}
 @media(max-width:600px){#bidTable .bid-key-cell,#bidTable td.bid-key-cell b{max-width:116px}}
+
+/* AI 대화형 브리프와 페르소나별 결과 */
+.ai-brief-modes{display:flex;gap:6px;align-items:center;margin:8px 0 12px}
+.ai-brief-modes .on{background:var(--accentSoft);border-color:var(--accent);color:var(--ok-fg)}
+#aiBriefGuide:not(.hidden){margin:0 0 14px}
+.ai-gen-details{margin:9px 0 8px;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm)}
+.ai-gen-details summary{cursor:pointer;font-weight:600}
+#aiGuideSendNote{margin-top:8px}
+.ai-persona-filters{align-items:center;gap:8px 12px;flex-wrap:wrap;margin-top:10px}
+.ai-persona-filters label{display:inline-flex;align-items:center;gap:5px;font-size:12px}
+.ai-persona-plan{display:grid;gap:6px;padding:6px 0}
+.ai-persona-row{margin-top:3px;white-space:normal;line-height:1.5;min-width:120px}
+.ai-persona-hold{color:var(--warn-fg)}

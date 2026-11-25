@@ -745,11 +745,15 @@ ${window.WorkTitle.field('bTitle')}
   function fillFrom() {
     const A = window.__AI?.AI, sel = $('#bvFrom');
     if (!sel) return;
-    const list = A ? [A.cur, ...(A.sessions || [])].filter((s, i, a) => s && a.indexOf(s) === i && (s.form?.topic || s.form?.examples || s.form?.extra)) : [];
-    sel.innerHTML = `<option value="">AI 생성기 탭 선택…</option>` + list.map((s, i) => `<option value="${i}">${esc(s.name)}${s.form?.topic ? ' · ' + esc(s.form.topic.slice(0, 20)) : ''}</option>`).join('');
-    sel.onchange = () => {
-      const s = list[+sel.value]; if (!s) return;
-      B.vc.topic = s.form.topic || ''; B.vc.examples = s.form.examples || ''; B.vc.extra = s.form.extra || '';
+    const brief=window.AiBrief, structured=s=>s.form?.briefMode==='guided'&&s.form.briefV1&&brief&&!brief.firstProblem(brief.normalize(s.form.briefV1));
+    const list=A?[A.cur,...(A.sessions||[])].filter((s,i,a)=>s&&a.indexOf(s)===i&&(s.form?.briefMode==='guided'?structured(s):s.form?.topic||s.form?.examples||s.form?.extra)):[];
+    sel.innerHTML=`<option value="">AI 생성기 탭 선택…</option>`+list.map((s,i)=>`<option value="${i}">${esc(s.name)}${structured(s)?' · 대화형':s.form?.topic?' · '+esc(s.form.topic.slice(0,20)):''}</option>`).join('');
+    sel.onchange=()=>{
+      if(sel.value==='') return;
+      const s=list[+sel.value]; if(!s)return;
+      if(structured(s)) {
+        B.vc.topic=brief.summary(s.form.briefV1); B.vc.examples=brief.payload(s.form.briefV1).refs.join(', '); B.vc.extra='';
+      } else { B.vc.topic=s.form.topic||''; B.vc.examples=s.form.examples||''; B.vc.extra=s.form.extra||''; }
       if (s.form.minVol != null) B.vc.minVol = s.form.minVol;
       saveVC(); fillVC(); sel.value = '';
       vmsg(`"${s.name}" 탭의 주제·예시·요청 사항·최소 검색량을 가져왔어요.`);

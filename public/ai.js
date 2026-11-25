@@ -1,6 +1,7 @@
 // AI 키워드 생성기: 주제별 탭(왼쪽 사이드바) + 생성 + 중복 검사 + 조건 재검증
 // index.html의 전역 도우미($, $$, esc, fmt, run, openSettings, fillModelSelect, setModel, loadModels, MODEL_LIST)를 사용합니다.
 (function () {
+  const Brief = window.AiBrief;
   const AI = {
     sessions: [], // 저장된 탭: { id, name, custom, pinned, createdAt, updatedAt, form, items }
     cur: null, // 지금 보고 있는 탭 (새 탭은 draft: true)
@@ -10,12 +11,13 @@
     sort: { key: '', dir: 1 },
     pending: null,
     busy: '',
+    briefMode:'direct', tailFilter:'', targetFilter:'', reviewFilter:'',
   };
   Object.defineProperty(AI, 'items', { get: () => AI.cur.items, set: (v) => (AI.cur.items = v) });
 
   // ---------------------------------------------------------------- 저장 (브라우저 localStorage)
   const DEFAULT_FORM = { topic: '', examples: '', count: '50', extra: '', refMode: 'ref', pos: '', neg: '', minLen: 2, maxLen: 30, minVol: 50 };
-  const newDraft = () => ({ id: 's' + Date.now() + Math.floor(Math.random() * 1000), name: '새 탭', custom: false, pinned: false, createdAt: Date.now(), updatedAt: Date.now(), form: { ...DEFAULT_FORM, minVol: RULES().verify?.defaultMinVol ?? DEFAULT_FORM.minVol }, items: [], rejected: [], draft: true });
+  const newDraft = () => ({ id: 's' + Date.now() + Math.floor(Math.random() * 1000), name: '새 탭', custom: false, pinned: false, createdAt: Date.now(), updatedAt: Date.now(), form: { ...DEFAULT_FORM, briefMode:'guided', briefV1:Brief.blank(), minVol: RULES().verify?.defaultMinVol ?? DEFAULT_FORM.minVol }, items: [], rejected: [], draft: true });
   function load() {
     try { AI.sessions = JSON.parse(localStorage.getItem('aiSessions') || '[]'); } catch { AI.sessions = []; }
     for (const s of AI.sessions) {
@@ -58,9 +60,9 @@
       if (!warned) { warned = true; alert('브라우저 저장 공간이 가득 찼어요. 왼쪽에서 오래된 탭을 우클릭해서 삭제해 주세요.'); }
     }
   }
-  const autoName = (s) => (s.form.topic || '').trim().split('\n')[0].slice(0, 30) || splitList(s.form.examples)[0] || (s.form.extra || '').trim().replace(/\s+/g, ' ').slice(0, 24) || '새 탭';
+  const autoName = (s) => ((s.form.briefMode==='guided' && (s.form.briefV1?.product?.trim() || Brief.topicName(s.form.briefV1 || Brief.blank()))) || s.form.topic || '').trim().split('\n')[0].slice(0, 30) || splitList(s.form.examples)[0] || (s.form.extra || '').trim().replace(/\s+/g, ' ').slice(0, 24) || '새 탭';
   // 새 탭은 어느 칸이든 내용을 적으면 바로 기록에 올라가요
-  const hasContent = (c) => c.custom || c.items.length || ['topic', 'examples', 'extra'].some((k) => String(c.form[k] || '').trim());
+  const hasContent = (c) => c.custom || c.items.length || Brief.hasContent(c.form.briefV1) || ['topic', 'examples', 'extra'].some((k) => String(c.form[k] || '').trim());
   function save() {
     const c = AI.cur;
     if (!c) return;
@@ -117,6 +119,12 @@
     return lb.toLocaleString('ko-KR');
   }
   const isBad = (it) => vsum(it).group === '부적합';
+  const isHeld = it => ['hold','exclude'].includes(it.discovery);
+  const isPersonaItem = it => Object.hasOwn(Brief.TAIL_LABELS,it.tail) && !!it.discovery;
+  const dataState = (it,cutoff) => !it.vol&&AI.hasAd===false?'미표시':Brief.volumeState(it.vol,cutoff);
+  const statusText = it => it.discovery==='exclude'?'제외 검토':it.discovery==='hold'?'보류':'검증 대기';
+  const targetNames = it => (Array.isArray(it.personas)?it.personas:[]).map(t=>t.name).filter(Boolean);
+  const exportFilters = () => [AI.filter,AI.vfilter,Brief.TAIL_LABELS[AI.tailFilter],AI.targetFilter,({candidate:'탐색',volume:'검색량검토',hold:'보류'})[AI.reviewFilter]].filter(x=>x&&x!=='전체').join('_').replace(/[\\/:*?"<>|]/g,'').slice(0,68);
   // 부적합 판정 키워드를 탭의 제외 목록에 저장 (다음 생성 때 Gemini에 알려주고, PC에서도 걸러냄)
   // 수동 제외: 체크한 키워드를 판정과 상관없이 제외 목록에 넣고 결과에서 뺌
   async function rejectChecked() {
@@ -303,8 +311,11 @@
       <main class="ai-main">
         <div class="sec"><h2>AI 키워드 생성기</h2>
 ${window.WorkTitle.field('aiTitle')}
+          <div id="aiBriefModes" class="ai-brief-modes" role="group" aria-label="브리프 입력 방식"><button type="button" class="btn sm" id="aiModeGuided">대화형 브리프</button><button type="button" class="btn sm" id="aiModeDirect">직접 입력</button></div>
+          <div id="aiBriefGuide" class="hidden"></div>
           <div class="grid g2">
-            <div class="card"><h3>① 브리프 <span class="muted" id="aiTabName"></span></h3>
+            <div class="card"><h3><span id="aiBriefLabel">① 브리프</span> <span class="muted" id="aiTabName"></span></h3>
+              <div id="aiFreeBrief">
               <label class="muted">무엇을, 누구에게, 왜 찾는지, 빼고 싶은 것까지 자유롭게 써 주세요. AI가 읽고 탐색 계획을 세운 뒤 네이버 실제 검색 데이터에서 찾아요.</label>
               <textarea id="aiTopic" class="inp" rows="5" placeholder="예: 카카오페이 카드 발급 이벤트 검색광고 키워드. 2030 직장인이 카드 발급 직전에 찾을 만한 표현 위주로. 혜택·발급 절차·실물카드 관련은 좋고, 다른 카드사 이름은 빼 줘."></textarea>
               <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px">
@@ -312,6 +323,8 @@ ${window.WorkTitle.field('aiTitle')}
                 <select id="aiRefMode" class="hsel" title="참고만 하기: 방향만 참고하고 전혀 다른 단어로도 찾아요 · 이 결로 확장하기: 참고 키워드와 같은 결로 넓혀요"><option value="ref">참고만 하기</option><option value="expand">이 결로 확장하기</option></select>
               </div>
               <textarea id="aiExamples" class="inp" rows="2" placeholder="예: 카카오페이카드발급, 카카오페이신용카드 (잘 되던 키워드 등)"></textarea>
+              </div>
+              <details id="aiGenDetails" class="ai-gen-details"><summary>고급 생성 설정 <span class="muted">개수 · 검색량 · 금지어 · 조사</span></summary>
               <div class="grid g2 pn-grid" style="gap:10px;margin-top:10px">
                 <div><label class="muted pn-l pos">포함할 것 · Positive <span class="muted">(선택)</span></label>
                   <textarea id="aiPos" class="inp" rows="3" placeholder="꼭 다뤄야 할 방향·단어·대상 (쉼표나 줄바꿈)&#10;예: 발급 혜택, 캐시백, 실물카드, 사회초년생"></textarea></div>
@@ -341,6 +354,8 @@ ${window.WorkTitle.field('aiTitle')}
               <div class="av-row"><label class="muted" style="display:flex;gap:6px;align-items:center" title="생성이 끝나면 새로 들어온 키워드를 바로 이 탭의 주제·예시·요청 사항과 최소 월간 검색량으로 한 번 판정해요 (AI를 한 번 더 써요)"><input type="checkbox" id="aiAutoVerify"> 생성하면서 조건 재검증까지 하기 (진행은 막대 하나로)</label><label class="av-mv muted" title="이 값보다 월간 검색량(PC+Mobile)이 적으면 부적합으로 처리해요. 0이면 검색량 기준 없이 AI 판단만 써요. 아래 결과의 '최소 월간 검색량'과 같은 값이에요.">최소 월간 검색량 <input type="number" id="aiMinVol2" min="0" step="10"></label></div>
               <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px" title="AI가 브리프에서 뽑은 씨앗 단어마다 네이버 키워드 도구·자동완성·관련 검색어를 조회해 실제 검색 데이터를 모으고, AI가 그 안에서 고르고 빈 각도를 채워요"><input type="checkbox" id="aiSeed"> 네이버 실제 검색 데이터로 서칭하기 (키워드 도구 · 자동완성 · 관련 검색어)</label>
               <label class="muted" style="display:flex;gap:6px;align-items:center;margin-top:6px" title="웹 검색이 되는 로그인형 AI(Claude 또는 GPT)가 브리프 주제를 먼저 조사해요: 공식 페이지·이벤트 조건, 후기·커뮤니티 표현, 경쟁 광고 문구. 그 결과로 씨앗 단어를 정해요. 1~3분 더 걸리고 구독 사용량을 더 써요"><input type="checkbox" id="aiWeb"> AI가 웹을 먼저 조사하기 (1~3분 더)<span id="aiWebWho" style="font-size:12px"></span></label>
+              </details>
+              <div id="aiGuideSendNote" class="muted hidden">생성을 누르면 브리프가 선택한 AI로 전송돼요. 광고 등록·입찰 변경은 하지 않아요.</div>
               <div id="aiModel" class="ai-model-row"></div>
               <div style="display:flex;gap:8px;margin-top:12px">
                 <button class="btn pri" id="aiGen">키워드 생성</button>
@@ -378,6 +393,12 @@ ${window.WorkTitle.field('aiTitle')}
             </div>
             <div class="frow"><span class="flabel">중복 검사</span><div class="chips" id="aiFilters"></div></div>
             <div class="frow"><span class="flabel">조건 검증</span><div class="chips" id="aiVFilters"></div></div>
+            <div id="aiPersonaFilters" class="frow ai-persona-filters hidden" aria-label="페르소나 결과 필터">
+              <label>유형 <select class="hsel" id="aiTailFilter"><option value="">전체</option><option value="short">숏테일</option><option value="long">롱테일</option></select></label>
+              <label>타깃 <select class="hsel" id="aiTargetFilter"><option value="">전체</option></select></label>
+              <label>상태 <select class="hsel" id="aiReviewFilter"><option value="">전체</option><option value="candidate">검색량 기준 충족</option><option value="volume">소량·미조회·기준 미달</option><option value="hold">보류·제외 검토</option></select></label>
+              <span class="muted" id="aiPersonaCount"></span>
+            </div>
               <div id="aiFbar" style="margin-top:8px"></div>
             <div class="toolbar" style="margin-top:10px">
               <input id="aiManual" placeholder="후보 직접 추가 (쉼표로 구분)" style="flex:1;min-width:180px">
@@ -423,6 +444,10 @@ ${window.WorkTitle.field('aiTitle')}
     addEventListener('pagehide', saveNow);
     addEventListener('beforeunload', saveNow);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveNow(); });
+    AI.guide = window.AiBriefUI.mount($('#aiBriefGuide'), {onChange:saveSoon, onReview:saveNow});
+    $('#aiModeGuided').onclick = () => changeBriefMode('guided');
+    $('#aiModeDirect').onclick = () => changeBriefMode('direct');
+    for (const [id,key] of [['aiTailFilter','tailFilter'],['aiTargetFilter','targetFilter'],['aiReviewFilter','reviewFilter']]) $('#'+id).onchange = e => { AI[key]=e.target.value; draw(); };
     $('#aiGen').onclick = () => generate(false);
     $('#aiMore').onclick = () => generate(true);
     $('#aiFile').onchange = (e) => handleFiles([...e.target.files]);
@@ -462,7 +487,7 @@ ${window.WorkTitle.field('aiTitle')}
     };
     $('#aiSelBad').onclick = selectBad;
     $('#aiOkSel').onclick = () => {
-      const sel = AI.items.filter((it) => it._sel);
+      const sel=AI.items.filter(it=>it._sel&&!isHeld(it));
       if (!sel.length) return toast('적합으로 바꿀 키워드를 먼저 체크하세요.', 'warn');
       for (const it of sel) { it.decision = { pass: true, reason: '직접 적합', at: Date.now() }; it._sel = false; }
       save(); draw();
@@ -471,7 +496,7 @@ ${window.WorkTitle.field('aiTitle')}
     $('#aiFp').onclick = () => { const FP = window.FocusPick; if (!FP) return; if (FP.on) FP.stop(); else FP.start($('#aiTbl')); };
     $('#aiDel2').onclick = () => $('#aiDel').click();
     $('#aiRejSel').onclick = rejectChecked;
-    $('#aiMinVol').addEventListener('change', () => save());
+    $('#aiMinVol').addEventListener('change', () => {save();draw();});
     // 위(생성하면서 재검증) · 아래(결과의 조건 재검증) 최소 월간 검색량 연동
     const mvA = $('#aiMinVol'), mvB = $('#aiMinVol2');
     mvB.addEventListener('input', () => { mvA.value = mvB.value; mvA.dispatchEvent(new Event('input', { bubbles: true })); });
@@ -483,8 +508,7 @@ ${window.WorkTitle.field('aiTitle')}
     // 기존 키워드를 Gemini에 보내기: 기본 켜짐, 마지막 선택을 기억
     AI.fb = FilterBar($('#aiFbar'), { ranges: [['total', '월간 검색량'], ['pc', 'PC 검색량'], ['mo', '모바일 검색량'], ['len', '글자 수']], main: ['total', 'len'], onChange: () => draw() });
     const se = $('#aiSendExisting');
-    se.checked = localStorage.getItem('aiSendExisting') !== '0';
-    se.onchange = () => localStorage.setItem('aiSendExisting', se.checked ? '1' : '0');
+    se.onchange = () => localStorage.setItem(AI.briefMode==='guided'?'aiBriefSendExisting':'aiSendExisting', se.checked ? '1' : '0');
     $('#aiClear').onclick = async () => {
       const nBad = AI.items.filter(isBad).length;
       if (!await uiConfirm(`이 탭의 결과를 모두 지울까요? (기존 키워드 목록은 그대로)${nBad ? `\n부적합 ${nBad}개는 제외 목록에 남아서 다시 생성되지 않아요.` : ''}`)) return;
@@ -494,12 +518,13 @@ ${window.WorkTitle.field('aiTitle')}
     // 키워드 도구로 시작: 기본 켜짐, 결과에 넣을 연관 키워드 수 기본 30개 (마지막 선택 기억)
     $('#aiSeed').checked = localStorage.getItem('aiSeed') !== '0';
     $('#aiSeed').onchange = (e) => localStorage.setItem('aiSeed', e.target.checked ? '1' : '0');
-    $('#aiWeb').checked = localStorage.getItem('aiWeb') !== '0';
-    $('#aiWeb').onchange = (e) => localStorage.setItem('aiWeb', e.target.checked ? '1' : '0');
+    $('#aiWeb').onchange = e => localStorage.setItem(AI.briefMode==='guided'?'aiBriefWeb':'aiWeb', e.target.checked ? '1' : '0');
     // 웹 조사 AI: 자동 (지금 고른 AI가 Claude·GPT면 그것, 아니면 Claude → GPT)
     const fillWebProv = () => fetch('/api/ai/web-info').then((x) => x.json()).then((j) => {
       const w = $('#aiWebWho'); if (w) w.textContent = j.name ? ` · 조사: ${j.name}` : ' · 웹 조사 되는 AI(Claude·GPT 로그인형) 없음';
-      if (!j.name) { $('#aiWeb').checked = false; $('#aiWeb').disabled = true; }
+      $('#aiWeb').disabled = !j.name;
+      if (!j.name) $('#aiWeb').checked = false;
+      else syncGuidePreferences();
     }).catch(() => {});
     fillWebProv();
     window.__fillWebProv = fillWebProv; // AI를 바꾸면 '자동'이 누구인지 다시 표시 (refreshModel에서 부름)
@@ -510,7 +535,7 @@ ${window.WorkTitle.field('aiTitle')}
     $('#aiTxt').onclick = () => {
       if (!AI.items.length) return alert('내보낼 결과가 없어요');
       const name = (AI.cur.name || 'AI키워드').replace(/[\\/:*?"<>|]/g, '').slice(0, 30);
-      const tag = [AI.filter, AI.vfilter].filter((x) => x !== '전체').join('_');
+      const tag=exportFilters();
       downloadTxt(viewRows().map((it) => it.keyword), `${name}_${tag ? tag + '_' : ''}${new Date().toISOString().slice(0, 10)}`);
     };
 
@@ -557,7 +582,37 @@ ${window.WorkTitle.field('aiTitle')}
     $('#aiLenMin').value = f.minLen;
     $('#aiLenMax').value = f.maxLen;
     $('#aiMinVol').value = f.minVol; $('#aiMinVol2').value = f.minVol;
+    AI.guide.load(Brief.normalize(f.briefV1));
+    setBriefMode(f.briefMode==='guided'?'guided':'direct');
     lenUI();
+  }
+  function syncGuidePreferences() {
+    const guided=AI.briefMode==='guided';
+    $('#aiSendExisting').checked=guided ? localStorage.getItem('aiBriefSendExisting')==='1' : localStorage.getItem('aiSendExisting')!=='0';
+    $('#aiWeb').checked=!$('#aiWeb').disabled && (guided ? localStorage.getItem('aiBriefWeb')==='1' : localStorage.getItem('aiWeb')!=='0');
+  }
+  function setBriefMode(mode) {
+    AI.briefMode=mode;
+    const guided=mode==='guided';
+    $('#aiBriefGuide').classList.toggle('hidden',!guided);
+    $('#aiFreeBrief').classList.toggle('hidden',guided);
+    $('#aiGuideSendNote').classList.toggle('hidden',!guided);
+    $('#aiBriefLabel').textContent=guided?'① 키워드 생성':'① 브리프';
+    $('#aiModeGuided').setAttribute('aria-pressed',String(guided));
+    $('#aiModeDirect').setAttribute('aria-pressed',String(!guided));
+    $('#aiModeGuided').classList.toggle('on',guided);
+    $('#aiModeDirect').classList.toggle('on',!guided);
+    $('#aiGenDetails').open=!guided;
+    $('#aiMinVol2').closest('label').title=guided?'검색량 기준 미달·미조회 후보는 삭제하지 않고 별도로 볼 수 있어요.':'이 값보다 월간 검색량이 적으면 재검증에서 부적합으로 처리해요.';
+    syncGuidePreferences();
+  }
+  function changeBriefMode(mode) {
+    if (AI.busy || mode===AI.briefMode) return;
+    setBriefMode(mode); save(); drawPlan(); draw();
+  }
+  function lockBrief(on) {
+    AI.guide.setBusy(on);
+    for (const id of ['aiModeGuided','aiModeDirect','aiTopic','aiExamples','aiRefMode','aiPos','aiNeg','aiCount','aiLenMin','aiLenMax','aiBanN','aiBanG','aiSendExisting']) $('#'+id).disabled=on;
   }
   // 설정의 금지 키워드 (켠 것만)
   function bannedList(f) {
@@ -578,13 +633,14 @@ ${window.WorkTitle.field('aiTitle')}
   }
   window.__AI_banCount = () => { try { banCount(); } catch {} };
   function readForm() {
-    return { topic: $('#aiTopic').value, examples: $('#aiExamples').value, count: $('#aiCount').value, extra: '', refMode: $('#aiRefMode').value, pos: $('#aiPos').value, neg: $('#aiNeg').value, banN: $('#aiBanN').checked, banG: $('#aiBanG').checked, minLen: +$('#aiLenMin').value, maxLen: +$('#aiLenMax').value, minVol: Math.max(0, Math.round(+$('#aiMinVol').value || 0)) };
+    const briefV1=AI.guide.read();
+    return { briefMode:AI.briefMode, ...(AI.briefMode==='guided'||Brief.hasContent(briefV1) ? {briefV1} : {}), topic: $('#aiTopic').value, examples: $('#aiExamples').value, count: $('#aiCount').value, extra: '', refMode: $('#aiRefMode').value, pos: $('#aiPos').value, neg: $('#aiNeg').value, banN: $('#aiBanN').checked, banG: $('#aiBanG').checked, minLen: +$('#aiLenMin').value, maxLen: +$('#aiLenMax').value, minVol: Math.max(0, Math.round(+$('#aiMinVol').value || 0)) };
   }
 
   // ---------------------------------------------------------------- 탭 (왼쪽 사이드바)
   function openTab(s) {
     AI.cur = s;
-    AI.filter = '전체'; AI.vfilter = '전체'; AI.sort = { key: '', dir: 1 }; AI.fb?.reset();
+    AI.filter = '전체'; AI.vfilter = '전체'; AI.sort = { key: '', dir: 1 }; AI.tailFilter=AI.targetFilter=AI.reviewFilter=''; AI.fb?.reset();
     fillForm(s.form);
     $('#aiTitle').value = s.custom ? s.name : '';
     drawPlan();
@@ -614,7 +670,7 @@ ${window.WorkTitle.field('aiTitle')}
       ${pinned.length ? `<div class="side-h">고정됨</div>${pinned.map(item).join('')}` : ''}
       <div class="side-h">기록</div>
       ${recent.map(item).join('') || '<div class="muted" style="padding:6px 10px;font-size:12px">키워드를 생성하면 주제별로 여기 쌓여요</div>'}`;
-    $('#sideNew').onclick = () => { if (guardBusy()) return; openTab(newDraft()); $('#aiTopic').focus(); };
+    $('#sideNew').onclick = () => { if (guardBusy()) return; openTab(newDraft()); AI.guide.focus?.(); };
     // 초기화: 작성하던 게 있으면 탭으로 저장하고 빈 새 탭
     window.__RESET_ai = () => {
       if (guardBusy()) return null;
@@ -760,36 +816,50 @@ ${window.WorkTitle.field('aiTitle')}
 
   const postJson = async (url, body, signal) => { const j = await (await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal })).json(); if (j.error) throw new Error(j.error); return j; };
   function drawPlan() {
-    const p = AI.cur?.plan, box = $('#aiPlan');
+    const p = isGuided() ? AI.cur?.personaPlan : AI.cur?.plan, box = $('#aiPlan');
     if (!box) return;
     box.classList.toggle('hidden', !p);
     if (!p) return;
     $('#aiPlanBody').innerHTML = `<div><b>검색 의도</b> ${esc(p.intent || '-')}</div>${p.audience ? `<div><b>타깃</b> ${esc(p.audience)}</div>` : ''}
+      ${p.personas?.length ? `<div class="ai-persona-plan">${p.personas.map(t=>`<div><b>${esc(t.name)}</b> <span class="muted">${esc(t.source)}</span> · ${esc(t.situation)}${t.need?` / 확인: ${esc(t.need)}`:''}<br><span class="muted">시드: ${esc((t.seeds||[]).join(', ')||'별도 시드 없음')} · 의도: ${esc((t.angles||[]).join(', ')||'미분류')}</span></div>`).join('')}</div>`:''}
       <div><b>각도</b> ${(p.angles || []).map((x) => `<span class="chip">${esc(x)}</span>`).join(' ')}</div>
       <div><b>씨앗 단어</b> ${(p.seeds || []).map(esc).join(', ')}</div>${(p.avoid || []).length ? `<div><b>피할 것</b> ${p.avoid.map(esc).join(', ')}</div>` : ''}
       ${(p.webFindings || []).length ? `<div><b>웹 조사</b> <span class="muted">${esc(p.webBy || '')}</span><ul style="margin:4px 0 0 18px;padding:0">${p.webFindings.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>${(p.webSources || []).length ? `<div class="muted" style="font-size:12px">출처: ${p.webSources.map((u, i) => `<a class="ext" target="_blank" rel="noopener" href="${esc(u)}">${i + 1}</a>`).join(' ')}</div>` : ''}</div>` : ''}
       ${p.data ? `<div class="muted">실제 검색 데이터: 키워드 도구 ${p.data.kt.toLocaleString('ko-KR')}개 · 자동완성·관련 검색어 ${p.data.sug.toLocaleString('ko-KR')}개를 모아 AI에 보여줌</div>` : ''}`;
   }
+  const isGuided = () => AI.briefMode==='guided';
+  const effectiveTopic = (form) => form.briefMode==='guided' ? Brief.summary(form.briefV1) : form.topic;
+  const refsFor = (form) => form.briefMode==='guided' ? Brief.payload(form.briefV1).refs : splitList(form.examples);
+  const guidedSeeds = (state,refs) => Brief.words([...refs,...state.product.trim().split(/[\s,/()]+/).slice(0,8),state.customTopic],12);
   // 생성: ① AI가 브리프 해석(탐색 계획·씨앗 단어) → ② 분석기가 씨앗으로 네이버 실제 검색 데이터 서칭 → ③ AI가 그 안에서 고르고 빈 각도 채움 → 검색량 → 재검증
   async function generate(more) {
-    const form = readForm();
-    const refs = splitList(form.examples);
-    const refMode = form.refMode === 'expand' ? 'expand' : 'ref';
-    if (!form.topic.trim() && !refs.length) return msg('브리프를 넣어주세요', true);
-    if (!more && AI.items.length && !await uiConfirm('이 탭의 결과를 지우고 새로 생성할까요? (이어서 받으려면 "이어서 더 생성", 다른 주제면 왼쪽 "+ 새 탭")')) return;
-    if (!more) { rejectItems(AI.items); AI.items = []; }
-    const avoid = [...refs, ...AI.items.map((it) => it.keyword)];
-    const rejected = (AI.cur.rejected || []).slice(-150);
-    const existing = $('#aiSendExisting').checked ? pickExisting(form.topic, refs, 2000) : [];
+    if (AI.busy) return;
+    const form = readForm(), session = AI.cur;
+    const guided=form.briefMode==='guided', state=form.briefV1;
+    const topic=effectiveTopic(form), refs=refsFor(form), pos=splitList(form.pos);
+    const neg=[...negAll(form),...(guided ? Brief.payload(state).excludeIntents : [])];
+    const refMode=!guided && form.refMode==='expand'?'expand':'ref';
+    if (guided) {
+      const issue=Brief.firstProblem(state);
+      if (issue) { AI.guide.showProblem(); return msg(issue.message,true); }
+      if (state.step!==4) return msg('대화형 브리프에서 마지막 검토 단계까지 마친 뒤 생성해 주세요.',true);
+    } else if (!topic.trim()&&!refs.length) return msg('브리프를 넣어 주세요',true);
+    if (!more && session.items.length && !await uiConfirm('새 후보가 준비되면 이 탭의 결과를 교체할까요? 이어서 받으려면 “이어서 더 생성”을 눌러 주세요.')) return;
+    if (session!==AI.cur || AI.busy) return;
+    const replacing=!more && session.items.length>0;
+    const avoid=[...refs,...(more ? session.items.map(it=>it.keyword) : [])];
+    const rejected=[...(session.rejected||[]),...(replacing ? session.items.filter(isBad).map(it=>({keyword:it.keyword,reason:'이전 결과 부적합'})) : [])].slice(-150);
+    const existing=$('#aiSendExisting').checked ? pickExisting(guided ? state.product : topic,refs,2000) : [];
     const b1 = $('#aiGen'), b2 = $('#aiMore'), stop = $('#aiStop');
     b1.disabled = b2.disabled = true;
     stop.classList.remove('hidden');
     msg('');
     AI.busy = '키워드 생성';
-    save();
+    lockBrief(true); save();
     const auto = $('#aiAutoVerify').checked;
     const useData = $('#aiSeed').checked;
     const useWeb = $('#aiWeb').checked && !$('#aiWeb').disabled;
+    const signature=JSON.stringify([guided?Brief.payload(state):topic,refs,refMode,pos,neg,useWeb]);
     const P = progress($('#aiProg'), Number(form.count), '키워드 작성 중');
     const ctrl = new AbortController();
     const holder = {};
@@ -798,39 +868,55 @@ ${window.WorkTitle.field('aiTitle')}
     const isAbort = (e) => stopped || e.name === 'AbortError';
     try {
       // ① 브리프 해석 ("이어서 더 생성"은 이미 세운 계획을 다시 씀)
-      let plan = more && AI.cur.plan ? AI.cur.plan : null, planFail = '', web = null, webFail = '';
+      const savedPlan=guided?session.personaPlan:session.plan;
+      let plan=more&&savedPlan?.signature===signature?savedPlan:null, planFail='',web=null,webFail='';
       // ⓪ 웹 조사 (선택)
       if (!plan && useWeb) {
         P.stage(0, 16, 1, '웹 조사');
         P.phase('AI가 웹에서 브리프 주제를 조사하는 중 (1~3분)', 20);
-        try { web = await postJson('/api/ai/web-research', { brief: form.topic, refs, pos: splitList(form.pos), neg: negAll(form), webProvider: '' }, ctrl.signal); }
+        try { web = await postJson('/api/ai/web-research', {brief:topic,refs,pos,neg,webProvider:''}, ctrl.signal); }
         catch (e) { if (isAbort(e)) throw e; webFail = e.message; }
       }
       if (!plan) {
         P.stage(useWeb ? 16 : 0, useWeb ? 22 : 10, 1, '브리프 해석');
         P.phase('AI가 브리프를 읽고 탐색 계획을 세우는 중', 30);
         try {
-          plan = await postJson('/api/ai/plan', { brief: form.topic, refs, refMode, pos: splitList(form.pos), neg: negAll(form), web: web ? { findings: web.findings, terms: web.terms } : null }, ctrl.signal);
-          if (web) Object.assign(plan, { webFindings: web.findings, webSources: web.sources, webBy: web.by, webTerms: web.terms });
-          AI.cur.plan = plan; save(); drawPlan();
-        } catch (e) { if (isAbort(e)) throw e; planFail = e.message; }
+          const request={brief:topic,refs,refMode,pos,neg,web:web?{findings:web.findings,terms:web.terms}:null};
+          if (guided) {
+            const planned=await streamPost('/api/ai/persona-plan-stream',{...request,briefV1:state},ev=>{if(ev.type!=='progress') P.event(ev);},ctrl.signal,holder);
+            const {type,...found}=planned; plan=found;
+          } else plan=await postJson('/api/ai/plan',request,ctrl.signal);
+          if (web) Object.assign(plan,{webFindings:web.findings,webSources:web.sources,webBy:web.by,webTerms:web.terms});
+          plan.signature=signature;
+          if (guided) session.personaPlan=plan; else session.plan=plan;
+          save(); drawPlan();
+        } catch (e) {
+          if (isAbort(e) || guided&&state.personaMode==='ai') throw e;
+          planFail=e.message;
+          if (guided) plan={personas:Brief.people(state),seeds:guidedSeeds(state,refs),angles:[],avoid:[],webFindings:web?.findings||[]};
+        }
       }
       // ② 실제 검색 데이터 서칭
       let data = null, dataFail = '';
       if (useData) {
         P.stage(useWeb ? 22 : 10, useWeb ? 32 : 22, 1, '서칭');
         P.phase('씨앗 단어로 네이버 실제 검색 데이터 모으는 중 (키워드 도구 · 자동완성 · 관련 검색어)', 30);
-        const words = plan?.seeds?.length ? [...new Set([...plan.seeds, ...(plan.webTerms || []).slice(0, 5)])].slice(0, 25) : [...new Set([...form.topic.split(/[\s,./]+/).filter((w) => w.length >= 2), ...refs])].slice(0, 15);
-        try { data = await postJson('/api/ai/research', { seeds: words, refs }, ctrl.signal); if (plan) { plan.data = { kt: data.list.length, sug: data.suggest.length }; drawPlan(); } }
-        catch (e) { if (isAbort(e)) throw e; dataFail = e.message; }
+        const words=plan?.seeds?.length ? [...new Set([...plan.seeds,...(plan.webTerms||[]).slice(0,5)])].slice(0,25) : guided ? guidedSeeds(state,refs) : [...new Set([...topic.split(/[\s,./]+/).filter(w=>w.length>=2),...refs])].slice(0,15);
+        try {
+          data=guided ? await streamPost('/api/ai/persona-research-stream',{seeds:words,refs},()=>{},ctrl.signal,holder) : await postJson('/api/ai/research',{seeds:words,refs},ctrl.signal);
+          if (plan) {plan.data={kt:data.list.length,sug:data.suggest.length};drawPlan();}
+        } catch (e) {if (isAbort(e)) throw e; dataFail=e.message;}
       }
       // ③ 발굴
       P.stage(useData ? (useWeb ? 32 : 22) : (useWeb ? 22 : 10), auto ? 60 : 100, Number(form.count), '키워드 작성 중');
-      const j = await streamPost('/api/ai/generate-stream', { topic: form.topic, examples: refs, refMode, pos: splitList(form.pos), neg: negAll(form), plan: plan ? { intent: plan.intent, audience: plan.audience, angles: plan.angles, avoid: plan.avoid, web: plan.webFindings || [] } : null, count: Number(form.count), avoid, existing, rejected, minLen: form.minLen, maxLen: form.maxLen, seeds: (data?.list || []).slice(0, 300).map((x) => ({ keyword: x.keyword, total: x.total })), suggest: (data?.suggest || []).slice(0, 200).map((x) => ({ keyword: x.keyword, total: x.total })) }, (ev) => P.event(ev), ctrl.signal, holder);
+      const dataWords=(rows,n) => (rows||[]).slice(0,n).map(x=>guided ? {keyword:x.keyword,from:x.from} : {keyword:x.keyword,total:x.total});
+      const genPlan=plan ? {intent:plan.intent,audience:plan.audience,angles:plan.angles,avoid:plan.avoid,web:plan.webFindings||[],...(guided?{personas:plan.personas}:{})} : null;
+      const j=await streamPost('/api/ai/generate-stream',{topic,examples:refs,refMode,pos,neg,plan:genPlan,count:Number(form.count),avoid,existing,rejected,minLen:form.minLen,maxLen:form.maxLen,seeds:dataWords(data?.list,300),suggest:dataWords(data?.suggest,200),...(guided?{briefV1:state}:{})},ev=>P.event(ev),ctrl.signal,holder);
+      if (stopped) throw Object.assign(new Error('중지됨'),{name:'AbortError'});
       const exN = new Set(refs.map(norm));
       const inLen = j.items.filter((x) => { const L = charLen(x.keyword); return L >= form.minLen && L <= form.maxLen; });
       const outLen = j.items.length - inLen.length;
-      const rejIdx = buildIndex((AI.cur.rejected || []).map((r) => r.keyword));
+      const rejIdx = buildIndex(rejected.map(r=>r.keyword));
       const notRej = inLen.filter((x) => !isRejected(x.keyword, rejIdx));
       const rejN = inLen.length - notRej.length;
       // 기존 키워드(②)와 띄어쓰기·대소문자·기호만 다른 동일 키워드는 결과에 넣지 않음
@@ -842,34 +928,49 @@ ${window.WorkTitle.field('aiTitle')}
       const negN = notSame.length - notNeg.length;
       const got = notNeg.filter((x) => !exN.has(norm(x.keyword)));
       // 실제 검색 데이터에 있던 키워드는 출처를 표시하고 검색량을 바로 붙임
-      const dmap = new Map((data?.list || []).map((x) => [norm(x.keyword), x]));
-      const smap = new Map((data?.suggest || []).map((x) => [norm(x.keyword), x]));
-      const r = addItems(got.map((x) => { const dd = dmap.get(norm(x.keyword)); return dd ? { ...x, source: '검색데이터', vol: { pc: dd.pc, mo: dd.mo, total: dd.total, comp: dd.comp, pcLow: dd.pcLow, moLow: dd.moLow } } : smap.has(norm(x.keyword)) ? (() => { const sx = smap.get(norm(x.keyword)); return { ...x, source: '자동완성', vol: sx.total != null ? (sx.notFound ? { pc: 0, mo: 0, total: 0, comp: '-', notFound: true } : { pc: sx.pc, mo: sx.mo, total: sx.total, comp: sx.comp, pcLow: sx.pcLow, moLow: sx.moLow }) : null }; })() : { ...x, source: 'AI' }; }));
+      const lookup=guided ? Brief.key : norm;
+      const dmap=new Map((data?.list||[]).map(x=>[lookup(x.keyword),x]));
+      const smap=new Map((data?.suggest||[]).map(x=>[lookup(x.keyword),x]));
+      const volume=x=>({pc:x.pc,mo:x.mo,total:x.total,comp:x.comp,pcLow:x.pcLow,moLow:x.moLow,...(x.checkedAt?{checkedAt:x.checkedAt}:{}),...(x.notFound?{notFound:true}:{})});
+      const excluded=new Set(guided?Brief.payload(state).excludeIntents.map(Brief.key):[]);
+      const ready=got.map(x=>{
+        if (guided && x.discovery==='candidate' && excluded.has(Brief.key(x.keyword))) x={...x,discovery:'exclude',reason:'브리프에서 요청한 제외 의도와 같은 표현'};
+        const hit=dmap.get(lookup(x.keyword)), suggest=smap.get(lookup(x.keyword));
+        if (hit) return {...x,source:guided?'네이버 키워드 도구':'검색데이터',...(guided?{foundAt:hit.checkedAt||''}:{}),vol:volume(hit)};
+        if (suggest) {
+          const source=guided?(suggest.src||[]).join('·')||'네이버 검색 표현':'자동완성';
+          return {...x,source,...(guided?{foundAt:suggest.foundAt||''}:{}),vol:suggest.notFound||suggest.total!=null||suggest.checkedAt||suggest.pcLow||suggest.moLow?volume(suggest):null};
+        }
+        return {...x,source:'AI'};
+      });
+      if (replacing && !ready.length) {P.finish('조건에 맞는 새 후보 없음'); msg('조건에 맞는 새 후보가 없어 기존 결과를 그대로 뒀어요.'); return;}
+      if (replacing) {rejectItems(session.items);session.items=[];AI.tailFilter=AI.targetFilter=AI.reviewFilter='';}
+      const r=addItems(ready);
       const dupEx = notNeg.length - got.length + r.dropped;
       const fresh = new Set(r.keys);
-      const nData = AI.items.filter((it) => fresh.has(it.keyword) && it.source === '검색데이터').length;
-      const nSug = AI.items.filter((it) => fresh.has(it.keyword) && it.source === '자동완성').length;
-      if (!auto) stop.classList.add('hidden');
+      const nData=ready.filter(it=>fresh.has(it.keyword)&&dmap.has(lookup(it.keyword))).length;
+      const nSug=ready.filter(it=>fresh.has(it.keyword)&&smap.has(lookup(it.keyword))).length;
       // 검색량: 아직 없는 것만
       let volFail = '';
       const needVol = AI.items.filter((it) => fresh.has(it.keyword) && !it.vol).map((it) => it.keyword);
       if (auto) P.stage(60, 72, needVol.length, '검색량 조회');
-      if (AI.hasAd && needVol.length && !stopped) volFail = await attachVolumes(needVol, P);
+      if (AI.hasAd && needVol.length && !stopped) volFail=await attachVolumes(needVol,P,ctrl.signal);
       // 조건 재검증 (새로 들어온 키워드만)
       let vr = null;
-      if (auto && r.keys.length && !stopped) {
-        P.stage(72, 100, r.keys.length, '조건 재검증');
+      const forCheck=AI.items.filter(it=>fresh.has(it.keyword)&&!isHeld(it));
+      if (auto && forCheck.length && !stopped) {
+        P.stage(72,100,forCheck.length,'조건 재검증');
         AI.busy = '조건 재검증';
-        vr = await verify({ items: AI.items.filter((it) => fresh.has(it.keyword)), P, stop });
+        vr=await verify({ items:forCheck, P, stop });
       }
-      P.finish(vr?.stopped ? '중지했어요' : `완료 · ${r.added}개 추가 (실제 검색 데이터 ${nData + nSug} · AI 새 표현 ${r.added - nData - nSug})${vr && !vr.error ? ` · 재검증 적합 ${vr.pass} · 부적합 ${vr.fail}` : ''}`, vr?.stopped ? 'stop' : undefined);
+      P.finish((stopped||vr?.stopped) ? '중지했어요 · 받은 후보는 저장했어요' : `완료 · ${r.added}개 추가 (실제 검색 데이터 ${nData + nSug} · AI 새 표현 ${r.added - nData - nSug})${vr && !vr.error ? ` · 재검증 적합 ${vr.pass} · 부적합 ${vr.fail}` : ''}`, stopped||vr?.stopped ? 'stop' : undefined);
       const head = [webFail ? `웹 조사 실패(${webFail}) → 웹 없이 진행` : web ? `${web.by}가 웹 조사 (사실 ${web.findings.length}개 · 표현 ${web.terms.length}개)` : '', planFail ? `브리프 해석 실패(${planFail}) → 브리프 단어로 진행` : '', useData ? (dataFail ? `서칭 실패(${dataFail}) → AI만으로 생성` : data ? `씨앗 ${data.seeds.length}개로 실제 검색 데이터 ${(data.list.length + data.suggest.length).toLocaleString('ko-KR')}개를 모아 AI에 보여줌` : '') : ''].filter(Boolean).join(' · ');
-      msg(`${head ? head + ' · ' : ''}AI ${j.items.length}개 받음 → ${r.added}개 추가 (실제 검색 데이터에 있던 것 ${nData + nSug}개)${outLen ? `, 글자 수 범위 밖 ${outLen}개 제외` : ''}${rejN ? `, 제외 목록과 같은 ${rejN}개 제외` : ''}${sameN ? `, 기존 키워드와 동일한 ${sameN}개 제외` : ''}${negN ? `, Negative 단어가 들어간 ${negN}개 제외` : ''}${dupEx ? `, 참고 키워드·결과와 겹친 ${dupEx}개 제외` : ''}${existing.length ? ` · 기존 키워드 ${existing.length.toLocaleString('ko-KR')}개를 AI에 알려줌` : ''}${j.fallback ? ` (선택한 모델이 바빠서 ${j.model}(으)로 대신 생성)` : ''}${volFail ? ` · 검색량 조회 실패: ${volFail}` : ''}${!AI.hasAd ? ' · 검색량은 검색광고 API 키를 넣으면 자동으로 붙어요' : ''}${vr ? (vr.error ? ` · 조건 재검증 실패: ${vr.error}` : vr.stopped ? ' · 조건 재검증은 중지했어요' : ` · 조건 재검증: 적합 ${vr.pass} · 부적합 ${vr.fail}`) : ''}`);
+      msg(`${head ? head + ' · ' : ''}AI ${j.items.length}개 받음 → ${r.added}개 추가 (실제 검색 데이터에 있던 것 ${nData + nSug}개)${outLen ? `, 글자 수 범위 밖 ${outLen}개 제외` : ''}${rejN ? `, 제외 목록과 같은 ${rejN}개 제외` : ''}${sameN ? `, 기존 키워드와 동일한 ${sameN}개 제외` : ''}${negN ? `, Negative 단어가 들어간 ${negN}개 제외` : ''}${dupEx ? `, 참고 키워드·결과와 겹친 ${dupEx}개 제외` : ''}${existing.length ? ` · 기존 키워드 ${existing.length.toLocaleString('ko-KR')}개를 AI에 알려줌` : ''}${j.fallback ? ` (선택한 모델이 바빠서 ${j.model}(으)로 대신 생성)` : ''}${guided && data?.errors?.length ? ` · 검색 자료 일부 미확인 (${data.errors.length}건)` : ''}${volFail ? ` · 검색량 조회 실패: ${volFail}` : ''}${!AI.hasAd ? ' · 검색량은 검색광고 API 키를 넣으면 자동으로 붙어요' : ''}${vr ? (vr.error ? ` · 조건 재검증 실패: ${vr.error}` : vr.stopped ? ' · 조건 재검증은 중지했어요' : ` · 조건 재검증: 적합 ${vr.pass} · 부적합 ${vr.fail}`) : ''}`);
     } catch (e) {
       const aborted = isAbort(e);
       P.finish(aborted ? '중지했어요' : '실패', aborted ? 'stop' : 'fail');
       if (!aborted) msg(e.message, true);
-    } finally { AI.busy = ''; b1.disabled = b2.disabled = false; stop.classList.add('hidden'); save(); }
+    } finally { AI.busy=''; lockBrief(false); b1.disabled=b2.disabled=false; stop.classList.add('hidden'); save(); }
   }
 
   // 진행률 막대 (생성 / 재검증 공용, 생각 과정 글은 표시하지 않음)
@@ -925,10 +1026,10 @@ ${window.WorkTitle.field('aiTitle')}
     const inGen = !!opts.items; // 키워드 생성에 이어서 부른 경우
     if (!AI.items.length) return vmsg('검증할 키워드가 없어요', true);
     const sel = inGen ? [] : AI.items.filter((it) => it._sel);
-    const targets = inGen ? opts.items : sel.length ? sel : AI.items.filter((it) => !it.decision);
-    if (!targets.length) return vmsg('직접 판정한 키워드만 남았어요. 다시 판정하려면 체크해서 누르세요.', true);
+    const targets=(inGen?opts.items:sel.length?sel:AI.items.filter(it=>!it.decision)).filter(it=>!isHeld(it));
+    if (!targets.length) return vmsg('재검증할 후보가 없어요. 보류·제외 후보는 이 판정으로 바뀌지 않아요.',true);
     const form = readForm();
-    const conditions = { topic: form.topic, examples: form.refMode === 'expand' ? splitList(form.examples) : [], extra: '', brief: true, pos: splitList(form.pos), neg: negAll(form), judged: MixedReview.judged(AI.items) };
+    const conditions = { topic: effectiveTopic(form), examples: form.briefMode!=='guided' && form.refMode==='expand' ? splitList(form.examples) : [], extra: '', brief: true, pos: splitList(form.pos), neg:[...negAll(form),...(form.briefMode==='guided'?Brief.payload(form.briefV1).excludeIntents:[])], judged: MixedReview.judged(AI.items) };
     if (!conditions.topic.trim() && !conditions.examples.length && !conditions.extra.trim()) { vmsg('이 탭에 주제·예시·요청 사항이 없어서 판정 기준이 없어요', true); return { error: '판정 기준 없음' }; }
     const btn = $('#aiVerify'), stop = opts.stop || $('#aiVStop');
     btn.disabled = true;
@@ -945,18 +1046,18 @@ ${window.WorkTitle.field('aiTitle')}
     let pass = 0, fail = 0, missing = 0, lowVol = 0, model = '', done = 0;
     const minVol = form.minVol;
     // 검색량 하한값: -1 = 네이버 데이터 없음, null = 모름, '<10'은 0으로 셈
-    const volOf = (t) => (!t.vol || t.vol.error ? null : t.vol.notFound ? -1 : volLB(t.vol));
+    const volOf=t=>isPersonaItem(t)?t.vol?.total??null:(!t.vol||t.vol.error?null:t.vol.notFound?-1:volLB(t.vol));
     try {
       // 검색량이 없는 키워드는 판정 전에 먼저 조회
       const need = targets.filter((t) => !t.vol || t.vol.error).map((t) => t.keyword);
-      if (AI.hasAd && need.length) { P.phase(`판정 전에 검색량 조회 중 0/${need.length}`, 3); await attachVolumes(need, { phase: (txt) => P.phase('판정 전에 ' + txt, 4) }); }
+      if (AI.hasAd && need.length) { P.phase(`판정 전에 검색량 조회 중 0/${need.length}`, 3); await attachVolumes(need,{phase:txt=>P.phase('판정 전에 '+txt,4)},ctrl.signal); }
       if (stopped) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
       const B = 50;
       const batches = Math.ceil(targets.length / B);
       for (let i = 0; i < targets.length; i += B) {
         const part = targets.slice(i, i + B);
         P.setBase(done, batches > 1 ? `묶음 ${i / B + 1} / ${batches} (${part.length}개)` : '');
-        const j = await streamPost('/api/ai/verify-stream', { conditions, minVol, keywords: part.map((t) => ({ keyword: t.keyword, volume: volOf(t), comp: t.vol?.comp || null, label: t.vol && !t.vol.error ? volLabel(t.vol, true) : null })) }, (ev) => P.event(ev), ctrl.signal, holder);
+        const j = await streamPost('/api/ai/verify-stream', { conditions, minVol, keywords:part.map(t=>({keyword:t.keyword,volume:isPersonaItem(t)?null:volOf(t),comp:isPersonaItem(t)?null:t.vol?.comp||null,label:isPersonaItem(t)?null:t.vol&&!t.vol.error?volLabel(t.vol,true):null})) }, (ev) => P.event(ev), ctrl.signal, holder);
         model = j.model || model;
         const byN = new Map(j.results.map((r) => [norm(r.keyword), r]));
         part.forEach((it, k) => {
@@ -964,7 +1065,7 @@ ${window.WorkTitle.field('aiTitle')}
           if (!r) { missing++; return; }
           // 최소 검색량 기준은 PC에서 정확히 적용 (Gemini 판정과 합쳐서 최종 판정)
           const v = volOf(it);
-          const g = window.volGate(v, minVol, it.vol?.comp, r, volLabel(it.vol, true));
+          const g=isPersonaItem(it)?{pass:r.pass,reason:r.reason}:window.volGate(v,minVol,it.vol?.comp,r,volLabel(it.vol,true));
           if (g.low) lowVol++;
           const ok = g.pass, reason = g.reason;
           (it.checks = it.checks || []).push({ pass: ok, reason, ai: r.pass, vol: v, minVol, comp: it.vol?.comp || null, at: Date.now(), model: j.model, ...(g.mix ? { mix: true } : {}) });
@@ -1130,7 +1231,7 @@ ${window.WorkTitle.field('aiTitle')}
 
   // ---------------------------------------------------------------- 검색량 / 의미 중복
   // keys를 주면 그 키워드만(생성 직후 자동 조회), 없으면 검색량이 없는 것 전부. P는 진행 표시 객체(선택)
-  async function attachVolumes(keys, P) {
+  async function attachVolumes(keys,P,signal) {
     if (!AI.hasAd) { if (!keys) alert('검색량은 API 설정에서 검색광고 API 키를 넣으면 볼 수 있어요.'); return; }
     const todo = keys || AI.items.filter((it) => !it.vol || it.vol.error).map((it) => it.keyword);
     if (!todo.length) { if (!keys) msg('모든 키워드에 검색량이 붙어 있어요'); return; }
@@ -1140,18 +1241,26 @@ ${window.WorkTitle.field('aiTitle')}
     AI.busy = AI.busy || '검색량 조회';
     let fail = '';
     try {
-      for (let i = 0; i < todo.length; i += 25) {
-        const label = `검색량 조회 중 ${i}/${todo.length}`;
-        btn.textContent = label;
-        P?.phase(label, 95 + (4 * i) / todo.length);
-        const j = await (await fetch('/api/volumes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keywords: todo.slice(i, i + 25) }) })).json();
-        if (j.error) throw new Error(j.error);
-        for (const it of sess.items) if (j.volumes[it.keyword]) it.vol = j.volumes[it.keyword];
-        if (sess === AI.cur) draw();
+      const typed=new Set(sess.items.filter(isPersonaItem).map(it=>it.keyword));
+      const batches=[true,false].flatMap(persona=>{
+        const list=todo.filter(k=>typed.has(k)===persona),out=[];
+        for(let i=0;i<list.length;i+=25)out.push({persona,keywords:list.slice(i,i+25)});
+        return out;
+      });
+      let done=0;
+      for (const chunk of batches) {
+        if (signal?.aborted) break;
+        const label=`검색량 조회 중 ${done}/${todo.length}`;
+        btn.textContent=label;
+        P?.phase(label,95+(4*done)/todo.length);
+        const j=await (await fetch('/api/volumes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(chunk),signal})).json();
+        if(j.error) throw new Error(j.error);
+        for(const it of sess.items) if(Object.hasOwn(j.volumes,it.keyword)) it.vol=j.volumes[it.keyword];
+        done+=chunk.keywords.length;
+        if(sess===AI.cur) draw();
       }
     } catch (e) {
-      fail = e.message;
-      if (!P) alert('검색량 조회 실패: ' + e.message);
+      if(!signal?.aborted){fail=e.message;if(!P)toast('검색량 조회 실패: '+e.message,'warn');}
     } finally {
       AI.busy = prevBusy;
       btn.disabled = false; btn.textContent = '검색량 붙이기';
@@ -1210,7 +1319,7 @@ ${window.WorkTitle.field('aiTitle')}
     if (!size) return;
     const btn = $('#aiGroup'); btn.disabled = true; btn.textContent = `묶는 중... (${targets.length}개)`;
     try {
-      const j = await (await fetch('/api/ai/group', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic: readForm().topic, size, keywords: targets.map((it) => ({ keyword: it.keyword, total: it.vol && !it.vol.error ? volLB(it.vol) : 0 })) }) })).json();
+      const j = await (await fetch('/api/ai/group', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic: effectiveTopic(readForm()), size, keywords: targets.map((it) => ({ keyword: it.keyword, total: it.vol && !it.vol.error ? volLB(it.vol) : 0 })) }) })).json();
       if (j.error) throw new Error(j.error);
       const by = new Map(); j.groups.forEach((g) => g.keywords.forEach((k) => by.set(norm(k), g.group)));
       targets.forEach((it) => { const g = by.get(norm(it.keyword)); if (g) it.adGroup = g; });
@@ -1250,6 +1359,32 @@ ${window.WorkTitle.field('aiTitle')}
       ${v.manual ? `<div class="muted" style="font-size:11px">${it.decision.pass ? '' : esc(it.decision.reason) + ' · '}<a href="#" class="undec" data-undec="${esc(it.keyword)}">직접 판정 취소</a></div>` : last ? `<div class="muted" style="font-size:11px;white-space:normal">${esc(last.reason)}</div>` : ''}${v.cls === 'mix' ? `<div><a href="#" class="undec" data-mix1="${esc(it.keyword)}">어느 쪽으로 할지 정하기</a></div>` : ''}
       ${lenBad ? `<div style="font-size:11px;color:#b91c1c">글자 수 범위 밖 (${L}자)</div>` : ''}`;
   }
+  function personaFilters(rows) {
+    const panel=$('#aiPersonaFilters'), guided=AI.items.some(isPersonaItem);
+    panel.classList.toggle('hidden',!guided);
+    if(!guided)return;
+    const names=[...new Set(AI.items.flatMap(targetNames))];
+    const select=$('#aiTargetFilter'), signature=JSON.stringify(names);
+    if (select.dataset.names!==signature) {
+      select.replaceChildren(new Option('전체',''),...names.map(n=>new Option(n,n)));
+      select.dataset.names=signature;
+    }
+    select.value=AI.targetFilter;
+    $('#aiTailFilter').value=AI.tailFilter;
+    $('#aiReviewFilter').value=AI.reviewFilter;
+    $('#aiPersonaCount').textContent=`표시 ${rows.length.toLocaleString('ko-KR')}개 · 실제 검색 결과와 랜딩 확인 전에는 집행 추천이 아니에요`;
+  }
+  const rankPersona = (it,minVol) => isHeld(it)?4:!isPersonaItem(it)?3:Brief.needsVolumeReview(it.vol,minVol)?2:it.fit==='core'?0:1;
+  const intentOrder = name => Brief.INTENTS.indexOf(name)+1||5;
+  function sortPersona(a,b,minVol) {
+    return rankPersona(a,minVol)-rankPersona(b,minVol) || (a.fit==='core'?0:1)-(b.fit==='core'?0:1) || intentOrder(a.intent)-intentOrder(b.intent) || (b.vol?.total??-1)-(a.vol?.total??-1);
+  }
+  function personaCell(it) {
+    if(!isPersonaItem(it)) return '';
+    const targets=it.personas||[];
+    const detail=targets.map(p=>p.name+' · '+p.situation+(p.need?' / '+p.need:'')).join('\n');
+    return `<div class="ai-persona-row"><span class="chip">${Brief.TAIL_LABELS[it.tail]}</span>${isHeld(it)?` <span class="chip ai-persona-hold">${statusText(it)}</span>`:''}${it.seed?` <span class="muted">시드: ${esc(it.seed)}</span>`:''}${targets.length?`<div class="muted" title="${esc(detail)}">${esc(targets.map(p=>p.name+(p.source===Brief.SOURCE.ai?' (가설)':'')).join(' · '))}</div>`:''}</div>`;
+  }
   function draw() {
     const form = readForm();
     $('#aiTabName').textContent = AI.cur && !AI.cur.draft ? `· ${AI.cur.name}` : '';
@@ -1260,10 +1395,22 @@ ${window.WorkTitle.field('aiTitle')}
     $('#aiVFilters').innerHTML = VGROUPS.map((g) => `<span class="chip click ${AI.vfilter === g ? 'on' : ''}" data-v="${g}">${g} (${vcounts[g]})</span>`).join('');
     $$('#aiVFilters [data-v]').forEach((c) => (c.onclick = () => { AI.vfilter = c.dataset.v; draw(); }));
     $('#aiSummary').textContent = AI.items.length ? `후보 ${AI.items.length}개 · 신규 ${counts['신규']}개 · 일관 적합 ${vcounts['일관 적합']}개` : '';
-    let rows = viewRows();
-    const { key, dir } = AI.sort;
+    const rows=viewRows();
+    personaFilters(rows);
+    const {key,dir}=AI.sort;
+    if(!key&&rows.some(isPersonaItem)) rows.sort((a,b)=>sortPersona(a,b,form.minVol));
     if (key) rows.sort((a, b) => { const x = val(a, key), y = val(b, key); return typeof x === 'number' || typeof y === 'number' ? ((x ?? -1) - (y ?? -1)) * dir : String(x ?? '').localeCompare(String(y ?? ''), 'ko') * dir; });
-    const vcell = (it, k) => {
+    const vcell=(it,k)=>{
+      if (isPersonaItem(it)) {
+        const v=it.vol;
+        if(k==='total') {
+          const state=dataState(it,form.minVol), label=(!v||v.error||v.notFound||state==='일부 미확인')?'':volLabel(v);
+          return `${label ? `<b>${esc(label)}</b><br>` : ''}<span class="muted" title="${esc(v?.checkedAt||'')}">${esc(state)}</span>`;
+        }
+        if(!v||v.error||v.notFound) return '';
+        if(k==='comp') return esc(v.comp||'–');
+        return v[k+'Low']?'&lt;10':v[k]==null?'<span class="muted">미확인</span>':fmt(v[k]);
+      }
       if (!it.vol) return AI.hasAd === false ? (k === 'total' ? '<span class="muted" title="API 설정에서 검색광고 키를 넣으면 자동으로 표시돼요">키 필요</span>' : '') : '<span class="muted" title="[검색량 붙이기]를 누르면 조회해요">-</span>';
       if (it.vol.error) return '<span class="muted" title="' + esc(it.vol.error) + '">오류</span>';
       if (it.vol.notFound) return k === 'total' ? '<span class="muted">데이터 없음</span>' : '';
@@ -1276,15 +1423,15 @@ ${window.WorkTitle.field('aiTitle')}
     $('#aiTbl').innerHTML = `<thead><tr><th class="l" style="width:30px"><input type="checkbox" id="aiAll" title="표에 보이는 키워드 전체 체크 / 다시 누르면 전체 해제"></th>${COLS.map(([k, n, c]) => `<th data-k="${k}" class="${c || ''} ${key === k ? 'sorted' : ''}">${n}<span class="ar">${key === k ? (dir < 0 ? '▼' : '▲') : '↕'}</span></th>`).join('')}<th></th></tr></thead>
       <tbody>${rows.map((it) => `<tr>
         <td class="l"><input type="checkbox" data-sel="${esc(it.keyword)}" ${it._sel ? 'checked' : ''}></td>
-        <td class="l kwc"><a href="#" data-go="${esc(it.keyword)}">${esc(it.keyword)}</a>${it.source && it.source !== 'AI' ? ` <span class="muted" title="${it.source === '검색데이터' ? '네이버 키워드 도구에 실제로 있는 키워드' : it.source === '자동완성' ? '네이버·구글 자동완성/관련 검색어에 실제로 나온 키워드' : ''}">(${esc(it.source)})</span>` : ''}</td>
+        <td class="l kwc"><a href="#" data-go="${esc(it.keyword)}">${esc(it.keyword)}</a>${it.source && it.source !== 'AI' ? ` <span class="muted" title="${it.source === '검색데이터' ? '네이버 키워드 도구에 실제로 있는 키워드' : it.source === '자동완성' ? '네이버·구글 자동완성/관련 검색어에 실제로 나온 키워드' : ''}">(${esc(it.source)})</span>` : ''}${personaCell(it)}</td>
         <td class="l"><span class="st" data-s="${esc(it.status)}">${esc(it.status)}</span>${it.kind ? `<div class="muted" style="font-size:11px">${esc(it.kind)}</div>` : ''}</td>
-        <td class="l" style="min-width:150px">${verifyCell(it, form)}</td>
+        <td class="l" style="min-width:150px">${isHeld(it)?`<span class="muted">${statusText(it)}</span>`:verifyCell(it,form)}</td>
         <td class="l">${esc(it.match || '')}</td>
         <td class="l">${esc(it.intent || '')}</td>
         <td class="l muted" style="white-space:normal;min-width:110px">${esc(it.reason || '')}</td>
         <td>${vcell(it, 'total')}</td><td class="pc">${vcell(it, 'pc')}</td><td class="mo">${vcell(it, 'mo')}</td><td>${vcell(it, 'comp')}</td>
         <td><a href="#" class="muted" data-x="${esc(it.keyword)}" title="삭제" style="text-decoration:none">✕</a></td></tr>`).join('') ||
-        `<tr><td colspan="12" class="l muted" style="padding:24px">${AI.items.length ? '이 조건에 맞는 키워드가 없어요' : '① 에서 주제와 예시를 넣고 "키워드 생성"을 누르세요. 다른 주제는 왼쪽 "+ 새 탭"에서 시작하면 주제별로 따로 저장돼요.'}</td></tr>`}</tbody>`;
+        `<tr><td colspan="12" class="l muted" style="padding:24px">${AI.items.length ? '이 조건에 맞는 키워드가 없어요' : '브리프를 작성하고 “키워드 생성”을 누르세요. 다른 주제는 왼쪽 “+ 새 탭”에서 시작할 수 있어요.'}</td></tr>`}</tbody>`;
     $$('#aiTbl th[data-k]').forEach((th) => (th.onclick = () => { const k = th.dataset.k; AI.sort = { key: k, dir: AI.sort.key === k ? -AI.sort.dir : ['total', 'pc', 'mo', 'verify', 'comp'].includes(k) ? -1 : 1 }; draw(); }));
     const syncAll = () => {
       const n = rows.filter((it) => it._sel).length, cb = $('#aiAll');
@@ -1317,34 +1464,49 @@ ${window.WorkTitle.field('aiTitle')}
   }
   const fval = (it, k) => {
     if (k === 'len') return charLen(it.keyword);
-    const v = it.vol;
+    const v=it.vol;
+    if(isPersonaItem(it)&&(!v||v.error||v.notFound||v[k+'Low']||(k==='total'&&(v.pcLow||v.moLow||v.total==null))))return null;
     if (!v || v.error || v.notFound) return null;
     if (k === 'total') return (v.pcLow ? 0 : v.pc || 0) + (v.moLow ? 0 : v.mo || 0);
     if (k === 'pc') return v.pcLow ? 0 : v.pc ?? null;
     if (k === 'mo') return v.moLow ? 0 : v.mo ?? null;
     return null;
   };
-  const viewRows = () => AI.items.filter((it) => (AI.filter === '전체' || it.status === AI.filter) && (AI.vfilter === '전체' || vsum(it).group === AI.vfilter) && (!AI.fb || AI.fb.pass(it.keyword, (k) => fval(it, k))));
+  function viewRows() {
+    const minVol=Math.max(0,Number($('#aiMinVol').value)||0);
+    const personaMatch=it=>(!AI.tailFilter||it.tail===AI.tailFilter)&&(!AI.targetFilter||targetNames(it).includes(AI.targetFilter))&&(
+      !AI.reviewFilter || AI.reviewFilter==='hold'&&isHeld(it) || AI.reviewFilter==='volume'&&isPersonaItem(it)&&!isHeld(it)&&Brief.needsVolumeReview(it.vol,minVol) ||
+      AI.reviewFilter==='candidate'&&isPersonaItem(it)&&!isHeld(it)&&!Brief.needsVolumeReview(it.vol,minVol));
+    return AI.items.filter(it=>(AI.filter==='전체'||it.status===AI.filter)&&(AI.vfilter==='전체'||vsum(it).group===AI.vfilter)&&personaMatch(it)&&(!AI.fb||AI.fb.pass(it.keyword,k=>fval(it,k))));
+  }
 
   function exportXlsx() {
     if (!AI.items.length) return alert('내보낼 결과가 없어요');
     const rows = viewRows();
-    const head = ['키워드', '글자 수', '중복 상태', '구분', '겹치는 기존 키워드', '조건 검증', '적합 횟수', '검증 횟수', '마지막 판정 사유', '의도', '이유', '출처', '월간 검색량', 'PC', 'Mobile', '경쟁 정도'];
-    const num = (it, k) => (it.vol && !it.vol.error && !it.vol.notFound ? ((k === 'pc' && it.vol.pcLow) || (k === 'mo' && it.vol.moLow) ? '<10' : it.vol[k]) : '');
+    const guided=AI.items.some(isPersonaItem), minVol=readForm().minVol;
+    const extra=guided?['유형','부모 시드','페르소나','발굴 상태','검색량 상태','발견일','검색량 조회일','PC 검색 결과 확인','모바일 검색 결과 확인']:[];
+    const head = ['키워드', '글자 수', '중복 상태', '구분', '겹치는 기존 키워드', '조건 검증', '적합 횟수', '검증 횟수', '마지막 판정 사유', '의도', '이유', '출처', '월간 검색량', 'PC', 'Mobile', '경쟁 정도', ...extra];
+    const num=(it,k)=>it.vol&&!it.vol.error&&!it.vol.notFound?(it.vol[k+'Low']?'<10':isPersonaItem(it)&&k==='total'&&(it.vol.pcLow||it.vol.moLow)&&dataState(it,minVol)!=='일부 미확인'?volLabel(it.vol):it.vol[k]??''):'';
     const data = [head, ...rows.map((it) => {
       const v = vsum(it), cs = it.checks || [];
-      return [it.keyword, charLen(it.keyword), it.status, it.kind || '', it.match || '', v.label, v.p, v.n, cs.length ? cs[cs.length - 1].reason : '', it.intent || '', it.reason || '', it.source || '', num(it, 'total'), num(it, 'pc'), num(it, 'mo'), it.vol?.comp && !it.vol.notFound ? it.vol.comp : ''];
+      return [it.keyword, charLen(it.keyword), it.status, it.kind || '', it.match || '', v.label, v.p, v.n, cs.length ? cs[cs.length - 1].reason : '', it.intent || '', it.reason || '', it.source || '', num(it, 'total'), num(it, 'pc'), num(it, 'mo'), it.vol?.comp&&!it.vol.notFound?it.vol.comp:'', ...(guided?(isPersonaItem(it)?[Brief.TAIL_LABELS[it.tail],it.seed||'',(it.personas||[]).map(p=>p.name+(p.source===Brief.SOURCE.ai?' (가설)':'')).join(' · '),statusText(it),dataState(it,minVol),it.foundAt||'',it.vol?.checkedAt||'','미확인','미확인']:extra.map(()=>'')):[])];
     })];
-    const blob = XlsxLite.writeXlsx([{ name: 'AI 키워드', rows: data, widths: [28, 8, 10, 22, 22, 12, 9, 9, 22, 10, 22, 8, 12, 10, 10, 10] }]);
+    const blob = XlsxLite.writeXlsx([{ name: 'AI 키워드', rows: data, widths: [28,8,10,22,22,12,9,9,22,10,22,15,12,10,10,10,...(guided?[10,24,25,14,14,24,24,18,18]:[])] }]);
     const a = document.createElement('a');
     const name = (AI.cur.name || 'AI키워드').replace(/[\\/:*?"<>|]/g, '').slice(0, 30);
-    const tag = [AI.filter, AI.vfilter].filter((x) => x !== '전체').join('_');
+    const tag=exportFilters();
     a.href = URL.createObjectURL(blob);
     a.download = `${name}_${tag ? tag + '_' : ''}${new Date().toISOString().slice(0, 10)}.xlsx`;
     a.click();
   }
 
-  window.__AI = { AI, norm, checkOne, buildIndex, recheckAll, addItems, draw, refreshModel, handleFiles, vsum, openTab, newDraft, streamPost, progress, progHTML };
+  function openDirectBrief(topic,examples) {
+    if (guardBusy()) return false;
+    const draft=newDraft();
+    Object.assign(draft.form,{briefMode:'direct',topic:String(topic||''),examples:(examples||[]).slice(0,30).join(', ')});
+    openTab(draft); save(); return true;
+  }
+  window.__AI = { AI, openDirectBrief, norm, checkOne, buildIndex, recheckAll, addItems, draw, refreshModel, handleFiles, vsum, openTab, newDraft, streamPost, progress, progHTML };
   mount();
 })();
 
