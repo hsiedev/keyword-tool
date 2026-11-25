@@ -310,7 +310,7 @@
     const l = (Array.isArray(hints) ? hints : [hints]).map((x) => String(x || '').replace(/\s+/g, '')).filter(Boolean);
     if (!l.length) return;
     window.__LAYOUT?.go('kt');
-    S.q.hints = [...new Set([...l, ...hintList(S.q.hints)])].slice(0, 5).join(', ');
+    S.q.hints = l.slice(0, 5).join(', '); S.res = null; S.checked.clear();
     saveQ(); drawBody(); $('#ktHints').focus();
     toast('키워드 도구에 넣었어요. 함께 볼 키워드를 4개까지 더 넣고 [조회]를 누르세요.', 'ok');
   };
