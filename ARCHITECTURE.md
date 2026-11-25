@@ -105,6 +105,10 @@ start.bat → server.mjs (127.0.0.1:8787)
 
 `public/work-title.js`가 제목 입력 UI와 60자 정리 규칙을 제공한다. 화면마다 기존 작업의 `name`·`custom`과 저장 흐름을 유지한다. 파워링크는 제목을 새 분석 초안에 보관해 파일을 넣거나 조건을 바꿔 다시 그릴 때 복원한다. 대량 분석은 새 초안에서 제목을 입력하고 분석 시작 시 저장하며, AI 키워드·카피는 기존 초안 저장을 사용한다. 광고 목업은 종류 선택 시 제목을 저장한다.
 
+### 빠른 이동 (quick.js)
+
+`public/quick.js`는 화면 코드만 쓴다(서버 변경 없음). 통합 검색은 `window.__AI.AI.sessions`, `/api/bulk-history`, `/api/pl/jobs`, localStorage `kwHistory`·`ktHistory`·`kwStars`를 읽어 `__LAYOUT.go`, `__AI.openTab`, `__BULK.openSession`, `__PL_WORK.open`, `__KT_OPEN`으로 이동한다. 줄 바로가기는 표의 `td.kwc a[data-go|data-run]`이 있는 모든 표에 자동 적용된다(새 표도 이 구조를 따르면 됨). 사이드바 묶음은 layout.js `NAV_GROUP`·`NAV_NEW`.
+
 ### AI 생성기: 사용자 의견
 
 결과 위 'AI에게 의견 주기'(`#aiFbCard`)는 탭(`session.feedback`)에 `{text, liked, mode, result}`를 쌓는다. 생성 때 `feedback`(최근 8개)·`liked`(체크한 키워드 + 적합 확정, 최대 80개)를 `/api/ai/generate-stream`·탐색 계획에 보내고, `ai-persona.mjs`의 `feedbackLines`가 일반·대화형 요청문 모두에 '[사용자 의견]' 단계를 붙인다. 의견이 바뀌면 탐색 계획을 다시 세운다. 조건 재검증은 의견을 요청 사항(`extra`)으로 받는다. [다시 만들기]는 체크·적합 확정 키워드를 남기고 나머지만 교체한다.
