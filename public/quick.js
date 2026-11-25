@@ -55,7 +55,9 @@
     hb.querySelector('[data-a=star]').classList.toggle('on', STAR.has(hbKw));
     hb.classList.remove('hidden');
   };
-  document.addEventListener('mouseover', (e) => {
+  let mvRaf = 0, mvE = null;
+  document.addEventListener('mousemove', (e) => { mvE = e; if (!mvRaf) mvRaf = requestAnimationFrame(() => { mvRaf = 0; onMove(mvE); }); }, { passive: true });
+  function onMove(e) {
     if (hb.contains(e.target)) return;
     const tr = e.target.closest?.('tr');
     const td = tr?.querySelector('td.kwc');
@@ -64,7 +66,7 @@
     hbTd = td; hbKw = kwOf(td);
     if (!hbKw) { hbTd = null; hb.classList.add('hidden'); return; }
     place();
-  });
+  }
   addEventListener('scroll', () => hb.classList.add('hidden'), true);
   hb.addEventListener('click', async (e) => {
     const b = e.target.closest('button'); if (!b || !hbKw) return;
