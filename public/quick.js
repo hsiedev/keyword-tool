@@ -53,7 +53,7 @@
     // 키워드 칸 안쪽 오른쪽 (칸이 좁으면 바로 옆)
     const fit = r.width > w + 70; // 칸 안에 들어가면 칸 안쪽 오른쪽, 좁으면 줄 바로 위 (옆 숫자를 가리지 않게)
     hb.style.left = Math.round(Math.max(4, Math.min(r.right - w - (fit ? 6 : 0), innerWidth - w - 8))) + 'px';
-    if (!fit) hb.style.top = Math.round(r.top - 26) + 'px';
+    if (!fit) { hb.classList.add('edge'); hb.style.top = Math.round(r.top - hb.offsetHeight / 2) + 'px'; } else hb.classList.remove('edge'); // 줄 사이 여백에 걸쳐 글자를 가리지 않음
     hb.querySelector('[data-a=star]').classList.toggle('on', STAR.has(hbKw));
     hb.classList.remove('hidden');
   };
