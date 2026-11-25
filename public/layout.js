@@ -28,6 +28,9 @@
     ['mock', '광고 목업'],
   ];
   const NAME = Object.fromEntries(VIEWS);
+  // 사이드바 묶음 제목 (그 묶음의 첫 메뉴 위에) · 새 메뉴 표시
+  const NAV_GROUP = { analyze: '키워드 찾기', bulk: '분석 · 운영', copy: '광고 만들기' };
+  const NAV_NEW = new Set(['kt']);
   // NAVER / Google 모드 (구글은 지금 '키워드 분석'만)
   const getMode = () => (localStorage.getItem('siteMode') === 'google' ? 'google' : 'naver');
   const isG = () => getMode() === 'google';
@@ -53,7 +56,7 @@
   side.id = 'appSide';
   side.innerHTML = `
     <div class="as-head"></div>
-    <nav class="as-nav">${VIEWS.map(([k, n]) => `<button type="button" class="as-item" data-view="${k}" title="${n}">${I[k]}<span>${n}</span></button>`).join('')}</nav>
+    <nav class="as-nav">${VIEWS.map(([k, n]) => `${NAV_GROUP[k] ? `<div class="as-grp">${NAV_GROUP[k]}</div>` : ''}<button type="button" class="as-item" data-view="${k}" title="${n}">${I[k]}<span>${n}</span>${NAV_NEW.has(k) ? '<em class="as-new">new</em>' : ''}</button>`).join('')}</nav>
     <div class="as-label" id="asLabel">내역</div>
     <div class="as-slot" id="asSlot"><div class="as-recent" id="asRecent"></div><div class="as-empty hidden" id="asNone">중복 검사는 결과를 따로 저장하지 않아요.</div></div>
     <div class="as-foot">
