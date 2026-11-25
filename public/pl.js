@@ -93,7 +93,6 @@
     try { const j = await api('/api/pl/job?id=' + encodeURIComponent(id)); S.job = j.job; S.cur = id; S.thread = j.thread || []; S.prev = j.prev || null; S.running = j.running ? { id, ...j.running } : (S.running?.id === id ? null : S.running); }
     catch (e) { toast(e.message, 'warn'); S.cur = null; S.job = null; }
     if (S.reportView?.id !== S.cur) S.reportView = null;
-    if (S.columnEdit?.id !== S.cur) S.columnEdit = null;
     localStorage.setItem('plCur', S.cur || '');
     S.page = 1;
     draw(); poll();
@@ -164,7 +163,7 @@
       ${rest.map(group).join('') || '<div class="muted" style="padding:6px 10px;font-size:12px">분석할 때마다 여기 쌓여요</div>'}
       <div class="pl-usage" id="plUsage">${usageHTML()}</div>`;
     bindUsage();
-    $('#pSideNew').onclick = () => { clearTimeout(S.timer); S.cur = null; S.job = null; S.columnEdit = null; S.reportView = null; S.thread = []; S.prev = null; localStorage.setItem('plCur', ''); draw(); };
+    $('#pSideNew').onclick = () => { clearTimeout(S.timer); S.cur = null; S.job = null; S.reportView = null; S.thread = []; S.prev = null; localStorage.setItem('plCur', ''); draw(); };
     $$('[data-pid]', side).forEach((el) => {
       el.onclick = () => openJob(el.dataset.pid);
       el.oncontextmenu = (e) => { e.preventDefault(); const m = S.jobs.find((x) => x.id === el.dataset.pid); if (m) showCtx(e, m); };
@@ -218,7 +217,7 @@
           if (!await uiConfirm(`'${sub ? subName(m) : m.name}' 분석을 삭제할까요? 순위 결과와 캡처가 같이 지워져요.${kidsN ? `\n이 분석의 재분석 ${kidsN}개도 함께 지워져요.` : ''}`)) return;
           const r = await api('/api/pl/delete', { id: m.id });
           const gone = S.cur === m.id || (!sub && S.jobs.some((x) => x.parentId === m.id && x.id === S.cur));
-          if (gone) { clearTimeout(S.timer); S.cur = null; S.job = null; S.columnEdit = null; S.reportView = null; localStorage.setItem('plCur', ''); }
+          if (gone) { clearTimeout(S.timer); S.cur = null; S.job = null; S.reportView = null; localStorage.setItem('plCur', ''); }
           await loadJobs(); draw();
           toast(r.deleted > 1 ? `${r.deleted}개(재분석 포함)를 지웠어요` : '지웠어요', 'ok');
         }
@@ -403,16 +402,12 @@
   function draw() {
     const box = $('#plBody');
     if (!box) return;
-    const colFocus = editorFocus($('#plColumnsPanel', box)), colScroll = $('#plColumnsList', box)?.scrollTop;
+    if (S.columnEdit && !editOf(S.job)) closeColumnEditor();
     drawSide();
     box.innerHTML = `<div class="sec"><h2>파워링크 분석기 <span class="muted" style="font-size:13px;font-weight:500">내 파워링크가 실제 네이버 검색 화면(로그아웃 상태)에서 몇 위인지 · AI 없이 이 PC에서 직접 검색</span></h2>
       ${compareLauncher()}${S.job ? jobHTML() : newHTML()}</div>`;
     $('#plCompare').onclick = openCompare;
     S.job ? bindJob() : bindNew();
-    if (S.job && editOf(S.job)) {
-      $('#plColumnsList').scrollTop = colScroll || 0;
-      restoreEditorFocus(colFocus);
-    }
   }
 
   // ---- 새 분석
@@ -570,67 +565,76 @@
     if (view?.status === 'ready') return view.columns.length ? '보고서 원본 값은 PC·모바일 탭과 별개예요.' : '머리글이 있는 보고서 열을 찾지 못했어요.';
     return j.report?.files?.length ? '보고서 열 불러오는 중…' : '실적 파일을 연결하면 보고서 원본 열도 선택할 수 있어요.';
   }
-  function columnPanelHTML(j, n) {
-    const edit = editOf(j);
-    return '<section class="pl-col-panel" id="plColumnsPanel" aria-labelledby="plColumnTitle" ' + (edit ? '' : 'hidden') + '><div class="pl-bar"><b id="plColumnTitle">표에 표시할 열</b><span style="flex:1"></span><input class="inp pl-col-search" type="search" id="plColumnsSearch" aria-label="열 이름 찾기" placeholder="열 이름 찾기" value="' + e2(edit?.q || '') + '"></div><p class="muted pl-col-help">체크로 표시하고, 끌거나 ↑↓ 버튼으로 순서를 바꿔요.</p><ul id="plColumnsList" class="pl-col-list" aria-label="열 목록">' + (edit ? columnListHTML(columnLayout(j, n), edit.q) : '') + '</ul><div class="pl-bar pl-col-footer"><button type="button" class="btn sm" id="plColumnsReset">기본값으로</button><span style="flex:1"></span><button type="button" class="btn sm" id="plColumnsCancel">취소</button><button type="button" class="btn pri sm" id="plColumnsSave">저장</button></div><div class="muted pl-col-help" id="plColumnsStatus" role="status">' + columnStatusHTML(j) + '</div></section>';
-  }
-  function editorFocus(root) {
-    const active = document.activeElement;
-    if (!root?.contains(active)) return null;
-    return { id: active.id, key: active.closest('[data-col-key]')?.dataset.colKey, move: active.dataset.move, start: active.id === 'plColumnsSearch' ? active.selectionStart : null, end: active.id === 'plColumnsSearch' ? active.selectionEnd : null };
-  }
-  function restoreEditorFocus(focus) {
-    if (!focus) return;
-    const row = focus.key && $$('#plColumnsList [data-col-key]').find(x => x.dataset.colKey === focus.key);
-    const button = row && focus.move ? $(`[data-move="${focus.move}"]`, row) : null;
-    const target = focus.id ? document.getElementById(focus.id) : button && !button.disabled ? button : row && $('input', row);
-    target?.focus({ preventScroll: true });
-    if (focus.start != null) target?.setSelectionRange(focus.start, focus.end);
-  }
-  function refreshColumnEditor(status = false) {
-    const edit = editOf(S.job), list = $('#plColumnsList');
-    if (!edit || !list) return;
-    if (status) $('#plColumnsStatus').innerHTML = columnStatusHTML(S.job);
-    const scroll = list.scrollTop, focus = editorFocus(list);
+  function refreshColumnEditor(updateStatus = false) {
+    const edit = editOf(S.job);
+    if (!edit?.dialog.open) return;
+    const list = $('#plColumnsList', edit.dialog);
+    if (updateStatus) $('#plColumnsStatus', edit.dialog).innerHTML = columnStatusHTML(S.job);
+    const scroll = list.scrollTop, active = document.activeElement, key = active?.closest('[data-col-key]')?.dataset.colKey;
     list.innerHTML = columnListHTML(columnLayout(S.job, nOf(S.dev)), edit.q);
     list.scrollTop = scroll;
-    restoreEditorFocus(focus);
+    if (key) {
+      const row = $$('[data-col-key]', list).find(x => x.dataset.colKey === key);
+      if (!row) return;
+      const button = active.dataset.move && $(`[data-move="${active.dataset.move}"]`, row);
+      (button && !button.disabled ? button : $('input', row))?.focus({ preventScroll: true });
+    }
   }
-  function bindColumnEditor() {
-    const trigger = $('#plColumns'), panel = $('#plColumnsPanel'), list = $('#plColumnsList'), search = $('#plColumnsSearch');
-    const edit = () => editOf(S.job);
-    const close = () => {
-      S.columnEdit = null; panel.hidden = true; trigger.setAttribute('aria-expanded', 'false'); refreshJobTable(); trigger.focus({ preventScroll: true });
-    };
-    trigger.onclick = () => {
-      if (edit()) return close();
-      S.columnEdit = { id: S.job.id, items: columnPrefs.map(pair => [...pair]), q: '' };
-      panel.hidden = false; trigger.setAttribute('aria-expanded', 'true'); search.value = '';
-      refreshColumnEditor(true); search.focus({ preventScroll: true });
-    };
-    search.oninput = () => { edit().q = search.value; refreshColumnEditor(); };
-    $('#plColumnsCancel').onclick = close;
-    panel.onkeydown = e => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
-    $('#plColumnsReset').onclick = () => { edit().items = defaults(); edit().q = ''; search.value = ''; refreshColumnEditor(); refreshJobTable(); };
-    $('#plColumnsSave').onclick = () => {
-      const next = updatedPrefs(columnLayout(S.job, nOf(S.dev)), edit().items);
+  function closeColumnEditor(restoreFocus = false) {
+    const edit = S.columnEdit;
+    if (!edit) return;
+    S.columnEdit = null;
+    edit.dialog.close(); edit.dialog.remove();
+    if (S.job?.id === edit.id && !$('#plView').classList.contains('hidden')) {
+      refreshJobTable();
+      if (restoreFocus) $('#plColumns')?.focus({ preventScroll: true });
+    }
+  }
+  function openColumnEditor() {
+    if (!S.job || S.columnEdit) return;
+    // 결과 표가 진행 상황으로 다시 그려져도 팝업과 편집 상태는 유지한다.
+    const dialog = document.createElement('dialog');
+    dialog.id = 'plColumnsDialog'; dialog.className = 'pl-modal pl-col-modal';
+    dialog.setAttribute('aria-labelledby', 'plColumnTitle');
+    dialog.setAttribute('aria-describedby', 'plColumnHelp');
+    dialog.innerHTML = `<div class="pl-col-content">
+      <header class="pl-bar pl-col-head"><h3 id="plColumnTitle">열 맞춤 설정</h3><button type="button" class="btn sm" id="plColumnsClose">닫기</button></header>
+      <div class="pl-bar pl-col-tools"><span class="muted" id="plColumnHelp">체크로 표시하고, 끌거나 ↑↓ 버튼으로 순서를 바꿔요.</span><input class="inp pl-col-search" type="search" id="plColumnsSearch" aria-label="열 이름 찾기" placeholder="열 이름 찾기"></div>
+      <ul id="plColumnsList" class="pl-col-list" aria-label="열 목록"></ul>
+      <div class="muted pl-col-help" id="plColumnsStatus" role="status"></div>
+      <footer class="pl-bar pl-col-footer"><button type="button" class="btn sm" id="plColumnsReset">기본값으로</button><span style="flex:1"></span><button type="button" class="btn sm" id="plColumnsCancel">취소</button><button type="button" class="btn pri sm" id="plColumnsSave">저장</button></footer>
+    </div>`;
+    const field = s => $(s, dialog);
+    const list = field('#plColumnsList'), search = field('#plColumnsSearch');
+    const draft = S.columnEdit = { id: S.job.id, items: columnPrefs.map(pair => [...pair]), q: '', dialog };
+    const close = () => closeColumnEditor(true);
+    field('#plColumnsClose').onclick = field('#plColumnsCancel').onclick = close;
+    dialog.addEventListener('cancel', e => { e.preventDefault(); close(); });
+    dialog.addEventListener('close', () => { if (S.columnEdit === draft) close(); });
+    dialog.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && !e.isComposing) { e.preventDefault(); close(); }
+    });
+    search.oninput = () => { draft.q = search.value; refreshColumnEditor(); };
+    field('#plColumnsReset').onclick = () => { draft.items = defaults(); draft.q = ''; search.value = ''; refreshColumnEditor(); refreshJobTable(); };
+    field('#plColumnsSave').onclick = () => {
+      const next = updatedPrefs(columnLayout(S.job, nOf(S.dev)), draft.items);
       try { localStorage.setItem(COL_KEY, JSON.stringify(next)); }
-      catch { toast('열 설정을 저장하지 못했어요. 브라우저 저장 공간을 확인해 주세요.', 'warn'); return; }
+      catch { field('#plColumnsStatus').textContent = '열 설정을 저장하지 못했어요. 브라우저 저장 공간을 확인해 주세요.'; return; }
       columnPrefs = next;
       if (S.sort.key !== 'kw' && S.sort.key !== 'i' && !next.some(([k, on]) => k === S.sort.key && on)) S.sort = { key: 'i', dir: 1 };
       close();
       toast('열 순서와 표시 설정을 저장했어요.', 'ok');
     };
-    $('#plColumnsStatus').onclick = e => {
+    field('#plColumnsStatus').onclick = e => {
       if (e.target.id !== 'plColumnsRetry') return;
       S.reportView = null; loadReportView(); refreshColumnEditor(true);
     };
     const from = e => e.target.closest('[data-col-key]')?.dataset.colKey;
-    const set = layout => { edit().items = updatedPrefs(layout, edit().items); refreshColumnEditor(); refreshJobTable(); };
+    const set = layout => { draft.items = updatedPrefs(layout, draft.items); refreshColumnEditor(); refreshJobTable(); };
     list.onchange = e => {
       const id = from(e); if (!id || e.target.type !== 'checkbox') return;
       const layout = columnLayout(S.job, nOf(S.dev)); layout.find(c => c.id === id).on = e.target.checked;
-      edit().items = updatedPrefs(layout, edit().items); refreshJobTable();
+      draft.items = updatedPrefs(layout, draft.items); refreshJobTable();
     };
     const move = (id, target) => {
       if (!target || id === target) return;
@@ -651,6 +655,9 @@
     list.ondragover = e => { if (drag && from(e)) { e.preventDefault(); clean(); e.target.closest('[data-col-key]').classList.add('pl-col-over'); } };
     list.ondrop = e => { if (drag && from(e)) { e.preventDefault(); move(drag, from(e)); } drag = null; clean(); };
     list.ondragend = () => { drag = null; clean(); };
+    document.body.appendChild(dialog);
+    dialog.showModal();
+    refreshColumnEditor(true);
   }
 
   const rankSelect = (dev, n) => `<select id="plN" aria-label="예상 순위" class="hsel" style="height:26px;padding:0 22px 0 6px">${Array.from({ length: MAXN[dev] }, (_, i) => `<option value="${i + 1}" ${n === i + 1 ? 'selected' : ''}>${i + 1}위</option>`).join('')}</select>`;
@@ -720,9 +727,8 @@
         <button class="btn" data-find title="키워드 찾기 (Ctrl+F) · 치고 Enter → 그 줄로 이동">⌕ 키워드 찾기</button>
         <span style="flex:1"></span><span class="muted">${rows.length.toLocaleString('ko-KR')}개 표시</span>
         <span id="plColumnsRank">${toolbarRankHTML(layout, dev, n)}</span>
-        <button type="button" class="btn" id="plColumns" aria-expanded="${!!editOf(j)}" aria-controls="plColumnsPanel">열 맞춤 설정 <small class="muted" id="plColumnsCount">${layout.length + 1}개</small></button>
+        <button type="button" class="btn" id="plColumns" aria-haspopup="dialog">열 맞춤 설정 <small class="muted" id="plColumnsCount">${layout.length + 1}개</small></button>
       </div>
-      ${columnPanelHTML(j, n)}
       <div class="tbl-wrap" style="margin-top:10px" id="plTblWrap">${resultTableHTML(j, dev, n, view, run, layout)}</div>
       ${pages > 1 ? `<div class="pager">${Array.from({ length: pages }, (_, i) => `<button class="${S.page === i + 1 ? 'on' : ''}" data-pg="${i + 1}">${i + 1}</button>`).join('')}</div>` : ''}
       <div class="muted" style="font-size:12px;margin-top:8px;line-height:1.7">순위 = 키워드마다 ${j.runs}번 검색한 평균 (노출된 회차만). 캡처는 순위 검색과 별도로 한 번 더 열어서 찍어서 순위가 조금 다를 수 있어요. ${n}위 입찰가 = 네이버 검색광고 API '순위별 평균 입찰가'(최근 4주), 아래 +/− 는 현재 입찰가와의 차이. ${n}위 예상 = 그 입찰가로 냈을 때 네이버 예상 실적(월). 로그인 여부·지역·시간대에 따라 실제 화면과 다를 수 있어요.</div>
@@ -756,7 +762,8 @@
     $$('[data-sd]').forEach((b) => (b.onclick = () => { S.dev = b.dataset.sd; localStorage.setItem('plDev', S.dev); S.page = 1; draw(); ensurePerf(); }));
     $$('[data-band]').forEach((b) => (b.onclick = () => { S.band = +b.dataset.band; S.page = 1; draw(); }));
     $('#plMiss').onchange = (e) => { S.onlyMiss = e.target.checked; S.page = 1; draw(); };
-    bindColumnEditor(); bindResultTable();
+    $('#plColumns').onclick = openColumnEditor;
+    bindResultTable();
     $$('[data-pg]').forEach((b) => (b.onclick = () => { S.page = +b.dataset.pg; draw(); $('#plTblWrap').scrollIntoView({ block: 'start' }); }));
   }
   // n을 바꾸면 그 순위 입찰가의 예상 실적을 가져옴 (한 번 가져온 건 저장)
@@ -826,16 +833,22 @@
     function close() { box.classList.add('hidden'); }
     // 파워링크 분석기 화면에서 Ctrl+F → 이 찾기 창 (다른 화면에서는 브라우저 기본 찾기)
     addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f' && !$('#plView')?.classList.contains('hidden')) { e.preventDefault(); open(); }
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f' && !$('#plView')?.classList.contains('hidden')) {
+        e.preventDefault();
+        const dialog = S.columnEdit?.dialog;
+        if (dialog?.open) { const search = $('#plColumnsSearch', dialog); search.focus(); search.select(); }
+        else open();
+      }
     });
     return { open, close, reset: () => { hits = []; at = -1; lastQ = ''; cnt.textContent = ''; } };
   })();
 
   // ---------------------------------------------------------------- 메뉴 열기·닫기
-  window.__RESET_pl = () => { clearTimeout(S.timer); S.cur = null; S.job = null; S.columnEdit = null; S.reportView = null; S.draft = { rows: [], file: '', paste: '', reports: [], period: {} }; localStorage.setItem('plCur', ''); draw(); scrollTo(0, 0); return '초기화했어요 (지난 분석은 왼쪽 내역에 있어요)'; };
+  window.__RESET_pl = () => { clearTimeout(S.timer); S.cur = null; S.job = null; S.reportView = null; S.draft = { rows: [], file: '', paste: '', reports: [], period: {} }; localStorage.setItem('plCur', ''); draw(); scrollTo(0, 0); return '초기화했어요 (지난 분석은 왼쪽 내역에 있어요)'; };
   function showPl(on) {
     if (on) { $('#aiView')?.classList.add('hidden'); window.__hideDup?.(); window.__hideBulk?.(); window.__hideCopy?.(); window.__hideMock?.(); }
     $('#plView').classList.toggle('hidden', !on);
+    if (!on) closeColumnEditor();
     if (on) {
       $('#main').classList.add('hidden'); $('#banners')?.classList.add('hidden'); $('#tabs')?.classList.add('hidden');
       history.replaceState(null, '', location.pathname + location.search + '#pl');
@@ -852,6 +865,7 @@
     Finder.close();
     if ($('#plView').classList.contains('hidden')) return;
     $('#plView').classList.add('hidden');
+    closeColumnEditor();
     $('#main').classList.remove('hidden'); $('#banners')?.classList.remove('hidden');
     try { $('#tabs').classList.toggle('hidden', !STATE); } catch {}
     if (location.hash === '#pl') history.replaceState(null, '', location.pathname + location.search);
@@ -859,7 +873,11 @@
   mount();
   draw();
   const others = ['aiView', 'dupView', 'bulkView', 'copyView', 'mockView', 'main'];
-  const watch = new MutationObserver(() => { if (!$('#plView').classList.contains('hidden') && others.some((id) => { const el = document.getElementById(id); return el && !el.classList.contains('hidden'); })) $('#plView').classList.add('hidden'); });
+  const watch = new MutationObserver(() => {
+    if (!$('#plView').classList.contains('hidden') && others.some(id => { const el = document.getElementById(id); return el && !el.classList.contains('hidden'); })) {
+      $('#plView').classList.add('hidden'); closeColumnEditor();
+    }
+  });
   others.forEach((id) => { const el = document.getElementById(id); if (el) watch.observe(el, { attributes: true, attributeFilter: ['class'] }); });
   if (location.hash === '#pl') setTimeout(() => (window.__LAYOUT?.go ? window.__LAYOUT.go('pl') : showPl(true)), 0);
 })();

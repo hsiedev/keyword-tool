@@ -394,6 +394,14 @@ await test('브리프 생성: 씨앗마다 키워드 도구 조회 후 번갈아
     for (const n of ['xl/drawings/drawing1.xml', 'xl/media/image1.jpeg', 'xl/worksheets/_rels/sheet1.xml.rels', '[Content_Types].xml']) ok(t.includes(n), n + ' 없음');
   });
 }
+await test('파워링크 열 맞춤: 네이티브 팝업과 기존 브라우저 설정 키를 유지', async () => {
+  const source = await (await get('/pl.js')).text();
+  ok(source.includes('id="plColumns" aria-haspopup="dialog"'));
+  ok(/createElement\('dialog'\);\s*dialog\.id = 'plColumnsDialog'/.test(source));
+  ok(source.includes('dialog.showModal();'));
+  ok(source.includes("'plResultColumns.v1'") && !source.includes('plColumnsPanel'));
+});
+
 await test('새 작업 제목: 다섯 화면에 공통 입력 사용 및 공백은 자동 제목', () => {
   const ctx = { window: {} };
   vm.runInNewContext(fs.readFileSync(path.join(TMP, 'public', 'work-title.js'), 'utf8'), ctx);
