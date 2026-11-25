@@ -182,3 +182,21 @@
   .ab-root :is(.ab-head, .ab-transcript, .ab-answer, .ab-bottom) { padding-inline: 11px; }
   .ab-root .ab-answer input, .ab-root .ab-answer textarea { font-size: 16px; }
 }
+
+/* 가독성 정리 (2026-11-25): 작은 글자 키우기 */
+.ab-root .ab-muted { font-size: 13px; }
+.ab-root .ab-step { font-size: 13.5px; padding: 6px 12px; min-height: 36px; }
+.ab-root .ab-number { min-width: 21px; height: 21px; font-size: 12px; }
+.ab-root .ab-badge, .ab-root .ab-chip { font-size: 12px; padding: 2px 8px; }
+.ab-root .ab-prior .btn { font-size: 13px; }
+.ab-root .ab-bubble p { font-size: 13.5px; line-height: 1.6; }
+.ab-root .ab-field :is(input, textarea) { font-size: 14px; padding: 8px 10px; }
+.ab-root .ab-choice { padding: 11px 12px; }
+.ab-root .ab-choice strong { font-size: 14px; }
+.ab-root .ab-choice span { font-size: 13px; line-height: 1.5; }
+.ab-root .ab-note { font-size: 13px; line-height: 1.6; }
+.ab-root .ab-error, .ab-root .ab-status { font-size: 13px; }
+.ab-root .ab-summary-row dt { font-size: 12.5px; color: color-mix(in oklab, var(--foreground) 62%, var(--background)); }
+.ab-root .ab-summary-row dd { font-size: 13.5px; }
+.ab-root .ab-edit { font-size: 12.5px; }
+.ab-root .ab-step:disabled { opacity: .8; }

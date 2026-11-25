@@ -875,3 +875,7 @@ table.rel td{padding:9px 11px}
 .fl-t{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
 #ktTbl thead tr.kt-grp th.l{text-align:left}
 .kt-badge{display:inline-block;font-size:11px;font-weight:600;color:var(--info-fg);background:var(--info-bg);border-radius:4px;padding:0 5px;margin-left:4px;vertical-align:1px}
+/* 브리프 입력 방식: 작은 버튼 두 개 → 또렷한 탭 */
+.ai-brief-modes{display:inline-flex;gap:0;padding:3px;border:1px solid var(--border);border-radius:10px;background:var(--muted);margin:4px 0 16px}
+.ai-brief-modes .btn{border:0;box-shadow:none;background:none;padding:7px 18px;font-size:13.5px;color:var(--muted-fg);border-radius:7px}
+.ai-brief-modes .btn[aria-pressed="true"]{background:var(--card);color:var(--foreground);font-weight:650;box-shadow:0 1px 3px rgba(0,0,0,.08)}
