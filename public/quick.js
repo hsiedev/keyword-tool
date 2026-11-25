@@ -51,7 +51,9 @@
     hb.classList.remove('hidden');
     const w = hb.offsetWidth || 110;
     // 키워드 칸 안쪽 오른쪽 (칸이 좁으면 바로 옆)
-    hb.style.left = Math.round(Math.min(r.width > w + 70 ? r.right - w - 6 : r.right + 4, innerWidth - w - 8)) + 'px';
+    const fit = r.width > w + 70; // 칸 안에 들어가면 칸 안쪽 오른쪽, 좁으면 줄 바로 위 (옆 숫자를 가리지 않게)
+    hb.style.left = Math.round(Math.max(4, Math.min(r.right - w - (fit ? 6 : 0), innerWidth - w - 8))) + 'px';
+    if (!fit) hb.style.top = Math.round(r.top - 26) + 'px';
     hb.querySelector('[data-a=star]').classList.toggle('on', STAR.has(hbKw));
     hb.classList.remove('hidden');
   };
