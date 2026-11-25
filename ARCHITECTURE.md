@@ -28,6 +28,7 @@ start.bat → server.mjs (127.0.0.1:8787)
 |---|---|---|
 | 네이버 단일 분석·비교 | `public/index.html`, `/api/analyze`, `/api/compare`, `/api/blogcounts` | `server.mjs`가 검색광고·검색·데이터랩 데이터를 합친다. 연관어 정렬·필터·내보내기, 최대 5개 비교, 입찰가·클릭·경쟁, 성인·오타, 포화·등급·성향·이슈를 제공한다. |
 | 섹션·검색 결과 | `index.html`, `/api/sections`, `sections.mjs` | 로그아웃 상태 PC·모바일 HTML에서 섹션 배치, AI 브리핑 인용, 웹문서를 읽는다. HTML이 바뀌면 파서를 확인한다. |
+| 키워드 도구 | `public/kt.js`, `/api/kt/query`, `/api/kt/channels` | `server.mjs`의 `ktQuery`가 검색광고 `/keywordstool`을 힌트(최대 5개) 함께 1회 + 힌트별 1회 조회해 합치고 `from`(찾은 기준)을 붙인다. 시즌 월(`month`) · 시즌 테마(`event`, 네이버 공식 코드표를 화면에 내장) · 비즈채널(`siteId`, `GET /ncc/channels`의 SITE만). 12시간 캐시. 최근 조회 조건은 브라우저(`ktHistory`)에만 저장한다. 업종(`biztpId`)은 코드표를 일반 API로 받을 수 없어 넣지 않았다. |
 | 후보 발굴 | `index.html`, `/api/suggest` | 네이버·구글 자동완성과 네이버 관련 검색어를 모아 출처를 표시하고 중복을 제거한다. 넓게 수집은 한글 자음을 붙여 추가 조회한다. 대량 분석이나 AI 생성 예시로 넘긴다. |
 | AI 키워드 | `public/ai.js`, `/api/ai/*`, `/api/volumes`, `ai-cli.mjs` | 주제·예시·조건으로 생성하고, 필요할 때 유사/의미 중복 검사, 검색량 붙이기, 조건 재검증과 판정 기록을 제공한다. Gemini 키 또는 로그인형 agy·Claude Code·Codex를 사용한다. 주제별 작업은 브라우저에 저장한다. |
 | 키워드 중복 검사 | `public/dedup.js`, `public/ai.js`, `/api/sources` | TXT·CSV·XLSX에서 열을 선택하고, 정규화·어순·포함 관계·한 글자 차이를 옵션에 따라 검사한다. 남긴 키워드를 내보내거나 대량 분석으로 보낸다. 기존 목록은 서버에도 저장할 수 있다. |
@@ -103,6 +104,10 @@ start.bat → server.mjs (127.0.0.1:8787)
 ### 새 작업 제목
 
 `public/work-title.js`가 제목 입력 UI와 60자 정리 규칙을 제공한다. 화면마다 기존 작업의 `name`·`custom`과 저장 흐름을 유지한다. 파워링크는 제목을 새 분석 초안에 보관해 파일을 넣거나 조건을 바꿔 다시 그릴 때 복원한다. 대량 분석은 새 초안에서 제목을 입력하고 분석 시작 시 저장하며, AI 키워드·카피는 기존 초안 저장을 사용한다. 광고 목업은 종류 선택 시 제목을 저장한다.
+
+### AI 생성기: 사용자 의견
+
+결과 위 'AI에게 의견 주기'(`#aiFbCard`)는 탭(`session.feedback`)에 `{text, liked, mode, result}`를 쌓는다. 생성 때 `feedback`(최근 8개)·`liked`(체크한 키워드 + 적합 확정, 최대 80개)를 `/api/ai/generate-stream`·탐색 계획에 보내고, `ai-persona.mjs`의 `feedbackLines`가 일반·대화형 요청문 모두에 '[사용자 의견]' 단계를 붙인다. 의견이 바뀌면 탐색 계획을 다시 세운다. 조건 재검증은 의견을 요청 사항(`extra`)으로 받는다. [다시 만들기]는 체크·적합 확정 키워드를 남기고 나머지만 교체한다.
 
 ### 키워드 입찰가 조정
 
