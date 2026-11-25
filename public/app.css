@@ -935,3 +935,4 @@ td.kwc.kw-starred a::before{content:"★";color:#f59e0b;margin-right:4px;font-si
 .hc-v{font-size:11.5px;font-weight:600;color:var(--accent)}
 .hc-m{font-size:12.5px;color:var(--muted-fg)}
 .hc-tip{font-size:12.5px;color:var(--muted-fg);line-height:1.8}
+.row-acts button{display:inline-grid;place-items:center;width:26px;height:24px;padding:0}

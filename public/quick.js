@@ -39,7 +39,8 @@
   // ---------------------------------------------------------------- ② 줄 바로가기 버튼
   const hb = document.createElement('div');
   hb.className = 'row-acts hidden';
-  hb.innerHTML = `<button type="button" data-a="star" title="관심 키워드 (★)">★</button><button type="button" data-a="go" title="키워드 분석">분석</button><button type="button" data-a="kt" title="키워드 도구에서 연관 키워드 보기">도구</button><button type="button" data-a="copy" title="복사">복사</button>`;
+  const ic = (d) => `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+  hb.innerHTML = `<button type="button" data-a="star" title="관심 키워드 ★">★</button><button type="button" data-a="go" title="키워드 분석">${ic('<path d="M7 17 17 7M9 7h8v8"/>')}</button><button type="button" data-a="kt" title="키워드 도구에서 연관 키워드 보기">${ic('<circle cx="11" cy="11" r="6"/><path d="m20 20-4-4"/>')}</button><button type="button" data-a="copy" title="복사">${ic('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>')}</button>`;
   document.body.appendChild(hb);
   let hbKw = '', hbTd = null;
   const place = () => {
@@ -47,7 +48,10 @@
     const r = hbTd.getBoundingClientRect();
     if (r.bottom < 0 || r.top > innerHeight) return hb.classList.add('hidden');
     hb.style.top = Math.round(r.top + r.height / 2 - 14) + 'px';
-    hb.style.left = Math.round(Math.min(r.right - 4, innerWidth - 190)) + 'px';
+    hb.classList.remove('hidden');
+    const w = hb.offsetWidth || 110;
+    // 키워드 칸 안쪽 오른쪽 (칸이 좁으면 바로 옆)
+    hb.style.left = Math.round(Math.min(r.width > w + 70 ? r.right - w - 6 : r.right + 4, innerWidth - w - 8)) + 'px';
     hb.querySelector('[data-a=star]').classList.toggle('on', STAR.has(hbKw));
     hb.classList.remove('hidden');
   };
@@ -56,7 +60,7 @@
     const tr = e.target.closest?.('tr');
     const td = tr?.querySelector('td.kwc');
     if (!td) { hbTd = null; hb.classList.add('hidden'); return; }
-    if (td === hbTd) return;
+    if (td === hbTd) { if (hb.classList.contains('hidden')) place(); return; }
     hbTd = td; hbKw = kwOf(td);
     if (!hbKw) { hbTd = null; hb.classList.add('hidden'); return; }
     place();
