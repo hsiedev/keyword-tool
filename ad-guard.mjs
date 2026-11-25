@@ -4,6 +4,7 @@
 // - POST는 '예상치 계산'(/estimate/...)만 허용: 계정에 아무것도 저장하지 않는 조회용 API
 const ALLOW = [
   ['GET', /^\/keywordstool$/], // 키워드 도구 (연관 키워드·검색량)
+  ['GET', /^\/ncc\/channels$/], // 비즈채널(사이트) 목록: 키워드 도구 '내 사이트 기준'
   ['GET', /^\/ncc\/campaigns$/], // 캠페인 목록
   ['GET', /^\/ncc\/adgroups$/], // 광고그룹 목록 (?nccCampaignId=)
   ['GET', /^\/ncc\/keywords$/], // 키워드 목록 (?nccAdgroupId=)

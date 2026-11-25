@@ -25,7 +25,7 @@ function tfetch(url, opt = {}, ms = 30000) {
   });
 }
 import { createPowerlink } from './powerlink-core.mjs';
-import { requireBrief, personaPlanRequest, planForGeneration, personaGenerateRequest, normalizePersonaItems } from './ai-persona.mjs';
+import { requireBrief, personaPlanRequest, planForGeneration, personaGenerateRequest, normalizePersonaItems, feedbackLines } from './ai-persona.mjs';
 import { parsePowerlinks, copyGenerateRequest, cleanCopyItems, copyVerifyRequest, cleanVerifyItems, createStore, copyMeta, mockMeta } from './copy-core.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -157,6 +157,47 @@ async function keywordTool(hints, typed = false) {
     const j = await adRequest('GET', '/keywordstool', { query: { hintKeywords: hint, showDetail: '1' } });
     const at = new Date().toISOString();
     return (j.keywordList || []).map(row => typed ? typedAd(row, at) : mapAd(row));
+  });
+}
+// 키워드 도구 화면: 힌트(최대 5개) · 시즌 월 · 시즌 테마 · 비즈채널(사이트) 조건으로 연관 키워드
+async function ktRaw(q) {
+  return cached('ktq:' + JSON.stringify(q), 12 * HOUR, async () => {
+    const j = await adRequest('GET', '/keywordstool', { query: { ...q, showDetail: '1' } });
+    return (j.keywordList || []).map(mapAd);
+  });
+}
+async function ktQuery(b) {
+  if (!hasAd()) throw Object.assign(new Error('검색광고 API 키가 없어 키워드 도구를 쓸 수 없어요 (설정 > API 설정)'), { status: 400 });
+  const hints = [...new Set((Array.isArray(b.hints) ? b.hints : String(b.hints || '').split(/[,\n]+/)).map((h) => String(h).replace(/\s+/g, '')).filter(Boolean))].slice(0, 5);
+  const opt = {};
+  const m = Number(b.month); if (Number.isInteger(m) && m >= 1 && m <= 12) opt.month = String(m);
+  const ev = Number(b.event); if (Number.isInteger(ev) && ev > 0 && ev < 1000) opt.event = String(ev);
+  if (typeof b.siteId === 'string' && /^[\w-]{4,80}$/.test(b.siteId)) opt.siteId = b.siteId;
+  if (!hints.length && !opt.event && !opt.siteId) throw Object.assign(new Error('키워드를 넣거나, 시즌 테마·내 사이트 중 하나를 골라 주세요'), { status: 400 });
+  const calls = [{ label: '', q: { ...opt, ...(hints.length ? { hintKeywords: hints.join(',') } : {}) } }];
+  if (b.split !== false && hints.length > 1) for (const h of hints) calls.push({ label: h, q: { ...opt, hintKeywords: h } });
+  const map = new Map(), errors = [];
+  const key = (k) => String(k || '').replace(/\s+/g, '').toLowerCase();
+  for (const c of calls) {
+    try {
+      for (const r of await ktRaw(c.q)) {
+        const k = key(r.keyword);
+        let x = map.get(k);
+        if (!x) { x = { ...r, from: [] }; map.set(k, x); }
+        if (c.label && !x.from.includes(c.label)) x.from.push(c.label);
+      }
+    } catch (e) { errors.push(`${c.label || '함께 조회'}: ${e.message}`); }
+    await sleep(120);
+  }
+  if (!map.size && errors.length) throw new Error(errors[0].replace(/^[^:]+: /, ''));
+  const hs = new Set(hints.map(key));
+  return { hints, opt, rows: [...map.values()].map((r) => ({ ...r, hint: hs.has(key(r.keyword)) })), errors };
+}
+async function ktChannels() {
+  if (!hasAd()) throw Object.assign(new Error('검색광고 API 키가 없어요'), { status: 400 });
+  return cached('ktch', HOUR, async () => {
+    const j = await adRequest('GET', '/ncc/channels');
+    return (Array.isArray(j) ? j : []).filter((c) => c.channelTp === 'SITE').map((c) => ({ id: c.nccBusinessChannelId, name: c.name || c.channelKey, url: c.channelKey || '' }));
   });
 }
 const foundVolume = row => ({pc:row.pc, mo:row.mo, total:row.total, comp:row.comp, pcLow:row.pcLow, moLow:row.moLow, ...(row.checkedAt ? {checkedAt:row.checkedAt} : {})});
@@ -954,7 +995,7 @@ function withPN(brief, pos, neg) {
     N.length ? `\n[제외할 것 · Negative] 이 단어가 들어가거나 이 방향·대상·의도에 해당하면 절대 안 된다 (어기면 부적합):\n${N.map((x) => '- ' + x).join('\n')}` : '',
   ].filter(Boolean).join('\n');
 }
-function generateRequest({ topic = '', examples = [], count = 50, extra = '', avoid = [], existing = [], rejected = [], minLen = 2, maxLen = 30, seeds = [], refMode = 'ref', plan = null, suggest = [], pos = [], neg = [] }) {
+function generateRequest({ topic = '', examples = [], count = 50, extra = '', avoid = [], existing = [], rejected = [], minLen = 2, maxLen = 30, seeds = [], refMode = 'ref', plan = null, suggest = [], pos = [], neg = [], feedback = [], liked = [] }) {
   const brief = withPN(String(topic || '').trim() + (extra ? '\n' + String(extra).trim() : ''), pos, neg);
   const sug = (Array.isArray(suggest) ? suggest : []).map((x) => ({ keyword: String(x?.keyword ?? x ?? '').replace(/\s+/g, ''), total: x?.total })).filter((x) => x.keyword).slice(0, 200);
   const pl = plan && typeof plan === 'object' ? plan : null;
@@ -979,8 +1020,9 @@ function generateRequest({ topic = '', examples = [], count = 50, extra = '', av
     examples.length ? (refMode === 'expand'
       ? `\n[참고 키워드] 이 키워드들과 같은 결로 넓혀라: ${examples.join(', ')}`
       : `\n[참고 키워드] 사용자가 참고로 준 것 (방향만 참고. 이 단어 조합 안에서만 맴돌지 말고, 브리프에 맞으면 전혀 다른 단어로도 발굴할 것): ${examples.join(', ')}`) : '',
+    feedbackLines({ feedback, liked }) ? '\n' + feedbackLines({ feedback, liked }) : '',
     '',
-    `위 브리프에 맞는 검색 키워드를 ${n}개 발굴해줘.`,
+    `위 브리프${(feedback || []).length ? '와 사용자 의견' : ''}에 맞는 검색 키워드를 ${n}개 발굴해줘.`,
     sd.length || sug.length ? [
       '발굴 순서 (반드시 지킬 것):',
       '1) 먼저 [실제 검색 데이터]에서 브리프의 목적·타깃에 맞는 키워드를 빠짐없이 고른다. 글자 그대로 쓴다. 검색량이 큰 것부터 우선한다',
@@ -1668,6 +1710,8 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, { ok: true, count: b.sources.length });
       }
     }
+    if (u.pathname === '/api/kt/query' && req.method === 'POST') { try { return send(res, 200, await ktQuery(await readBody(req))); } catch (e) { return send(res, e.status || 502, { error: e.message }); } }
+    if (u.pathname === '/api/kt/channels') { try { return send(res, 200, { channels: await ktChannels() }); } catch (e) { return send(res, e.status || 502, { error: e.message }); } }
     if (u.pathname.startsWith('/api/ai/') || u.pathname.startsWith('/api/copy/') || u.pathname === '/api/volumes' || u.pathname === '/api/bulk-stream') {
       try {
         if (u.pathname === '/api/ai/seed' && req.method === 'POST') {

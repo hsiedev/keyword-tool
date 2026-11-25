@@ -104,7 +104,6 @@
     $('#ktSite').onfocus = loadChannels;
     $('#ktSplit').onchange = () => { S.q.split = $('#ktSplit').checked; saveQ(); };
     $('#ktGo').onclick = run;
-    window.__applyToggles?.($('#ktBody'));
     chips(); fillChannels(); drawRes();
   }
   const saveQ = () => { try { localStorage.setItem('ktQuery', JSON.stringify(S.q)); } catch {} };
@@ -301,7 +300,7 @@
       const v = $('#ktView'); if (!v || v.classList.contains('hidden')) return;
       v.classList.add('hidden');
       $('#main').classList.remove('hidden'); $('#banners')?.classList.remove('hidden');
-      try { $('#tabs').classList.toggle('hidden', !window.STATE); } catch {}
+      try { $('#tabs').classList.toggle('hidden', !STATE); } catch {}
       if (location.hash === '#kt') history.replaceState(null, '', location.pathname + location.search);
     },
   };

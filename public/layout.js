@@ -7,6 +7,7 @@
     dup: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
     copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
     pl: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="1.5"/><path d="M7 7h6"/><path d="M3 14h10M3 18h7"/><circle cx="18" cy="17" r="3"/><path d="m20.2 19.2 1.8 1.8"/></svg>',
+    kt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h9M4 12h6M4 18h5"/><circle cx="16.5" cy="15.5" r="3.5"/><path d="m19 18 2.5 2.5"/></svg>',
     bid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 19V5m-4 4 4-4 4 4m4-4v14m-4-4 4 4 4-4"/></svg>',
     mock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M7 13h6M7 16h10"/></svg>',
     bulk: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18M3 12h18M3 19h18"/><path d="M8 5v14"/></svg>',
@@ -17,6 +18,7 @@
   };
   const VIEWS = [
     ['analyze', '키워드 분석'],
+    ['kt', '키워드 도구'],
     ['ai', 'AI 키워드 생성기'],
     ['dup', '키워드 중복 검사'],
     ['bulk', '대량 분석'],
@@ -133,7 +135,7 @@
 
   // ---------------------------------------------------------------- 화면 전환
   const isOn = (id) => { const el = document.getElementById(id); return el && !el.classList.contains('hidden'); };
-  const current = () => (isG() ? 'analyze' : isOn('bidView') ? 'bid' : isOn('copyView') ? 'copy' : isOn('mockView') ? 'mock' : isOn('plView') ? 'pl' : isOn('aiView') ? 'ai' : isOn('dupView') ? 'dup' : isOn('bulkView') ? 'bulk' : 'analyze');
+  const current = () => (isG() ? 'analyze' : isOn('ktView') ? 'kt' : isOn('bidView') ? 'bid' : isOn('copyView') ? 'copy' : isOn('mockView') ? 'mock' : isOn('plView') ? 'pl' : isOn('aiView') ? 'ai' : isOn('dupView') ? 'dup' : isOn('bulkView') ? 'bulk' : 'analyze');
   // 메뉴(탭)마다 마지막 스크롤 위치: 새로고침해도 유지 (sessionStorage)
   let POS = {};
   try { POS = JSON.parse(sessionStorage.getItem('ktPos') || '{}') || {}; } catch {}
@@ -165,6 +167,7 @@
     savePos();
     const fromBid = isOn('bidView');
     if (v !== 'bid') window.__BID?.hide();
+    if (v !== 'kt') window.__KTV?.hide();
     if (v === 'bid') {
       if (isOn('aiView')) window.showAI?.(false);
       if (isOn('dupView')) window.showDup?.(false);
@@ -177,6 +180,7 @@
     if (v === 'mock') window.showMock?.(true);
     if (v === 'pl') window.showPl?.(true);
     if (v === 'bid') window.__BID?.show(true);
+    if (v === 'kt') { if (isOn('aiView')) window.showAI?.(false); if (isOn('dupView')) window.showDup?.(false); if (isOn('bulkView')) window.showBulk?.(false); window.__KTV?.show(); }
     if (v === 'analyze') {
       if (fromBid) { ['main','banners','tabs'].forEach(id => document.getElementById(id)?.classList.remove('hidden')); history.replaceState(null, '', location.pathname + location.search); }
       if (isOn('aiView')) window.showAI?.(false);
@@ -224,7 +228,7 @@
   // 각 화면의 내역 목록(AI 생성기·대량 분석)을 사이드바 안으로
   function adopt() {
     const slot = document.getElementById('asSlot');
-    ['aiSide', 'bSide', 'cSide', 'mSide', 'pSide', 'bidSide'].forEach((id) => { const el = document.getElementById(id); if (el && el.parentElement !== slot) slot.appendChild(el); });
+    ['aiSide', 'bSide', 'cSide', 'mSide', 'pSide', 'bidSide', 'ktSide'].forEach((id) => { const el = document.getElementById(id); if (el && el.parentElement !== slot) slot.appendChild(el); });
   }
 
   // 키워드 분석: 최근 검색
@@ -244,13 +248,13 @@
   }
 
   function sync() {
-    if (isG() && ['aiView', 'dupView', 'bulkView', 'copyView', 'mockView', 'plView', 'bidView'].some(isOn)) { localStorage.setItem('siteMode', 'naver'); applyMode(); return; }
+    if (isG() && ['aiView', 'dupView', 'bulkView', 'copyView', 'mockView', 'plView', 'bidView', 'ktView'].some(isOn)) { localStorage.setItem('siteMode', 'naver'); applyMode(); return; }
     adopt();
     const v = current();
     side.querySelectorAll('[data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
     document.getElementById('topTitle').textContent = isG() ? 'Google 키워드 분석' : NAME[v];
     const show = (id, on) => document.getElementById(id)?.classList.toggle('hidden', !on);
-    show('aiSide', v === 'ai'); show('bSide', v === 'bulk'); show('cSide', v === 'copy'); show('mSide', v === 'mock'); show('pSide', v === 'pl'); show('bidSide', v === 'bid'); show('asRecent', v === 'analyze'); show('asNone', v === 'dup');
+    show('aiSide', v === 'ai'); show('bSide', v === 'bulk'); show('cSide', v === 'copy'); show('mSide', v === 'mock'); show('pSide', v === 'pl'); show('bidSide', v === 'bid'); show('ktSide', v === 'kt'); show('asRecent', v === 'analyze'); show('asNone', v === 'dup');
     document.getElementById('asLabel').textContent = v === 'analyze' ? '최근 검색' : v === 'mock' ? '캠페인' : '내역';
     // 설정 › 화면 › 숨길 버튼 → 사이드바에도 적용
     const hide = new Set((window.SETTINGS?.ui?.hideButtons) || []);
@@ -294,7 +298,7 @@
     modeMini.textContent = g ? 'G' : 'N';
     modeMini.title = g ? '지금 구글 모드 · 누르면 네이버로' : '지금 네이버 모드 · 누르면 구글로';
     if (g) {
-      window.__hideCopy?.(); window.__hideMock?.(); window.__hidePl?.(); window.__BID?.hide();
+      window.__hideCopy?.(); window.__hideMock?.(); window.__hidePl?.(); window.__BID?.hide(); window.__KTV?.hide();
       if (isOn('aiView')) window.showAI?.(false);
       if (isOn('dupView')) window.showDup?.(false);
       if (isOn('bulkView')) window.showBulk?.(false);
@@ -306,7 +310,7 @@
 
   // 화면이 바뀌면(다른 코드가 바꿔도) 사이드바·제목을 맞춤
   const mo = new MutationObserver(() => sync());
-  ['aiView', 'dupView', 'bulkView', 'copyView', 'mockView', 'plView', 'bidView', 'main', 'empty'].forEach((id) => { const el = document.getElementById(id); if (el) mo.observe(el, { attributes: true, attributeFilter: ['class'] }); });
+  ['aiView', 'dupView', 'bulkView', 'copyView', 'mockView', 'plView', 'bidView', 'ktView', 'main', 'empty'].forEach((id) => { const el = document.getElementById(id); if (el) mo.observe(el, { attributes: true, attributeFilter: ['class'] }); });
   if (typeof window.applyUI === 'function') { const o = window.applyUI; window.applyUI = function () { const r = o.apply(this, arguments); sync(); return r; }; }
 
   // ---------------------------------------------------------------- 서버 상태 띠: 꺼짐 / 예전 버전 / 코드가 바뀜 → 다시 시작
@@ -349,6 +353,7 @@
   sync();
   applyMode();
   if (location.hash === '#bid' && !isG()) go('bid');
+  if (location.hash === '#kt' && !isG()) go('kt');
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; // 브라우저 기본 복원은 내용이 늦게 그려지면 실패해서 직접 함
   setTimeout(() => restoreY(POS[current()] || 0), 50);
 })();
