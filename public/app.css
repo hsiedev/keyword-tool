@@ -774,3 +774,101 @@ html.dark .modal .set-sec input.sw.sw:not(:checked){background:#4b4b4b}
 .ai-persona-plan{display:grid;gap:6px;padding:6px 0}
 .ai-persona-row{margin-top:3px;white-space:normal;line-height:1.5;min-width:120px}
 .ai-persona-hold{color:var(--warn-fg)}
+
+/* ================================================================ 키워드 도구 (kt.js) */
+.kt-main .page-head{margin:4px 0 16px}
+.page-head h2{font-size:20px;font-weight:700;letter-spacing:-.02em;margin:0 0 4px}
+.page-head p{margin:0;color:var(--muted-fg);font-size:13.5px}
+.kt-q{display:flex;flex-direction:column;gap:14px;padding:20px 22px}
+.fl{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--foreground)}
+.fl .muted{font-weight:400}
+.kt-q-row{display:flex;gap:8px}
+.kt-hints{font-size:15px;padding:11px 14px}
+.kt-go{padding:0 26px;font-size:14px;font-weight:600}
+.kt-chips:empty{display:none}
+.kt-warn{color:var(--warn-fg);font-size:12.5px}
+.kt-q-opts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.kt-q-opts .inp{font-weight:400}
+.kt-split{font-size:13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.kt-msg{font-size:13px;color:var(--muted-fg);min-height:0}
+.kt-msg:empty{display:none}
+.kt-msg.err{color:var(--bad-fg)}
+.kt-msg .spin{display:inline-block;width:12px;height:12px;border-width:2px;vertical-align:-2px;margin-right:4px}
+.kt-empty{margin-top:16px;color:var(--muted-fg);font-size:13.5px;line-height:1.8}
+.kt-empty b{color:var(--foreground)}
+.kt-empty ul{margin:6px 0 0;padding-left:18px}
+.kt-sum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:18px 0 12px}
+.kt-sum>div{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;display:flex;flex-direction:column;gap:4px}
+.kt-sum span{font-size:12.5px;color:var(--muted-fg)}
+.kt-sum b{font-size:22px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.kt-resc{padding:18px 20px}
+.kt-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;font-size:14px}
+.kt-filters{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;padding:12px 14px;background:var(--muted);border-radius:var(--radius-sm);margin-bottom:12px;font-size:13px}
+.kt-filters>label{display:flex;align-items:center;gap:6px;color:var(--foreground)}
+.kt-filters .inp{width:150px;padding:6px 9px;background:var(--background)}
+.kt-filters .kf-n{width:88px}
+.kt-filters select.inp{width:auto}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;background:var(--background)}
+.seg button{border:0;background:none;padding:6px 11px;font-size:12.5px;color:var(--muted-fg)}
+.seg button+button{border-left:1px solid var(--border)}
+.seg button.on{background:var(--primary);color:var(--primary-fg);font-weight:600}
+.kt-acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.kt-target{font-size:13px;color:var(--muted-fg);margin-right:2px}
+.kt-target b{color:var(--foreground)}
+.kt-tbl{max-height:70vh;overflow:auto;border:1px solid var(--border);border-radius:var(--radius-sm)}
+#ktTbl{min-width:1000px}
+#ktTbl thead tr.kt-grp th{text-align:center;border-bottom:1px solid var(--border)}
+#ktTbl thead tr:nth-child(2) th{top:37px}
+#ktTbl th.ck,#ktTbl td.ck{width:34px;text-align:center}
+#ktTbl tr.sel td{background:color-mix(in oklab,var(--accent) 8%,transparent)}
+#ktTbl tr.kt-hint td{background:color-mix(in oklab,var(--info-fg) 6%,transparent)}
+#ktTbl .kt-from .chip{font-size:11.5px;padding:1px 8px}
+.comp{display:inline-block;min-width:34px;text-align:center;border-radius:99px;padding:1px 8px;font-size:12px;font-weight:600}
+.comp.c3{background:var(--bad-bg);color:var(--bad-fg)}.comp.c2{background:var(--warn-bg);color:var(--warn-fg)}.comp.c1{background:var(--ok-bg);color:var(--ok-fg)}
+.kt-more{display:flex;gap:10px;align-items:center;justify-content:center;margin-top:12px}
+.kt-note{margin:12px 0 0;line-height:1.7}
+@media(max-width:1000px){.kt-q-opts,.kt-sum{grid-template-columns:1fr 1fr}}
+
+/* ================================================================ AI 생성기: AI에게 의견 주기 */
+.ai-fb{margin-bottom:14px;border-color:color-mix(in oklab,var(--accent) 35%,var(--border));background:color-mix(in oklab,var(--accent) 3%,var(--card))}
+.ai-fb-h{display:flex;flex-direction:column;gap:2px;margin-bottom:10px}
+.ai-fb-h b{font-size:15px}
+.ai-fb-h .muted{font-size:13px}
+.ai-fb-log{display:flex;flex-direction:column;gap:10px;max-height:260px;overflow:auto;padding:4px 2px 10px;margin-bottom:8px;border-bottom:1px dashed var(--border)}
+.fb-turn{display:flex;flex-direction:column;gap:4px}
+.fb-me{align-self:flex-end;max-width:80%;background:var(--primary);color:var(--primary-fg);border-radius:14px 14px 4px 14px;padding:8px 30px 8px 12px;position:relative;font-size:13.5px;line-height:1.55;white-space:pre-wrap}
+.fb-me small{display:block;opacity:.75;font-size:12px;margin-top:2px}
+.fb-x{position:absolute;top:4px;right:6px;border:0;background:none;color:inherit;opacity:.6;font-size:15px;line-height:1;padding:2px 4px}
+.fb-x:hover{opacity:1}
+.fb-ai{align-self:flex-start;font-size:12.5px;color:var(--muted-fg);background:var(--muted);border-radius:14px 14px 14px 4px;padding:5px 11px}
+.fb-ai.run{color:var(--accent)}
+.ai-fb-quick{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.ai-fb-quick .chip{font-size:12.5px;padding:3px 10px;cursor:pointer}
+.ai-fb-quick .chip:hover{border-color:var(--accent);color:var(--accent)}
+#aiFbText{font-size:14px}
+.ai-fb-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;font-size:13px}
+
+/* ================================================================ 가독성 정리 (2026-11-25) */
+:root{--muted-fg:#666666}
+html.dark{--muted-fg:#a8a8a8}
+.muted{font-size:12.5px}
+.card{padding:18px 20px}
+.card h3{font-size:15px;margin-bottom:12px}
+/* 입력 칸 이름·옵션 설명: 너무 흐려서 읽기 어려웠음 */
+.card label.muted{color:color-mix(in oklab,var(--foreground) 80%,var(--background));font-size:13px}
+.card label.muted .muted{color:var(--muted-fg)}
+/* 11px 글자는 12px로 (화면 곳곳의 인라인 스타일 포함) */
+[style*="font-size:11px"],[style*="font-size: 11px"]{font-size:12px!important}
+.sit{padding:8px 10px}
+.sit .sn{font-size:13.5px}
+.sit .sm{font-size:12px}
+.side-h{font-size:12px}
+/* 표: 머리글 진하게, 줄 간격 조금 넓게 */
+table.rel th{color:color-mix(in oklab,var(--foreground) 72%,var(--background));font-weight:600;font-size:12.5px}
+table.rel td{padding:9px 11px}
+/* 작업 제목: 한 줄로 (본문을 덜 밀어냄) */
+.work-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 16px}
+.work-title label{display:inline;margin:0;font-weight:600;font-size:13px;white-space:nowrap}
+.work-title input.inp{max-width:340px;padding:7px 10px}
+.work-title small{display:none}
+.btn{font-size:13.5px}
