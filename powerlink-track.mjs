@@ -40,8 +40,9 @@ export function cleanTracker(b, old) {
     if (!key || seen.has(key)) continue;
     seen.add(key);
     const o = before.get(key) || {};
-    items.push({ key, kw, on: x?.on !== false,
-      target: { pc: x && 'targetPc' in x ? tg(x.targetPc) : o.target?.pc ?? null, mo: x && 'targetMo' in x ? tg(x.targetMo) : o.target?.mo ?? null } });
+    const obj = x && typeof x === 'object' ? x : null;
+    items.push({ key, kw, on: obj?.on !== false,
+      target: { pc: obj && 'targetPc' in obj ? tg(obj.targetPc) : o.target?.pc ?? null, mo: obj && 'targetMo' in obj ? tg(obj.targetMo) : o.target?.mo ?? null } });
   }
   if (!items.length) throw new Error('추적할 키워드를 넣어주세요');
   if (items.length > cap) throw new Error(`키워드가 ${items.length}개예요. 키워드 상한(${cap}개)을 올리거나 키워드를 줄여 주세요`);
