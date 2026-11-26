@@ -130,7 +130,7 @@
       ${rows.map((r) => {
         const k = r.key + '|' + r.dev, hit = r.r != null && r.target && r.r <= r.target;
         let ch = '<span class="muted">—</span>';
-        if (r.at && r.prevAt !== null && r.prev !== undefined) {
+        if (r.at && r.prevAt) {
           if (r.r != null && r.prev != null) ch = r.r < r.prev ? `<span class="plt-up">▲${r.prev - r.r}</span>` : r.r > r.prev ? `<span class="plt-down">▼${r.r - r.prev}</span>` : '<span class="muted">그대로</span>';
           else if (r.r == null && r.prev != null) ch = '<span class="plt-down">사라짐</span>';
           else if (r.r != null && r.prev == null) ch = '<span class="plt-up">다시 보임</span>';

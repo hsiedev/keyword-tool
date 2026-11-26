@@ -19,6 +19,7 @@
     thread: [], prev: null, band: 0,
     q: '', onlyMiss: false, sort: { key: 'i', dir: 1 }, page: 1, timer: 0, perfBusy: false,
     reportView: null, columnEdit: null,
+    track: localStorage.getItem('plTrack') === '1', // 순위 추적 화면 (pl-track.js)
   };
   const PG = 100;
   const BANDS = { pc: [['', '전체'], ['1-3', '1~3위'], ['4-10', '4~10위'], ['11-', '11위~']], mo: [['', '전체'], ['1-3', '1~3위'], ['4-5', '4~5위'], ['6-', '6위~']] };
@@ -90,6 +91,7 @@
   };
   async function loadJobs() { try { const j = await api('/api/pl/jobs'); S.jobs = j.jobs; S.running = j.running; } catch {} drawSide(); }
   async function openJob(id) {
+    S.track = false; localStorage.setItem('plTrack', '');
     try { const j = await api('/api/pl/job?id=' + encodeURIComponent(id)); S.job = j.job; S.cur = id; S.thread = j.thread || []; S.prev = j.prev || null; S.running = j.running ? { id, ...j.running } : (S.running?.id === id ? null : S.running); }
     catch (e) { toast(e.message, 'warn'); S.cur = null; S.job = null; }
     if (S.reportView?.id !== S.cur) S.reportView = null;
@@ -157,13 +159,16 @@
     const group = (r) => { const ks = kids(r), openT = r.id === curRoot; return item(r, false, ks.length, openT) + (openT ? ks.map((k) => item(k, true)).join('') : ''); };
     const last = (r) => Math.max(r.createdAt, ...kids(r).map((k) => k.createdAt));
     const pinned = roots.filter((r) => r.pinned).sort((x, y) => last(y) - last(x)), rest = roots.filter((r) => !r.pinned).sort((x, y) => last(y) - last(x));
+    const TS = window.__PLT?.summary?.() || { on: 0 };
     side.innerHTML = `<button class="btn pri newbtn" id="pSideNew">+ 새 분석</button>
+      <div class="sit pl-trk ${S.track ? 'on' : ''}" id="pSideTrack" title="켜 두면 정해진 간격으로 내 파워링크 순위를 계속 확인해요"><div class="sn"><span class="plt-dot ${TS.on ? 'on' : ''}"></span><span>순위 추적</span></div><div class="sm">${TS.on ? `추적 중 ${TS.on}개` : '켜 두면 계속 순위 확인'}</div></div>
       ${pinned.length ? `<div class="side-h">고정됨</div>${pinned.map(group).join('')}` : ''}
       <div class="side-h">내역</div>
       ${rest.map(group).join('') || '<div class="muted" style="padding:6px 10px;font-size:12px">분석할 때마다 여기 쌓여요</div>'}
       <div class="pl-usage" id="plUsage">${usageHTML()}</div>`;
     bindUsage();
-    $('#pSideNew').onclick = () => { clearTimeout(S.timer); S.cur = null; S.job = null; S.reportView = null; S.thread = []; S.prev = null; localStorage.setItem('plCur', ''); draw(); };
+    $('#pSideTrack').onclick = () => openTrack();
+    $('#pSideNew').onclick = () => { clearTimeout(S.timer); S.track = false; localStorage.setItem('plTrack', ''); S.cur = null; S.job = null; S.reportView = null; S.thread = []; S.prev = null; localStorage.setItem('plCur', ''); draw(); };
     $$('[data-pid]', side).forEach((el) => {
       el.onclick = () => openJob(el.dataset.pid);
       el.oncontextmenu = (e) => { e.preventDefault(); const m = S.jobs.find((x) => x.id === el.dataset.pid); if (m) showCtx(e, m); };
@@ -404,6 +409,11 @@
     if (!box) return;
     if (S.columnEdit && !editOf(S.job)) closeColumnEditor();
     drawSide();
+    if (S.track && window.__PLT) {
+      box.innerHTML = `<div class="sec"><h2>파워링크 순위 추적 <span class="muted" style="font-size:13px;font-weight:500">켜 두면 이 PC가 정해진 간격으로 내 파워링크 순위를 계속 확인 · 클릭·캡처 없음</span></h2><div id="pltRoot"></div></div>`;
+      window.__PLT.mount($('#pltRoot'));
+      return;
+    }
     box.innerHTML = `<div class="sec"><h2>파워링크 분석기 <span class="muted" style="font-size:13px;font-weight:500">내 파워링크가 실제 네이버 검색 화면(로그아웃 상태)에서 몇 위인지 · AI 없이 이 PC에서 직접 검색</span></h2>
       ${compareLauncher()}${S.job ? jobHTML() : newHTML()}</div>`;
     $('#plCompare').onclick = openCompare;
@@ -844,7 +854,7 @@
   })();
 
   // ---------------------------------------------------------------- 메뉴 열기·닫기
-  window.__RESET_pl = () => { clearTimeout(S.timer); S.cur = null; S.job = null; S.reportView = null; S.draft = { rows: [], file: '', paste: '', reports: [], period: {} }; localStorage.setItem('plCur', ''); draw(); scrollTo(0, 0); return '초기화했어요 (지난 분석은 왼쪽 내역에 있어요)'; };
+  window.__RESET_pl = () => { clearTimeout(S.timer); S.track = false; localStorage.setItem('plTrack', ''); S.cur = null; S.job = null; S.reportView = null; S.draft = { rows: [], file: '', paste: '', reports: [], period: {} }; localStorage.setItem('plCur', ''); draw(); scrollTo(0, 0); return '초기화했어요 (지난 분석은 왼쪽 내역에 있어요)'; };
   function showPl(on) {
     if (on) { $('#aiView')?.classList.add('hidden'); window.__hideDup?.(); window.__hideBulk?.(); window.__hideCopy?.(); window.__hideMock?.(); }
     $('#plView').classList.toggle('hidden', !on);
@@ -858,6 +868,16 @@
     }
   }
   window.showPl = showPl;
+  // 순위 추적 화면 열기 (왼쪽 '순위 추적', Ctrl+K, 알림 누르기)
+  function openTrack() {
+    clearTimeout(S.timer); closeColumnEditor();
+    S.track = true; S.cur = null; S.job = null; S.reportView = null; S.thread = []; S.prev = null;
+    localStorage.setItem('plCur', ''); localStorage.setItem('plTrack', '1');
+    if ($('#plView').classList.contains('hidden')) { if (window.__LAYOUT?.go) window.__LAYOUT.go('pl'); else showPl(true); }
+    draw();
+  }
+  window.__PL_OPEN_TRACK = openTrack;
+  window.__PL_JOBS = () => S.jobs;
   // 헤더는 알려진 작업 상태만 읽으며, 다른 화면에서는 진행 여부만 갱신한다.
   window.__PL_WORK = { read: () => S.running, open: id => S.cur === id ? undefined : openJob(id) };
   setInterval(() => { if (S.running && $('#plView').classList.contains('hidden') && !document.hidden) loadJobs(); }, 5000);

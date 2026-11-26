@@ -95,6 +95,7 @@
   function items() {
     const out = [];
     for (const [v, n] of NAV) out.push({ g: '메뉴', t: n, sub: '열기', run: () => go(v) });
+    out.push({ g: '메뉴', t: '파워링크 순위 추적', sub: '켜 두면 계속 순위 확인', run: () => window.__PLT?.open() });
     out.push({ g: '메뉴', t: '설정', sub: 'API 키 · 규칙 · 화면', run: () => window.openSettings?.() });
     out.push({ g: '메뉴', t: '다크 모드 바꾸기', sub: '화면 테마', run: () => document.querySelector('.top-actions .icon-btn[title*="테마"], #themeBtn')?.click() });
     for (const x of STAR.list()) out.push({ g: '관심 키워드', t: x.kw, sub: '★ ' + fmtD(x.at), run: () => analyze(x.kw), kw: x.kw });
