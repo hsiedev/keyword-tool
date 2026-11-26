@@ -348,10 +348,11 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
   // 네이버 검색 요청 사이 간격 + 제한 걸리면 쉬기
   let last = 0, pauseUntil = 0, blockN = 0;
   let RUN = null; // { id, stop, browser, note, cur }
-  async function gate() {
+  // stop: 멈춰야 하면 true (분석 = [중지], 순위 추적 = 추적 멈춤). 분석과 순위 추적이 이 간격을 함께 씀
+  async function gate(stop = () => RUN?.stop) {
     const gap = Math.max(500, Number(R().gapMs) || 1200);
     for (;;) {
-      if (RUN?.stop) throw new Error('STOP');
+      if (stop()) throw new Error('STOP');
       const wait = Math.max(last + gap + Math.random() * 300, pauseUntil) - Date.now();
       if (wait <= 0) break;
       await sleep(Math.min(wait, 500));
@@ -364,9 +365,9 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
     pauseUntil = Date.now() + sec * 1000;
     if (RUN) RUN.note = `네이버 검색 제한 → ${sec}초 쉬었다 이어가요`;
   }
-  async function getHtml(url, ua) {
+  async function getHtml(url, ua, stop) {
     for (let a = 0; a < 6; a++) {
-      await gate();
+      await gate(stop);
       let r, h;
       try { r = await fetch(url, { signal: AbortSignal.timeout(20000), headers: { 'User-Agent': ua, 'Accept-Language': 'ko-KR,ko;q=0.9', Accept: 'text/html,application/xhtml+xml', Referer: 'https://www.naver.com/' } }); h = await r.text(); }
       catch (e) { if (a === 5) throw e; await sleep(2000); continue; }
@@ -771,5 +772,12 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
     return { ads, mine: findMine(ads, urls) };
   }
 
-  return { handle, probe, isRunning: () => !!RUN, stopAll: () => { if (RUN) RUN.stop = true; } };
+  // 순위 추적용: 키워드 하나를 한 번만 검색해 내 광고 순위 (캡처 없음)
+  async function rankOnce(kw, urls, dev = 'pc', stop = () => false) {
+    const D = DEV[dev] || DEV.pc, ads = parseAds(await getHtml(D.more(encodeURIComponent(kw)), D.ua, stop));
+    const me = findMine(ads, urls);
+    return { rank: me ? me.rank : null, total: ads.length, display: me?.display || '', score: me?.score || 0 };
+  }
+
+  return { handle, probe, rankOnce, limiter: () => ({ pauseUntil, blockN }), isRunning: () => !!RUN, stopAll: () => { if (RUN) RUN.stop = true; } };
 }

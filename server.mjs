@@ -25,6 +25,7 @@ function tfetch(url, opt = {}, ms = 30000) {
   });
 }
 import { createPowerlink } from './powerlink-core.mjs';
+import { createTracker } from './powerlink-track.mjs';
 import { requireBrief, personaPlanRequest, planForGeneration, personaGenerateRequest, normalizePersonaItems, feedbackLines } from './ai-persona.mjs';
 import { parsePowerlinks, copyGenerateRequest, cleanCopyItems, copyVerifyRequest, cleanVerifyItems, createStore, copyMeta, mockMeta } from './copy-core.mjs';
 
@@ -68,6 +69,8 @@ const hasAd = () => !!(config.adApiKey && config.adSecret && config.adCustomerId
 // 파워링크 분석기 (크롤링: 순위·캡처, 검색광고 API: 순위별 입찰가·예상 실적) — data\powerlink\ 에 저장
 const TRACK = createBidTracking(path.join(__dirname, 'data'));
 const PL = createPowerlink({ dataDir: path.join(__dirname, 'data'), adRequest: (...a) => adRequest(...a), hasAd: () => hasAd(), getRules: () => SETTINGS.rules.powerlink });
+// 파워링크 순위 추적 (켜 두면 서버가 계속 순위 확인, 서버를 다시 켜도 이어감) — data\powerlink\track\
+const TRK = createTracker({ root: path.join(__dirname, 'data', 'powerlink'), rankOnce: PL.rankOnce, limiter: PL.limiter });
 const hasOpen = () => !!(config.clientId && config.clientSecret);
 
 // ---------------------------------------------------------------- 캐시 (디스크에도 저장)
@@ -1583,7 +1586,7 @@ function guard(req, u) {
 }
 
 // ---------------------------------------------------------------- 버전: 서버 코드가 바뀌었는지 (다시 시작 필요 여부)
-const SERVER_FILES = ['server.mjs', 'bid-tracking.mjs', 'bid-diagnosis.mjs', 'public/bid-track-rules.js', 'ai-cli.mjs', 'github-sync.mjs', 'sections.mjs', 'settings-defaults.mjs', 'copy-core.mjs', 'public/copy-spec.js', 'google-core.mjs', 'powerlink-core.mjs', 'powerlink-compare.mjs', 'public/pl-columns.js', 'ai-persona.mjs', 'public/ai-brief.js'];
+const SERVER_FILES = ['server.mjs', 'powerlink-track.mjs', 'bid-tracking.mjs', 'bid-diagnosis.mjs', 'public/bid-track-rules.js', 'ai-cli.mjs', 'github-sync.mjs', 'sections.mjs', 'settings-defaults.mjs', 'copy-core.mjs', 'public/copy-spec.js', 'google-core.mjs', 'powerlink-core.mjs', 'powerlink-compare.mjs', 'public/pl-columns.js', 'ai-persona.mjs', 'public/ai-brief.js'];
 const codeHash = () => {
   const h = crypto.createHash('sha1');
   for (const f of SERVER_FILES) { try { h.update(fs.readFileSync(path.join(__dirname, f))); } catch {} }
@@ -1615,6 +1618,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (['/api/bid-diagnosis','/api/bid-diagnosis/explain'].includes(u.pathname)) return await BID_DIAG(req,res,u,readBody,send);
     if (u.pathname === '/api/bid-tracking') return await TRACK(req, res, u, readBody, send);
+    if (u.pathname === '/api/pl/track' || u.pathname.startsWith('/api/pl/track/')) return TRK.handle(req, res, u, readBody, send);
     if (u.pathname.startsWith('/api/pl/')) return PL.handle(req, res, u, readBody, send);
     if (u.pathname === '/api/suggest') {
       const kw = String(u.searchParams.get('keyword') || '').trim().slice(0, 60);
