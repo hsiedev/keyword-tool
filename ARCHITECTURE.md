@@ -34,6 +34,7 @@ start.bat → server.mjs (127.0.0.1:8787)
 | 키워드 중복 검사 | `public/dedup.js`, `public/ai.js`, `/api/sources` | TXT·CSV·XLSX에서 열을 선택하고, 정규화·어순·포함 관계·한 글자 차이를 옵션에 따라 검사한다. 남긴 키워드를 내보내거나 대량 분석으로 보낸다. 기존 목록은 서버에도 저장할 수 있다. |
 | 대량 분석 | `public/bulk.js`, `/api/bulk-stream`, `/api/bulk-history` | 파일·붙여넣기 → 공백 제거·대소문자 무시 중복 제거 → 회차별 조회 → 한 내역 탭에 합산. 검색량은 5개씩, 입찰가는 선택적으로 묶어서, 블로그는 선택적으로 키워드별 조회. 정렬·필터·AI 재검증, XLSX·CSV·TXT 내보내기를 제공한다. |
 | Google 모드 | `public/google.js`, `google-core.mjs`, `/api/google/*` | Google·YouTube 자동완성, 비공식 Google Trends, 키워드 플래너·트렌드 CSV 가져오기. Google Ads API 연동이 아니고, 비공식 조회 실패 시 가져온 데이터를 활용한다. |
+| 파워링크 순위 추적 | `public/pl-track.js`, `powerlink-track.mjs`, `/api/pl/track*` | 켜 둔 추적을 서버가 정해진 간격으로 확인. 목표·입찰가 기록·알림·그래프·엑셀. |
 | 파워링크 분석 | `public/pl.js`, `powerlink-core.mjs`, `powerlink-compare.mjs`, `/api/pl/*` | PC·모바일 순위 HTML에서 광고 URL을 읽고 내 광고를 일치 수준별로 찾는다. Edge/Chrome을 CDP로 제어해 캡처하고, 입찰가·성과 추정, 사진 포함 엑셀을 제공한다. 서버가 작업을 관리하고 완료 키워드 기준으로 이어간다. 저장된 두 분석의 실적 기간을 비교할 수 있다. |
 | AI 광고 카피 | `public/copy.js`, `copy-core.mjs`, `/api/copy/*`, `/api/copy-projects` | 경쟁 파워링크 문구를 참고해 카피 생성·다시 쓰기·재검증을 실행한다. 글자 수 등은 공용 `public/copy-spec.js`가 실제 계산한다. 프로젝트를 저장하고 목업으로 보낼 수 있다. |
 | 광고 목업 | `public/admock.js`, `copy-core.mjs`, `/api/ad-mock` | 광고 유형별 템플릿·확장소재를 조합해 화면을 미리 보고 PNG로 저장한다. 광고 집행 기능은 아니다. |
@@ -73,6 +74,7 @@ start.bat → server.mjs (127.0.0.1:8787)
 | `data/settings.json`, `data/existing-keywords.json` | 화면·규칙 / 기존 키워드 원본. |
 | `data/bulk-history/`, `data/copy-projects/`, `data/ad-mock/` | 작업별 JSON과 목록 인덱스. 대량 분석의 체크포인트는 작업의 `info.resume`에 저장한다. 이전 내역은 이 필드가 없어도 읽을 수 있다. |
 | `data/powerlink/`, `data/google/`, `data/emb-cache.json` | 파워링크 작업·캡처 / Google 수입 데이터 / 의미 유사도 벡터 캐시. |
+| `data/powerlink/track/<id>/` | 순위 추적 설정·최근 상태(`tracker.json`)와 확인 기록(`p-YYYYMMDD.jsonl`, 한 줄 = [시각, 키워드키, 기기, 순위|null, 광고 수]). 30일 지난 기록은 서버가 지운다. |
 | 브라우저 localStorage | 테마·모드·최근 검색·AI 키워드 세션 등. 브라우저 프로필이 다르면 동일하지 않다. |
 | `github-sync.mjs`, `data/github*.json` | 파일 변경을 감시해 선택적 자동 백업. 소스·문서·화면 규칙은 기본 대상, 기존 키워드·대량 내역은 선택 대상. 토큰·기타 업무 데이터는 제외. |
 
@@ -104,6 +106,10 @@ start.bat → server.mjs (127.0.0.1:8787)
 ### 새 작업 제목
 
 `public/work-title.js`가 제목 입력 UI와 60자 정리 규칙을 제공한다. 화면마다 기존 작업의 `name`·`custom`과 저장 흐름을 유지한다. 파워링크는 제목을 새 분석 초안에 보관해 파일을 넣거나 조건을 바꿔 다시 그릴 때 복원한다. 대량 분석은 새 초안에서 제목을 입력하고 분석 시작 시 저장하며, AI 키워드·카피는 기존 초안 저장을 사용한다. 광고 목업은 종류 선택 시 제목을 저장한다.
+
+### 파워링크 순위 추적 (powerlink-track.mjs · public/pl-track.js)
+
+서버가 1.5초마다 켜진 추적을 하나씩 돌며, 차례가 된 것만 `PL.rankOnce`(광고 더보기 HTML 1회, 캡처 없음)로 확인한다. `powerlink-core.mjs`의 `gate(stop)`·`getHtml(url, ua, stop)`은 분석과 추적이 같은 검색 간격·제한 대기(`pauseUntil`)를 공유하고, 각자의 멈춤 조건만 다르다. 추적 상태 판정(`judge`)은 hit / show / gone 가운데 같은 값이 2번 연속일 때 바뀐 것으로 보고, 첫 확인은 기준만 잡는다. 바뀌면 `events`(최근 100개)에 쌓고, 화면은 `/api/pl/track?lite=1&since=`로 15초마다 읽어 알린다. 입찰가 기록은 `focus[key]`(20분, 1분 간격)를 켠다. 시간대(`sched.mode=hours`)는 서버 PC 시각 기준이며, 자정을 넘는 구간도 된다. `/api/restart`는 추적 때문에 막지 않는다(다시 켜면 `on`인 추적을 이어감).
 
 ### 빠른 이동 (quick.js)
 
