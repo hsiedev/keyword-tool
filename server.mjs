@@ -34,6 +34,12 @@ const CONFIG_PATH = path.join(__dirname, 'config.json');
 const CACHE_PATH = path.join(__dirname, 'cache.json');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const SOURCES_PATH = path.join(__dirname, 'data', 'existing-keywords.json');
+const writeSources = (sources) => {
+  fs.mkdirSync(path.dirname(SOURCES_PATH), { recursive: true });
+  const tmp = SOURCES_PATH + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify({ updatedAt: new Date().toISOString(), sources }));
+  fs.renameSync(tmp, SOURCES_PATH);
+};
 const SETTINGS_PATH = path.join(__dirname, 'data', 'settings.json');
 const BULK_DIR = path.join(__dirname, 'data', 'bulk-history'); // 대량 분석 내역 (탭 하나 = 파일 하나)
 const BULK_INDEX = path.join(BULK_DIR, 'index.json');
@@ -1694,6 +1700,24 @@ const server = http.createServer(async (req, res) => {
       }
     }
     // 중복 검사용 기존 키워드 목록: 이 폴더의 data\existing-keywords.json에 저장
+    if (u.pathname === '/api/sources/append' && req.method === 'POST') {
+      const b = await readBody(req);
+      const id = b?.id;
+      const name = typeof b?.name === 'string' ? b.name.trim() : '';
+      if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(id) || !name || name.length > 80 || !Array.isArray(b.keywords) || b.keywords.some(k => typeof k !== 'string')) return send(res, 400, { error: '목록 이름 또는 키워드 형식을 확인해 주세요' });
+      const keywords = [...new Set(b.keywords.map(k => k.trim()).filter(Boolean))];
+      if (!keywords.length) return send(res, 400, { error: '저장할 키워드가 없어요' });
+      // 읽기·추가·쓰기는 동기 처리해서 다른 저장 요청과 섞여 목록을 덮어쓰지 않도록 해요.
+      let sources = [];
+      try {
+        sources = JSON.parse(fs.readFileSync(SOURCES_PATH, 'utf8')).sources;
+        if (!Array.isArray(sources)) throw new Error('기존 목록 파일 형식이 올바르지 않아요.');
+      } catch (e) { if (e.code !== 'ENOENT') throw e; }
+      if (sources.some(s => String(s?.id) === id)) return send(res, 409, { error: '이미 존재하는 목록 ID예요' });
+      const source = { id, name, keywords, addedAt: Date.now() };
+      writeSources([...sources, source]);
+      return send(res, 200, { ok: true, source });
+    }
     if (u.pathname === '/api/sources') {
       if (req.method === 'GET') {
         let sources = [];
@@ -1703,10 +1727,7 @@ const server = http.createServer(async (req, res) => {
       if (req.method === 'POST') {
         const b = await readBody(req);
         if (!Array.isArray(b.sources)) return send(res, 400, { error: 'sources 배열이 필요해요' });
-        fs.mkdirSync(path.dirname(SOURCES_PATH), { recursive: true });
-        const tmp = SOURCES_PATH + '.tmp';
-        fs.writeFileSync(tmp, JSON.stringify({ updatedAt: new Date().toISOString(), sources: b.sources }));
-        fs.renameSync(tmp, SOURCES_PATH);
+        writeSources(b.sources);
         return send(res, 200, { ok: true, count: b.sources.length });
       }
     }

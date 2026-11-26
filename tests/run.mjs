@@ -273,6 +273,20 @@ await test('자동완성: 네이버 관련·자동완성·구글을 합치고 �
   eq(all, ['운전자보험 필요성', '운전자보험비교', '운전자보험이란', '운전자보험 가격']);
   eq(j.all.find((x) => x.keyword === '운전자보험비교').src, ['네이버 자동완성', '구글 자동완성']);
 });
+await test('중복 검사: 붙여넣기 목록 추가는 기존 목록을 보존하고 동시 추가도 유지', async () => {
+  const keep = {id:'orig',name:'기존',keywords:['보험'],addedAt:1};
+  eq((await post('/api/sources', {sources:[keep]})).status, 200);
+  const item = {id:'paste-test',name:'텍스트 목록',keywords:[' 카드발급 ', '카드발급', '', '카드 신청']};
+  const pair = await Promise.all([post('/api/sources/append', item), post('/api/sources/append', {...item,id:'paste-second'})]);
+  eq(pair.map(r=>r.status),[200,200]);
+  const saved = (await (await get('/api/sources')).json()).sources;
+  eq(saved[0],keep); eq(saved.length,3);
+  eq(saved.find(x=>x.id===item.id).keywords,['카드발급','카드 신청']);
+  eq((await post('/api/sources/append', item)).status,409);
+  eq((await post('/api/sources/append', {...item,id:'bad-test',keywords:[' ',null]})).status,400);
+  eq((await (await get('/api/sources')).json()).sources,saved);
+});
+
 await test('설정 저장·읽기 (임시 폴더 안에서만)', async () => {
   const s = (await (await get('/api/settings')).json()).settings;
   s.ui.zoom = 110;

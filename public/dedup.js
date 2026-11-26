@@ -6,7 +6,8 @@
     sides: { new: { files: [], paste: '' }, old: { files: [], paste: '' } },
     saved: [], // 서버에 저장된 기존 키워드 목록 (AI 생성기 ②와 같은 파일)
     savedOn: new Set(),
-    opt: { order: true, similar: false, selfDup: true, nospace: true },
+    savingPaste: false,
+    opt: { order: false, similar: false, selfDup: true, nospace: true },
     result: null,
     filter: '전체',
   };
@@ -61,6 +62,7 @@
       ${side === 'old' ? '<div id="dsaved"></div>' : ''}
       <label class="muted" style="display:block;margin-top:10px">직접 붙여넣기 (줄바꿈·쉼표로 구분 · 엑셀 표를 복사해 붙여넣으면 '키워드' 열만 골라 넣어요)</label>
       <textarea id="dp_${side}" class="inp" rows="4" placeholder="${side === 'new' ? '운전자보험추천\n운전자보험비교' : '운전자보험\nKB운전자보험'}"></textarea>
+      ${side === 'old' ? '<div style="margin-top:7px"><button type="button" class="btn" id="dSavePaste" disabled>붙여넣은 키워드 저장</button></div>' : ''}
     </div>`;
   }
   function mount() {
@@ -107,6 +109,7 @@
       cb.onchange = () => { D.opt[k] = cb.checked; if (D.result) run(); };
     }
     $('#dRun').onclick = run;
+    $('#dSavePaste').onclick = savePastedKeywords;
     $('#dReset').onclick = async () => {
       if (!await uiConfirm('넣은 신규·기존 키워드와 결과를 모두 비울까요? (저장된 기존 키워드 목록 파일은 그대로)')) return;
       for (const side of ['new', 'old']) { D.sides[side] = { files: [], paste: '' }; $('#dp_' + side).value = ''; drawSide(side); }
@@ -147,6 +150,35 @@
       return true;
     } catch (e) { window.toast?.('기존 키워드 목록을 저장하지 못했어요: ' + e.message, 'err'); return false; }
   }
+  async function savePastedKeywords() {
+    if (D.savingPaste) return;
+    const paste = D.sides.old.paste;
+    const keywords = [...new Set(splitList(paste))];
+    if (!keywords.length) return;
+    D.savingPaste = true;
+    drawCount('old');
+    try {
+      const name = (await uiPrompt('기존 키워드 목록 이름', { value: '붙여넣은 키워드', max: 80 }))?.trim();
+      if (!name) return;
+      const id = crypto.randomUUID();
+      const res = await fetch('/api/sources/append', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, name, keywords }),
+      });
+      const j = await res.json();
+      if (!res.ok || !j.ok || j.source?.id !== id) throw new Error(j.error || '저장 응답을 확인할 수 없어요.');
+      if (!D.saved.some(s => s.id === id)) D.saved.push(j.source);
+      D.savedOn.add(id);
+      if (D.sides.old.paste === paste) {
+        D.sides.old.paste = '';
+        $('#dp_old').value = '';
+      }
+      D.result = null; drawSide('old'); drawResult();
+      window.dispatchEvent(new CustomEvent('sources-changed', { detail: 'dup' }));
+      window.toast?.(`'${name}'에 키워드 ${keywords.length.toLocaleString('ko-KR')}개를 저장했어요.`, 'ok');
+    } catch (e) { window.toast?.('기존 키워드 목록을 저장하지 못했어요: ' + e.message, 'err'); }
+    finally { D.savingPaste = false; drawCount('old'); }
+  }
   window.addEventListener('sources-changed', (e) => { if (e.detail !== 'dup') loadSaved(); });
   function dlSaved(s, fmt) {
     const base = String(s.name).replace(/\.(txt|csv|xlsx?|xlsm|tsv)(?=\s*(\([^)]*\))?\s*$)/i, '').replace(/[\\/:*?"<>|]/g, '').trim() || '기존 키워드';
@@ -168,6 +200,7 @@
   function drawCount(side) {
     const n = sideKeywords(side).length;
     $('#dc_' + side).textContent = n ? `${n.toLocaleString('ko-KR')}개` : '';
+    if (side === 'old') $('#dSavePaste').disabled = D.savingPaste || !splitList(D.sides.old.paste).length;
   }
   function drawSide(side) {
     const box = $('#dl_' + side);
