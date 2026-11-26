@@ -1017,3 +1017,4 @@ table.rel.plt tbody tr.sel td{background:color-mix(in oklab,var(--accent) 9%,tra
 .plt-radio label{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .plt-est{font-size:13px;line-height:1.7;background:var(--muted);border-radius:8px;padding:8px 10px}
 .plt-warn{color:var(--warn-fg);font-weight:500}
+.plt-spark .plt-sp-last{fill:var(--accent)}

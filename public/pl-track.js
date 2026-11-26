@@ -114,14 +114,14 @@
     if (!pts.length) return '<span class="muted">—</span>';
     const w = 96, h = 24, t0 = Date.now() - 3 * 3600000, span = 3 * 3600000;
     const mx = Math.max(MAXN[dev], ...pts.map((p) => p[1] || 0));
-    let d = '', pen = false, dots = '';
+    let d = '', pen = false, dots = '', lx = null, ly = null;
     for (const [t, r] of pts) {
-      const x = ((t - t0) / span) * w;
+      const x = Math.min(w - 2, ((t - t0) / span) * w);
       if (r == null) { pen = false; dots += `<circle cx="${x.toFixed(1)}" cy="${h - 1.5}" r="1.4" class="plt-miss"/>`; continue; }
       const y = 2 + ((r - 1) / Math.max(1, mx - 1)) * (h - 6);
-      d += (pen ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1); pen = true;
+      d += (pen ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1); pen = true; lx = x; ly = y;
     }
-    return `<svg class="plt-spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><path d="${d}"/>${dots}</svg>`;
+    return `<svg class="plt-spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><path d="${d}"/>${dots}${lx != null ? `<circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="2.2" class="plt-sp-last"/>` : ''}</svg>`;
   }
   function tableHTML(t) {
     if (!S.row || !t.rows.some((r) => r.key + '|' + r.dev === S.row)) S.row = t.rows[0] ? t.rows[0].key + '|' + t.rows[0].dev : '';
