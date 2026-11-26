@@ -5,12 +5,17 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import Brief from '../public/ai-brief.js';
+import { DEFAULT_SETTINGS } from '../settings-defaults.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const aiUi = fs.readFileSync(path.join(root,'public','ai.js'),'utf8');
 assert.match(aiUi, /<div class="ai-gen-actions">\s*<label[^>]+for="aiCount"[^>]*>생성 개수 <select id="aiCount"[^>]*>[\s\S]*?<\/select><\/label>\s*<button[^>]+id="aiGen"/);
 assert.equal((aiUi.match(/id="aiCount"/g)||[]).length,1);
 assert.match(aiUi, /count: '50'/);
+assert.match(aiUi, /minVol: 30, autoVerify: false/);
+assert.equal(DEFAULT_SETTINGS.rules.verify.defaultMinVol,30);
+assert(aiUi.indexOf("progHTML('aiFbProg')")>aiUi.indexOf('id="aiFbMore"'));
+assert(aiUi.includes("const P = progress($(turn ? '#aiFbProg' : '#aiProg')"));
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'kt-persona-'));
 const browser=process.argv.includes('--browser');
 const port=browser?18812:19000+Math.floor(Math.random()*1000);
@@ -47,6 +52,16 @@ function setup(){
       modelCalls++;lastPrompt=p;
       if(p.includes('실패테스트')&&p.includes('조사 후보를 페르소나별로'))return new Response('fixture refusal',{status:400});
       if(p.includes('중지테스트')&&p.includes('조사 후보를 페르소나별로'))await new Promise(r=>setTimeout(r,3000));
+      if (p.includes('발굴해줘') && p.includes('격리피드백실패')) return new Response('fixture refusal',{status:400});
+      if (p.includes('발굴해줘') && (p.includes('격리피드백스트림') || p.includes('격리피드백중지'))) {
+        const rows = ['격리테스트후보하나','격리테스트후보둘'].map(keyword=>JSON.stringify({keyword,intent:'정보 탐색',reason:'모의 후보'}));
+        const parts = ['['+rows[0],','+rows[1]+']'];
+        const payload = (text, finishReason) => new TextEncoder().encode('data: '+JSON.stringify({candidates:[{content:{parts:[{text}]},finishReason}]})+'\n\n');
+        let timer;
+        const clear=()=>clearTimeout(timer);
+        init.signal?.addEventListener('abort',clear,{once:true});
+        return new Response(new ReadableStream({start(ctrl){ctrl.enqueue(payload(parts[0]));timer=setTimeout(()=>{ctrl.enqueue(payload(parts[1],'STOP'));ctrl.close();},browser ? 6500 : 40);},cancel:clear}));
+      }
       const response={candidates:[{content:{parts:[{text:JSON.stringify(modelText(p))}]},finishReason:'STOP'}]};
       if (u.pathname.includes(':streamGenerateContent')) return new Response(`data: ${JSON.stringify(response)}\n\n`);
       return Response.json(response);
@@ -105,6 +120,9 @@ const adaptedResult=await last(await post('/api/ai/generate-stream',{briefV1:ada
 assert(adaptedResult.items?.some(x=>x.keyword==='체크카드발급'));
 assert(lastPrompt.includes('가입 자격 근거 fixture'));
 assert(!lastPrompt.includes('숨긴 사용처 fixture'));
+const fbEvents = (await (await post('/api/ai/generate-stream',{topic:'격리피드백스트림',feedback:['격리피드백스트림'],count:30})).text()).split(/\r?\n/).filter(s=>s.startsWith('data: ')).map(s=>JSON.parse(s.slice(6)));
+assert.deepEqual(fbEvents.filter(e=>e.type==='progress').map(e=>e.count),[1,2]);
+assert.equal(fbEvents.findLast(e=>e.type==='done').items.length,2);
 const legacy=await last(await post('/api/ai/generate-stream',{topic:'현재 직접 브리프',count:30}));
   assert.deepEqual(legacy.items,[{keyword:'직접입력키워드',intent:'가입·구매',reason:'직접 방식'}]);
   const keys=['확인된영','일부누락','데이터없음','소량표기'];

@@ -43,7 +43,7 @@ export const DEFAULT_SETTINGS = {
       useVolume: true, // AI에게 월간 검색량을 같이 보여줌
       consistN: 2, // 이 횟수 이상 모두 적합이면 "일관 적합"
       lowAs: 0, // 네이버 "<10"을 몇으로 계산할지 (0~9)
-      defaultMinVol: 50, // 새 탭의 최소 월간 검색량
+      defaultMinVol: 30, // 새 탭의 최소 월간 검색량
       temperature: 0.7,
     },
     copy: {

@@ -851,6 +851,11 @@ html.dark .modal .set-sec input.sw.sw:not(:checked){background:#4b4b4b}
 .ai-fb-quick .chip:hover{border-color:var(--accent);color:var(--accent)}
 #aiFbText{font-size:14px}
 .ai-fb-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;font-size:13px}
+#aiFbProg .prog-top{align-items:baseline;gap:4px 12px;flex-wrap:wrap}
+#aiFbProg .p-phase,#aiFbProg .p-model{overflow-wrap:anywhere}
+#aiFbProg .prog-top>span{white-space:nowrap;margin-left:auto}
+#aiFbProg .bar.indet>div{min-width:20%}
+@media(prefers-reduced-motion:reduce){#aiFbProg .bar.indet>div{animation:none}}
 
 /* ================================================================ 가독성 정리 (2026-11-25) */
 :root{--muted-fg:#666666}
