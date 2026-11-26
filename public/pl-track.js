@@ -307,7 +307,7 @@
   function openForm(t) {
     const f = t ? {
       id: t.id, name: t.name, urls: t.urls.join('\n'), devices: [...t.devices], interval: t.interval, cap: t.cap,
-      kws: t.items.map((i) => [i.kw, i.target?.pc ?? '', i.target?.mo ?? ''].join(', ').replace(/(, )+$/, '')).join('\n'),
+      kws: t.items.map((i) => { const pc = i.target?.pc ?? null, mo = i.target?.mo ?? null; return pc == null && mo == null ? i.kw : pc === mo ? `${i.kw}, ${pc}` : `${i.kw}, ${pc ?? '-'}, ${mo ?? '-'}`; }).join('\n'),
       sched: { ...t.sched }, notify: t.notify, on: t.on,
     } : { id: '', name: '', urls: localStorage.getItem('plUrls') || '', devices: ['pc', 'mo'], interval: 5, cap: 30, kws: '', sched: { mode: 'always', from: '09:00', to: '24:00', minutes: 60 }, notify: true, on: false };
     S.edit = f; draw();
@@ -330,7 +330,7 @@
           <label class="plt-f">이름 <input class="inp" id="pfName" maxlength="60" placeholder="비우면 첫 키워드로 지어요" value="${e2(f.name)}"></label>
           ${jobs.length ? `<label class="plt-f">분석에서 가져오기 <select class="inp" id="pfJob"><option value="">파워링크 분석 내역에서 URL·기기·키워드 불러오기</option>${jobs.map((m) => `<option value="${e2(m.id)}">${e2(m.name)} (${m.total}개)</option>`).join('')}</select></label>` : ''}
           <label class="plt-f">내 파워링크 URL <span class="muted" style="font-size:12px">한 줄에 하나 · 분석기와 같은 방식으로 찾아요</span><textarea class="inp" id="pfUrls" rows="2" placeholder="https://www.example.com/event">${e2(f.urls)}</textarea></label>
-          <label class="plt-f">키워드 <span class="muted" style="font-size:12px">한 줄에 하나 · 목표를 같이 쓰려면 "키워드, 3" (PC·모바일 같게) 또는 "키워드, 3, 2"</span><textarea class="inp" id="pfKws" rows="7" placeholder="비씨카드발급, 3&#10;비씨바로카드신청, 3, 2&#10;BC카드캐시백이벤트">${e2(f.kws)}</textarea></label>
+          <label class="plt-f">키워드 <span class="muted" style="font-size:12px">한 줄에 하나 · 목표를 같이 쓰려면 "키워드, 3" (PC·모바일 같게) 또는 "키워드, 3, 2" (PC, 모바일 · 없으면 -)</span><textarea class="inp" id="pfKws" rows="7" placeholder="비씨카드발급, 3&#10;비씨바로카드신청, 3, 2&#10;BC카드캐시백이벤트, -, 2&#10;비씨카드온라인발급">${e2(f.kws)}</textarea></label>
         </div>
         <div>
           <div class="plt-f">기기 <span><label class="inl"><input type="checkbox" class="no-sw" data-pfdev="pc" ${f.devices.includes('pc') ? 'checked' : ''}> PC</label> <label class="inl"><input type="checkbox" class="no-sw" data-pfdev="mo" ${f.devices.includes('mo') ? 'checked' : ''}> 모바일</label></span></div>
