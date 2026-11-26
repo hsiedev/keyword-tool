@@ -82,7 +82,7 @@
             <label><input type="checkbox" id="do_order"> 단어 순서만 다른 키워드 <span class="muted">예: 보험운전자 = 운전자보험</span></label>
             <label><input type="checkbox" id="do_similar"> 비슷한 키워드도 제외 <span class="muted">기존 키워드를 포함하거나, 포함되거나, 1글자만 다른 것 (끄면 "확인 필요"로만 표시)</span></label>
             <label><input type="checkbox" id="do_selfDup"> 신규 목록 안의 중복도 하나만 남기기</label>
-            <label><input type="checkbox" id="do_nospace"> 다운로드할 때 키워드 띄어쓰기 없애기 <span class="muted">예: 운전자보험 추천 → 운전자보험추천</span></label>
+            <label><input type="checkbox" id="do_nospace"> 텍스트 목록 저장·다운로드할 때 띄어쓰기 없애기 <span class="muted">예: 운전자보험 추천 → 운전자보험추천</span></label>
           </div>
           <div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap">
             <button class="btn pri" id="dRun">중복 검사</button>
@@ -153,7 +153,7 @@
   async function savePastedKeywords() {
     if (D.savingPaste) return;
     const paste = D.sides.old.paste;
-    const keywords = [...new Set(splitList(paste))];
+    const keywords = [...new Set(splitList(paste).map(outKw).filter(Boolean))];
     if (!keywords.length) return;
     D.savingPaste = true;
     drawCount('old');
