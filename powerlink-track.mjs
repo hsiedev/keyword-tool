@@ -190,7 +190,7 @@ export function createTracker({ root, rankOnce, limiter }) {
     save(t, true);
   }
   function stop(t, reason = 'user') {
-    t.on = false; t.stoppedAt = Date.now(); t.endReason = reason; t.inRound = false; t.cur = ''; t.endAt = null;
+    t.on = false; t.stoppedAt = Date.now(); t.endReason = reason; t.inRound = false; t.cur = ''; t.endAt = null; t.focus = {};
     if (reason === 'time') addEvent(t, { type: 'end', text: `'${t.name}' 추적 시간(${fmtMin(t.sched.minutes)})이 끝나서 멈췄어요` });
     save(t, true);
   }
@@ -248,7 +248,7 @@ export function createTracker({ root, rankOnce, limiter }) {
     for (const it of t.items) for (const dev of t.devices) {
       const k = it.key + '|' + dev, L = t.last?.[k] || {};
       rows.push({ key: it.key, kw: it.kw, dev, on: it.on !== false, target: it.target?.[dev] ?? null, r: L.r ?? null, at: L.at || null, prev: L.prev, prevAt: L.prevAt || null,
-        total: L.total ?? null, n: L.n || 0, state: L.state || null, focus: !!(t.focus?.[it.key]?.until > Date.now()),
+        total: L.total ?? null, n: L.n || 0, state: L.state || null, focus: !!(t.on && t.focus?.[it.key]?.until > Date.now()),
         sp: withSpark ? (m?.get(k) || []) : undefined });
     }
     return { id: t.id, name: t.name, urls: t.urls, devices: t.devices, cap: t.cap, interval: t.interval, sched: t.sched, notify: t.notify !== false,
