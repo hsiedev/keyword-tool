@@ -200,3 +200,51 @@
 .ab-root .ab-summary-row dd { font-size: 13.5px; }
 .ab-root .ab-edit { font-size: 12.5px; }
 .ab-root .ab-step:disabled { opacity: .8; }
+
+/* The adaptive route screen uses the app palette; legacy sessions keep their original layout. */
+.ab-adaptive :is(#ab-route-picker, #ab-hybrid) { min-inline-size: 0; }
+.ab-adaptive :is(#ab-route-picker, #ab-hybrid):not(:empty) { margin-top: 12px; }
+.ab-adaptive .ab-route {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--ab-selected-border);
+  border-radius: var(--radius-sm);
+  background: var(--ab-selected-bg);
+  color: var(--ab-selected-fg);
+  overflow-wrap: anywhere;
+}
+.ab-adaptive .ab-summary > .ab-route { margin: 10px 0 2px; }
+.ab-adaptive .ab-route-note, .ab-adaptive .ab-hybrid {
+  margin-bottom: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  overflow-wrap: anywhere;
+}
+.ab-adaptive .ab-route-note p { margin-top: 3px; color: var(--muted-fg); font-size: 13px; }
+.ab-adaptive .ab-hybrid { margin-bottom: 0; border-style: dashed; }
+.ab-adaptive .ab-hybrid h4 { margin-bottom: 5px; font-size: 14px; }
+.ab-adaptive .ab-hybrid .ab-question-actions { margin: 8px 0; }
+.ab-adaptive .ab-question-edit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 7px;
+  margin-bottom: 8px;
+}
+.ab-adaptive .ab-question-edit > .btn { min-height: 36px; }
+.ab-adaptive .ab-choices .ab-example { min-height: 32px; border-radius: 999px; font-size: 13px; }
+.ab-adaptive .ab-ad-question { margin-top: 10px; padding: 10px 0; border-top: 1px dashed var(--border); }
+.ab-adaptive .ab-question-why { margin-bottom: 5px; }
+.ab-adaptive .ab-answer-status { margin-top: 6px; }
+.ab-adaptive .ab-answer-status .btn { font-size: 12.5px; }
+.ab-adaptive .ab-drafts { margin: 8px 0; }
+@container ab-layout (max-width: 419px) {
+  .ab-adaptive .ab-answer .ab-field :is(input, textarea) { font-size: 16px; }
+  .ab-adaptive :is(.ab-route-note, .ab-hybrid) { padding-inline: 9px; }
+}

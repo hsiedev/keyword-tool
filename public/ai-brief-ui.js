@@ -10,6 +10,14 @@
     ['검토', '이 브리프로 키워드를 찾으면 될까요?', '자동으로 작성된 요청문을 확인하고, 필요한 항목만 수정하거나 복사할 수 있어요.']
   ];
   const REVIEW = STEPS.length - 1;
+  const ADAPTIVE_STEPS = [
+    ['주제', STEPS[0][1], '주제를 직접 적거나 예시를 눌러 보세요. 주제에 맞춰 다음 질문이 달라져요.'],
+    ['상품·목표', STEPS[1][1], '전환 목표를 고르면 그에 맞는 추가 질문이 열려요. 아는 만큼만 답해 주세요.'],
+    ['타깃 상황', STEPS[2][1], '상황을 최대 두 개 고르거나 직접 적어 주세요. 선택에 따라 추가 질문이 달라져요.'],
+    ['추가 질문', '이 브리프에만 필요한 추가 질문이에요', '앞에서 고른 목표와 검색 상황을 반영했어요. 모르면 미정으로 두거나 건너뛸 수 있어요.'],
+    STEPS[REVIEW]
+  ];
+  const QUESTION_LIMIT = 3;
   const PERSON_MODES = { pick: '상황에서 고르기', direct: '타깃 직접 입력', ai: '모름 · AI 제안' };
   const text = value => String(value ?? '').trim();
   const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({
@@ -28,20 +36,26 @@
     return `<button type="button" class="btn ab-choice ${className}" data-ab-action="${action}" data-ab-key="${escape(key)}" aria-pressed="${selected}">
       <strong>${escape(title)}</strong><span>${escape(description)}</span></button>`;
   }
-  function field(key, label, value, placeholder, maxLength, type = 'text') {
-    const id = `ab-${key}`;
-    const attrs = `id="${id}" data-ab-field="${key}" maxlength="${maxLength}" placeholder="${escape(placeholder)}"`;
+  function field(key, label, value, placeholder, maxLength, type = 'text', locked = false) {
+    const id = `ab-${escape(key)}`;
+    const attrs = `id="${id}" data-ab-field="${escape(key)}" maxlength="${maxLength}" placeholder="${escape(placeholder)}"${locked ? ' data-ab-locked disabled' : ''}`;
     const control = type === 'textarea'
       ? `<textarea ${attrs} rows="2">\n${escape(value)}</textarea>`
       : `<input ${attrs} type="${type}" value="${escape(value)}"${type === 'url' ? ' inputmode="url" autocomplete="off" spellcheck="false"' : ''}>`;
-    return `<div class="ab-field"><label for="${id}">${label}</label>${control}</div>`;
+    return `<div class="ab-field"><label for="${id}">${escape(label)}</label>${control}</div>`;
   }
 
-  function mount(root, { onChange, onReview } = {}) {
+  function mount(root, { onChange, onReview, suggestQuestions } = {}) {
     const core = window.AiBrief;
     const find = selector => root.querySelector(selector);
     const doc = root.ownerDocument;
-    let state = core.blank();
+    let state = core.blankAdaptive();
+    let topicInput = state.adaptive.text;
+    let composingTopic = false;
+    let suggestion = null;
+    let suggestionStatus = '';
+    let suggestionTimer = null;
+    let pickerMarkup = '';
     let busy = false;
     let invalidControl = null;
 
@@ -85,6 +99,162 @@
     const display = (value, empty = '미입력') => text(value) ? escape(text(value)) : `<span class="ab-muted">${empty}</span>`;
     const summaryRow = (label, value, step) => `<div class="ab-summary-row"><dt>${label}${editButton(step, label)}</dt><dd>${value}</dd></div>`;
 
+    const activeSteps = () => state.adaptive ? ADAPTIVE_STEPS : STEPS;
+    const adaptiveRoute = () => core.adaptive.routes[state.adaptive?.route];
+    const generic = () => state.adaptive?.route === 'generic';
+    const answerText = answer => answer?.status === 'given' ? answer.value : '';
+    const statusLabel = { unknown: '미정 · 추정하지 않음', skip: '해당 없음' };
+    const withoutAnswer = () => ({ status: 'given', value: '' });
+    const topicKey = raw => text(raw).normalize('NFKC').replace(/\s+/g, ' ').toLowerCase();
+
+    function routeBanner() {
+      const route = adaptiveRoute();
+      if (!route) return '';
+      const source = state.adaptive.manual ? '직접 선택' : generic() ? '분류 미정' : '자동 선택';
+      return `<div class="ab-route"><strong>${escape(route.name)} 경로</strong><span class="ab-chip">${source}</span></div>`;
+    }
+
+    function renderRoutePicker() {
+      const a = state.adaptive;
+      const classified = core.adaptive.route(a.text);
+      if (classified.kind === 'empty') return '';
+      const routes = Object.entries(core.adaptive.routes);
+      const matches = new Set(classified.matches);
+      if (!a.route && classified.kind === 'ambiguous') routes.sort(([l], [r]) => Number(matches.has(r)) - Number(matches.has(l)));
+      const note = !a.route && classified.kind === 'ambiguous'
+        ? '<div class="ab-route-note"><strong>두 가지 이상으로 읽혀요.</strong><p>어느 쪽 질문으로 이어갈지 골라 주세요. 맞는 분야가 없으면 일반을 선택하세요.</p></div>'
+        : !a.manual && classified.kind === 'unknown'
+          ? '<div class="ab-route-note"><strong>맞는 분야를 찾지 못했어요.</strong><p>일반 질문으로 시작할 수 있어요. 맞는 분야가 있다면 직접 골라 주세요.</p></div>' : '';
+      return `${note}${routeBanner()}<fieldset class="ab-group ab-route-picker" id="ab-routes"><legend>질문 경로 직접 선택</legend><div class="ab-choices">
+        ${routes.map(([key, route]) => button('route', route.name, { key, attrs: `aria-pressed="${key === a.route}"` })).join('')}
+        </div></fieldset>`;
+    }
+
+    function renderSuggestionPanel() {
+      if (!generic()) return '';
+      const qs = state.adaptive.questions;
+      const requestLocked = qs.length >= QUESTION_LIMIT || typeof suggestQuestions !== 'function';
+      return `<section class="ab-hybrid" aria-labelledby="ab-hybrid-title">
+        <h4 id="ab-hybrid-title">질문이 더 필요할까요? <span class="ab-chip">선택</span></h4>
+        <p class="ab-muted">원할 때만 주제를 AI에 보내 질문 초안을 받아요. 직접 적거나 수정·삭제할 수 있고, 답은 ‘추가 질문’에서 적어요.</p>
+        <div class="ab-choices ab-question-actions">
+          ${suggestion ? button('suggest-stop', '제안 중지') : button('suggest', 'AI 질문 초안 받기', { attrs: requestLocked ? 'data-ab-locked disabled' : '' })}
+          ${button('question-add', '+ 직접 질문 추가', { attrs: qs.length >= QUESTION_LIMIT ? 'data-ab-locked disabled' : '' })}
+          ${suggestion ? '<span id="ab-suggestion-timer" class="ab-muted" aria-hidden="true"></span>' : ''}
+        </div>
+        ${qs.map(({ question }, i) => `<div class="ab-question-edit">
+          ${field(`question-${i}`, `선택 질문 ${i + 1} 수정`, question, '궁금한 점을 질문으로 적어 주세요', 110)}
+          ${button('question-delete', '삭제', { key: i, attrs: `aria-label="선택 질문 ${i + 1} 삭제"` })}
+        </div>`).join('')}
+        <p class="ab-muted">${qs.length} / ${QUESTION_LIMIT}개${typeof suggestQuestions !== 'function' ? ' · AI 제안을 사용할 수 없어도 직접 추가할 수 있어요.' : ''}</p>
+      </section>`;
+    }
+
+    function renderAdaptiveTopic() {
+      return `<div class="ab-group">${field('adaptive-topic', '주제 직접 입력', topicInput, '어떤 상품이나 서비스의 키워드를 찾나요?', 80)}</div>
+        <fieldset class="ab-group ab-examples"><legend>주제 예시</legend><div class="ab-choices">
+          ${core.adaptive.examples.map(example => button('example', example, { key: example, className: 'ab-example' })).join('')}
+        </div></fieldset>
+        <div id="ab-route-picker" aria-live="polite">${renderRoutePicker()}</div>
+        <div id="ab-hybrid">${renderSuggestionPanel()}</div>`;
+    }
+
+    function setSuggestionStatus(message) {
+      suggestionStatus = message;
+      if (state.adaptive && state.step === 0) nodes.status.textContent = message;
+    }
+
+    function refreshSuggestionPanel(retainFocus = false) {
+      const panel = find('#ab-hybrid');
+      if (!panel) return;
+      const active = retainFocus && panel.contains(doc.activeElement) ? doc.activeElement : null;
+      const selection = active?.matches('input') ? [active.selectionStart, active.selectionEnd, active.selectionDirection] : null;
+      const previous = active?.dataset;
+      panel.innerHTML = renderSuggestionPanel();
+      syncBusy(panel);
+      if (previous?.abField) {
+        const control = find(`#ab-${previous.abField}`);
+        control?.focus({ preventScroll: true });
+        if (selection) control?.setSelectionRange(...selection);
+      } else if (previous?.abAction === 'suggest-stop') focusQuestionAction('suggest');
+      else if (previous?.abAction) {
+        const control = [...panel.querySelectorAll('button:not(:disabled)')].find(el => el.dataset.abAction === previous.abAction && el.dataset.abKey === previous.abKey);
+        if (control) control.focus({ preventScroll: true });
+        else focusQuestionAction('suggest');
+      }
+    }
+
+    function completeSuggestion(message) {
+      suggestion = null;
+      clearInterval(suggestionTimer);
+      suggestionTimer = null;
+      setSuggestionStatus(message);
+    }
+
+    function cancelSuggestion(message = '') {
+      const pending = suggestion;
+      completeSuggestion(message);
+      pending?.abort();
+    }
+
+    function focusQuestionAction(preferred) {
+      const controls = [preferred, 'question-add', 'question-delete'].map(action => find(`#ab-hybrid [data-ab-action="${action}"]:not(:disabled)`));
+      (controls.find(Boolean) || find('#ab-adaptive-topic'))?.focus({ preventScroll: true });
+    }
+
+    async function requestQuestions() {
+      if (!generic() || state.step !== 0 || suggestion || typeof suggestQuestions !== 'function' || state.adaptive.questions.length >= QUESTION_LIMIT) return;
+      const controller = new AbortController();
+      suggestion = controller;
+      setSuggestionStatus('AI 질문 초안을 받고 있어요.');
+      refreshSuggestionPanel();
+      find('[data-ab-action="suggest-stop"]')?.focus({ preventScroll: true });
+      const started = Date.now();
+      const updateTime = () => {
+        const timer = find('#ab-suggestion-timer');
+        if (timer) timer.textContent = `${Math.floor((Date.now() - started) / 1000)}초 경과`;
+      };
+      updateTime();
+      suggestionTimer = setInterval(updateTime, 1000);
+      let result;
+      try {
+        result = core.adaptive.questions(await suggestQuestions(state.adaptive.text, { signal: controller.signal }));
+      } catch {
+        if (suggestion !== controller) return;
+        completeSuggestion('AI 질문 초안을 받지 못했어요. 다시 시도하거나 직접 질문을 적을 수 있어요.');
+        refreshSuggestionPanel(true);
+        return;
+      }
+      if (suggestion !== controller) return;
+      const list = state.adaptive.questions;
+      const existing = new Set(list.map(({ question }) => topicKey(question)));
+      const additions = result.filter(question => !existing.has(topicKey(question))).slice(0, QUESTION_LIMIT - list.length);
+      additions.forEach(question => list.push({ question, answer: withoutAnswer() }));
+      completeSuggestion(additions.length ? `질문 ${additions.length}개를 제안했어요. 자유롭게 수정하거나 삭제하세요.` : '추가할 새 질문이 없어요. 직접 질문을 적거나 그대로 진행할 수 있어요.');
+      refreshSuggestionPanel(true);
+      renderSummary();
+      if (additions.length) reportChange();
+    }
+
+    function setTopic(value, route) {
+      if (value === topicInput && route === undefined) return;
+      const sameTopic = topicKey(value) === topicKey(state.adaptive.text);
+      const previousRoute = state.adaptive.route;
+      topicInput = value;
+      state = core.adaptive.selectTopic(state, value, route);
+      if (!sameTopic || previousRoute !== state.adaptive.route) cancelSuggestion();
+      const control = find('#ab-adaptive-topic');
+      if (control.value !== value) control.value = value;
+      const picker = find('#ab-route-picker');
+      const markup = renderRoutePicker();
+      if (markup !== pickerMarkup) { pickerMarkup = markup; picker.innerHTML = markup; syncBusy(picker); }
+      if (!sameTopic || previousRoute !== state.adaptive.route) refreshSuggestionPanel();
+      setMessage();
+      renderSummary();
+      renderSteps();
+      reportChange();
+    }
+
     function targetNames() {
       return state.personaMode === 'ai' ? 'AI 제안 · 가설' : core.people(state).map(person => person.name).join(' · ');
     }
@@ -99,23 +269,30 @@
       const official = Boolean(text(state.official));
       const landing = Boolean(text(state.landing));
       const evidence = official && landing ? '공식·랜딩 주소 입력됨' : official ? '공식 상품 주소만 입력됨' : landing ? '광고 랜딩 주소만 입력됨' : '근거 확인 필요';
-      nodes.summary.innerHTML = `<dl>
+      const a = state.adaptive;
+      const drafts = a ? core.adaptive.draftCount(state) : 0;
+      const extraAnswers = a ? [
+        ...core.adaptive.extras(state).map(({ id, label }) => [label, a.fields[id]]),
+        ...(generic() ? a.questions.map(({ question, answer }) => [text(question), answer]) : [])
+      ].filter(([label, answer]) => label && (text(answerText(answer)) || statusLabel[answer?.status])) : [];
+      nodes.summary.innerHTML = `${a ? routeBanner() : ''}<dl>
         ${summaryRow('주제', display(core.topicName(state)), 0)}
-        ${summaryRow('상품·서비스', display(state.product), 1)}
+        ${summaryRow('상품·서비스', a?.productUnknown ? '<span class="ab-muted">미정 · 추정하지 않음</span>' : display(state.product), 1)}
         ${summaryRow('목표 행동', goal, 1)}
         ${summaryRow('타깃 상황', target, 2)}
         ${summaryRow('포함·제외', conditions.length ? conditions.map(([name, value]) => `<div><strong>${name}:</strong> ${escape(text(value))}</div>`).join('') : display('', '없으면 생략'), 3)}
+        ${a ? summaryRow('추가 답변', extraAnswers.length ? extraAnswers.map(([label, answer]) => `<div><strong>${escape(label)}</strong><br>${display(answerText(answer), statusLabel[answer.status])}</div>`).join('') : display('', '없으면 생략'), 3) : ''}
         ${summaryRow('탐색 방향', display(core.TAILS[state.mix]), 3)}
-      </dl><div class="ab-note ab-evidence"><strong>${evidence}</strong><br>${official || landing
+      </dl>${drafts ? `<p class="ab-drafts ab-muted">다른 주제·경로의 답변 ${drafts}개를 보관 중이에요. 이번 요청에는 쓰지 않으며, 같은 주제·경로를 다시 고르면 복원돼요.</p>` : ''}<div class="ab-note ab-evidence"><strong>${evidence}</strong><br>${official || landing
         ? '주소의 내용은 아직 확인하지 않았어요.'
         : '공식 상품 정보와 광고 랜딩을 확인하기 전에는 집행 후보로 확정하지 않아요.'}</div>`;
       syncBusy(nodes.summary);
     }
 
     function renderPrior() {
-      const answers = [core.topicName(state), [text(state.product), core.goalName(state)].filter(Boolean).join(' · '), targetNames(), core.TAILS[state.mix]];
+      const answers = [core.topicName(state), [state.adaptive?.productUnknown ? '상품 미정' : text(state.product), core.goalName(state)].filter(Boolean).join(' · '), targetNames(), core.TAILS[state.mix]];
       const prior = answers.slice(0, state.step).map((answer, step) => answer ? button('step', answer, {
-        key: step, attrs: `aria-label="${escape(`${STEPS[step][0]} 수정: ${answer}`)}"`
+        key: step, attrs: `aria-label="${escape(`${activeSteps()[step][0]} 수정: ${answer}`)}"`
       }) : '').join('');
       nodes.prior.innerHTML = prior;
       nodes.prior.hidden = !prior;
@@ -133,14 +310,71 @@
         <div class="ab-remainder">${button('second', state.second ? '두 번째 타깃 접기' : '+ 두 번째 타깃 추가', {
           className: 'ab-quiet', attrs: `aria-expanded="${state.second}"`
         })}<span class="ab-muted">나이만 적기보다 검색 계기를 적어 주세요.</span></div>`;
-      const picked = core.picks(state);
+      const picked = state.adaptive ? state.adaptive.scenarios : core.picks(state);
       return `${modes}<div class="ab-option-grid" id="ab-scenarios" role="group" aria-label="검색 상황 선택">
-        ${core.scenarios(state).map(([name, situation], i) => card('persona', i, name, situation, picked.includes(i))).join('')}
+        ${(state.adaptive ? (adaptiveRoute()?.opts || []) : core.scenarios(state)).map(([name, situation], i) => card('persona', i, name, situation, picked.includes(i))).join('')}
         </div><div class="ab-remainder"><span class="ab-muted">추천은 검색 상황 예시이며 실제 고객 데이터가 아니에요.</span>
         <span class="ab-chip ab-badge">${picked.length} / 2 선택</span></div>`;
     }
 
+    function statusControls(key, current) {
+      return `<div class="ab-choices ab-answer-status" role="group" aria-label="답변 상태">
+        ${button('answer-state', '아직 미정', { key: `${key}:unknown`, attrs: `aria-pressed="${current === 'unknown'}"` })}
+        ${button('answer-state', '해당 없음·건너뛰기', { key: `${key}:skip`, attrs: `aria-pressed="${current === 'skip'}"` })}</div>`;
+    }
+
+    function optionalAnswer(id, label, placeholder, answer, { why, suggested = false, key = id } = {}) {
+      const ctrlId = `ab-${escape(id)}`;
+      return `<section class="ab-ad-question">
+        <div class="ab-field"><label for="${ctrlId}">${escape(label)} <span class="ab-chip ab-badge">${suggested ? '선택 질문' : '추가 질문'}</span></label>
+          ${why ? `<p class="ab-muted ab-question-why" id="${ctrlId}-why">왜 물어보나요: ${escape(why)}</p>` : ''}
+          <input type="text" id="${ctrlId}" data-ab-field="${escape(id)}" maxlength="260" placeholder="${escape(placeholder)}" value="${escape(answerText(answer))}"${why ? ` aria-describedby="${ctrlId}-why"` : ''}${statusLabel[answer?.status] ? ' data-ab-locked disabled' : ''}>
+        </div>${statusControls(key, answer?.status)}
+      </section>`;
+    }
+
+    function renderAdaptiveAnswer() {
+      const a = state.adaptive;
+      const route = adaptiveRoute();
+      if (state.step === 0) return renderAdaptiveTopic();
+      if (!route) return '<p class="ab-note">먼저 주제를 적고 질문 경로를 정해 주세요.</p>';
+      if (state.step === 1) {
+        const goals = [...route.goals];
+        if (!goals.some(([k]) => k === 'explore')) goals.push(['explore', '미정 · 탐색용']);
+        if (!goals.some(([k]) => k === 'custom')) goals.push(['custom', '직접 입력']);
+        return `<div class="ab-group">${field('product', route.productLabel, a.productUnknown ? '' : state.product, route.productHint, 150, 'text', a.productUnknown)}
+            <div class="ab-choices ab-answer-status">${button('product-unknown', '아직 미정', { attrs: `aria-pressed="${a.productUnknown}"` })}</div></div>
+          <fieldset class="ab-group" id="ab-goals"><legend>전환(성공)으로 볼 행동</legend>${choices('goal', goals.map(([k]) => k), Object.fromEntries(goals), a.goal)}
+            <p class="ab-muted ab-mix-help">고른 행동에 따라 추가 질문이 달라져요.</p></fieldset>
+          ${a.goal === 'custom' ? `<div class="ab-group">${field('customGoal', '목표 행동 입력', state.customGoal, '예: 관심 상품 목록에 추가', 120)}</div>` : ''}
+          <div class="ab-group">${field('conversion', '전환 완료 기준 (선택)', state.conversion, route.conversionHint, 140)}</div>
+          <details class="ab-links" id="ab-links"${state.showLinks ? ' open' : ''}>
+            <summary>공식 상품 URL · 광고 랜딩 URL (선택)</summary>
+            <div class="ab-pair">${field('official', '공식 상품 정보', state.official, 'https://…', 350, 'url')}${field('landing', '실제 광고 랜딩', state.landing, 'https://…', 350, 'url')}</div>
+          </details>`;
+      }
+      if (state.step === 2) return renderTarget();
+      if (state.step === 3) {
+        const extras = core.adaptive.extras(state);
+        const qs = generic() ? a.questions : [];
+        return `<div class="ab-group"><p class="ab-muted">${escape(route.name)} 경로에서 추가 질문 ${extras.length}개가 열렸어요.</p>
+          ${extras.map(({ id, label, why, placeholder }) => optionalAnswer(`extra-${id}`, label, placeholder, a.fields[id], { why })).join('')}
+          ${qs.map(({ question, answer }, i) => text(question) ? optionalAnswer(`q-answer-${i}`, text(question), '아는 만큼만 적어 주세요', answer, { suggested: true }) : '').join('')}
+          ${qs.some(({ question }) => text(question)) ? button('step', '선택 질문 수정·삭제', { key: 0, className: 'ab-quiet' }) : ''}</div>
+          <div class="ab-pair ab-group">${field('claims', '상품 조건·혜택 (선택)', state.claims, '공식 페이지에서 확인한 기능이나 자격', 360, 'textarea')}
+            ${field('exclusions', '제외하거나 피할 표현 (선택)', state.exclusions, route.exclusionsHint, 240, 'textarea')}</div>
+          <div class="ab-group">${field('refs', '참고 키워드 (선택)', state.refs, '쉼표 또는 줄바꿈으로 구분', 180, 'textarea')}</div>
+          <fieldset><legend>숏테일·롱테일 탐색 방향</legend>${choices('mix', Object.keys(core.TAILS), core.TAILS, state.mix)}</fieldset>`;
+      }
+      return renderPrompt();
+    }
+
+    function renderPrompt() {
+      return `<div class="ab-field"><label for="ab-prompt">자동으로 완성된 요청문</label><textarea readonly class="ab-prompt" id="ab-prompt" rows="10" spellcheck="false"></textarea></div>`;
+    }
+
     function renderAnswer() {
+      if (state.adaptive) return renderAdaptiveAnswer();
       switch (state.step) {
         case 0:
           return `<div class="ab-option-grid ab-group" id="ab-topics" role="group" aria-label="주제 선택">
@@ -167,7 +401,7 @@
               <p class="ab-muted ab-mix-help">롱테일 우선은 더 구체적인 의도를 찾는 옵션이에요. 글자 수나 정해진 비율을 채우지 않아요.</p>
             </fieldset>`;
         default:
-          return `<div class="ab-field"><label for="ab-prompt">자동으로 완성된 요청문</label><textarea readonly class="ab-prompt" id="ab-prompt" rows="10" spellcheck="false"></textarea></div>`;
+          return renderPrompt();
       }
     }
 
@@ -200,21 +434,29 @@
       }
     }
 
-    function render() {
-      setMessage();
-      nodes.status.textContent = '';
-      nodes.steps.innerHTML = STEPS.map(([name], i) => `<li><button type="button" class="btn ab-step${i < state.step ? ' ab-done' : ''}"
+    function renderSteps() {
+      nodes.steps.innerHTML = activeSteps().map(([name], i) => `<li><button type="button" class="btn ab-step${i < state.step ? ' ab-done' : ''}"
         data-ab-action="step" data-ab-key="${i}"${i === state.step ? ' aria-current="step"' : ''}${i > state.max ? ' data-ab-locked disabled' : ''}>
         <span class="ab-number" aria-hidden="true">${i < state.step ? '✓' : i + 1}</span>${name}</button></li>`).join('');
-      nodes['step-count'].textContent = `${state.step + 1} / ${STEPS.length} 단계`;
-      nodes.question.textContent = STEPS[state.step][1];
-      nodes.help.textContent = STEPS[state.step][2];
+    }
+
+    function render() {
+      setMessage();
+      root.classList.toggle('ab-adaptive', Boolean(state.adaptive));
+      nodes.status.textContent = state.adaptive && state.step === 0 ? suggestionStatus : '';
+      renderSteps();
+      const steps = activeSteps();
+      const route = state.adaptive && adaptiveRoute();
+      nodes['step-count'].textContent = `${state.step + 1} / ${steps.length} 단계`;
+      nodes.question.textContent = (state.step === 1 ? route?.goalLabel : state.step === 2 ? route?.scenarioLabel : '') || steps[state.step][1];
+      nodes.help.textContent = steps[state.step][2];
       renderPrior();
       nodes.fields.innerHTML = renderAnswer();
+      pickerMarkup = state.adaptive && state.step === 0 ? renderRoutePicker() : '';
       const reviewing = state.step === REVIEW;
       if (reviewing) find('#ab-prompt').value = core.compose(state);
       nodes.bottom.innerHTML = `
-        <span class="ab-muted">${reviewing ? '내용이 맞는지 확인해 주세요.' : '답변 중에는 AI를 호출하지 않아요.'}</span>
+        <span class="ab-muted">${reviewing ? '내용이 맞는지 확인해 주세요.' : state.adaptive ? 'AI 질문 초안은 직접 요청할 때만 받아요.' : '답변 중에는 AI를 호출하지 않아요.'}</span>
         <div class="ab-choices">
           ${state.step ? button('back', '이전', { className: 'ab-quiet' }) : ''}
           ${reviewing ? button('copy', '요청문 복사') : `<button type="submit" class="btn pri">${state.step === REVIEW - 1 ? '브리프 검토' : '다음'} <span aria-hidden="true">→</span></button>`}
@@ -243,7 +485,9 @@
       } else if (needsLinks) {
         find('#ab-links').open = true;
       }
-      const control = key ? find(`#ab-${key}`) : find(['#ab-topics button', '#ab-goals button', '#ab-scenarios button'][step] || '#ab-question');
+      const control = state.adaptive && step === 0 && state.adaptive.text.trim() && !state.adaptive.route
+        ? find('#ab-routes button') || find('#ab-adaptive-topic')
+        : key ? find(`#ab-${key}`) : find(['#ab-topics button', '#ab-goals button', '#ab-scenarios button, [data-ab-action="person-mode"]'][step] || '#ab-question');
       setMessage(message, control && control !== nodes.question ? control : null);
       if (control && !control.disabled) control.focus();
       else focus();
@@ -261,6 +505,7 @@
       if (step === state.step) { focus(); return; }
       const issue = step > state.step ? firstProblem(step) : null;
       if (issue) { revealProblem(issue, true); return; }
+      if (state.adaptive && state.step === 0) cancelSuggestion();
       state.step = step;
       state.max = Math.max(state.max, step);
       render();
@@ -292,15 +537,110 @@
       }
     }
 
+    function adaptiveAnswerAccess(key) {
+      const a = state.adaptive;
+      if (key.startsWith('extra-')) {
+        const id = key.slice(6);
+        return { owner: a.fields, key: id, optional: true };
+      }
+      if (key.startsWith('q-answer-')) return { owner: a.questions[Number(key.slice(9))], key: 'answer' };
+      return null;
+    }
+
+    function updateAdaptiveField(key, control, isComposing) {
+      if (key === 'adaptive-topic') {
+        if (!composingTopic && !isComposing) setTopic(control.value);
+        return true;
+      }
+      const a = state.adaptive;
+      if (key.startsWith('question-')) {
+        const question = a.questions[Number(key.slice(9))];
+        if (question) question.question = control.value;
+      } else {
+        const entry = adaptiveAnswerAccess(key);
+        if (!entry?.owner) return false;
+        if (entry.optional && !text(control.value)) delete entry.owner[entry.key];
+        else entry.owner[entry.key] = { status: 'given', value: control.value };
+      }
+      setMessage();
+      renderSummary();
+      reportChange();
+      return true;
+    }
+
+    function runAdaptiveAction(action, key) {
+      const a = state.adaptive;
+      if (action === 'example') {
+        setTopic(key);
+        find('#ab-adaptive-topic')?.focus();
+      } else if (action === 'route') {
+        if (key !== a.route) setTopic(topicInput, key);
+        [...root.querySelectorAll('[data-ab-action="route"]')].find(el => el.dataset.abKey === key)?.focus({ preventScroll: true });
+      } else if (action === 'suggest') {
+        void requestQuestions();
+      } else if (action === 'suggest-stop') {
+        cancelSuggestion('AI 질문 초안 요청을 중지했어요.');
+        refreshSuggestionPanel();
+        focusQuestionAction('suggest');
+      } else if (action === 'question-add' || action === 'question-delete') {
+        if (!generic()) return true;
+        const list = a.questions;
+        const index = action === 'question-add' ? list.length : Number(key);
+        if (action === 'question-add' && list.length < QUESTION_LIMIT) list.push({ question: '', answer: withoutAnswer() });
+        else if (action === 'question-delete') list.splice(index, 1);
+        refreshSuggestionPanel();
+        const next = find(`#ab-question-${Math.min(index, list.length - 1)}`);
+        if (next) next.focus();
+        else focusQuestionAction('question-add');
+        setMessage();
+        renderSummary();
+        reportChange();
+      } else if (action === 'product-unknown') {
+        a.productUnknown = !a.productUnknown;
+        updateButton(action, key, a.productUnknown ? null : 'product');
+      } else if (action === 'goal') {
+        a.goal = key;
+        updateButton(action, key, key === 'custom' ? 'customGoal' : null);
+      } else if (action === 'persona') {
+        const index = Number(key);
+        const picked = a.scenarios;
+        if (!picked.includes(index) && picked.length >= 2) setMessage('이미 두 상황을 골랐어요. 다른 상황을 고르려면 하나를 먼저 해제해 주세요.');
+        else {
+          a.scenarios = picked.includes(index) ? picked.filter(i => i !== index) : [...picked, index];
+          updateButton(action, key);
+        }
+      } else if (action === 'answer-state') {
+        const [id, status] = key.split(':');
+        const entry = adaptiveAnswerAccess(id);
+        if (entry?.owner) {
+          const previous = entry.owner[entry.key];
+          const reverting = previous?.status === status;
+          if (reverting && entry.optional) delete entry.owner[entry.key];
+          else entry.owner[entry.key] = reverting ? withoutAnswer() : { status, value: '' };
+          updateButton(action, key, reverting ? id : null);
+        }
+      } else return false;
+      return true;
+    }
+
     root.addEventListener('submit', event => {
       if (event.target.id !== 'ab-form') return;
       event.preventDefault();
-      if (state.step < REVIEW) moveTo(state.step + 1);
+      if (state.step < REVIEW && !composingTopic) moveTo(state.step + 1);
+    });
+    root.addEventListener('compositionstart', event => {
+      if (event.target.dataset.abField === 'adaptive-topic') composingTopic = true;
+    });
+    root.addEventListener('compositionend', event => {
+      if (event.target.dataset.abField !== 'adaptive-topic') return;
+      composingTopic = false;
+      if (state.adaptive && state.step === 0 && !busy) setTopic(event.target.value);
     });
     root.addEventListener('input', event => {
       const control = event.target;
       const key = control.dataset.abField;
       if (!key || busy || control.disabled) return;
+      if (state.adaptive && updateAdaptiveField(key, control, event.isComposing)) return;
       const person = /^p([01])-(who|why|need)$/.exec(key);
       const owner = person ? state.people[Number(person[1])] : state;
       const fieldKey = person ? person[2] : key;
@@ -326,6 +666,7 @@
       if (busy) return;
       if (action === 'step') { moveTo(Number(key)); return; }
       if (action === 'back') { moveTo(state.step - 1); return; }
+      if (state.adaptive && runAdaptiveAction(action, key)) return;
       if (action === 'persona') {
         const picked = core.picks(state);
         const index = Number(key);
@@ -354,14 +695,27 @@
     render();
     return {
       load(briefV1) {
-        state = structuredClone(core.normalize(briefV1 ?? core.blank()));
+        cancelSuggestion();
+        composingTopic = false;
+        const normalized = core.normalize(briefV1);
+        state = structuredClone(normalized.adaptive || core.hasContent(briefV1) ? normalized : core.blankAdaptive());
+        topicInput = state.adaptive?.text ?? '';
         render();
       },
       read,
       showProblem,
       focus,
+      cancelSuggestion() {
+        if (!suggestion) return;
+        cancelSuggestion('AI 질문 초안 요청을 중지했어요.');
+        refreshSuggestionPanel(true);
+      },
       setBusy(value) {
         busy = Boolean(value);
+        if (busy && suggestion) {
+          cancelSuggestion('AI 질문 초안 요청을 중지했어요.');
+          refreshSuggestionPanel();
+        }
         root.toggleAttribute('data-ab-busy', busy);
         const active = doc.activeElement;
         const editing = active && root.contains(active) && active.matches('button:not([data-ab-action="copy"]), [data-ab-field], #ab-links > summary');

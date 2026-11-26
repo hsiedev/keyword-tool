@@ -17,7 +17,7 @@
 
   // ---------------------------------------------------------------- 저장 (브라우저 localStorage)
   const DEFAULT_FORM = { topic: '', examples: '', count: '50', extra: '', refMode: 'ref', pos: '', neg: '', minLen: 2, maxLen: 30, minVol: 50 };
-  const newDraft = () => ({ id: 's' + Date.now() + Math.floor(Math.random() * 1000), name: '새 탭', custom: false, pinned: false, createdAt: Date.now(), updatedAt: Date.now(), form: { ...DEFAULT_FORM, briefMode:'guided', briefV1:Brief.blank(), minVol: RULES().verify?.defaultMinVol ?? DEFAULT_FORM.minVol }, items: [], rejected: [], draft: true });
+  const newDraft = () => ({ id: 's' + Date.now() + Math.floor(Math.random() * 1000), name: '새 탭', custom: false, pinned: false, createdAt: Date.now(), updatedAt: Date.now(), form: { ...DEFAULT_FORM, briefMode:'guided', briefV1:Brief.blankAdaptive(), minVol: RULES().verify?.defaultMinVol ?? DEFAULT_FORM.minVol }, items: [], rejected: [], draft: true });
   function load() {
     try { AI.sessions = JSON.parse(localStorage.getItem('aiSessions') || '[]'); } catch { AI.sessions = []; }
     for (const s of AI.sessions) {
@@ -469,7 +469,15 @@ ${window.WorkTitle.field('aiTitle')}
     $('#aiFbLog').onclick = (e) => { const x = e.target.closest('[data-fbx]'); if (!x || AI.busy) return; AI.cur.feedback?.splice(+x.dataset.fbx, 1); save(); drawFb(); };
     addEventListener('beforeunload', saveNow);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveNow(); });
-    AI.guide = window.AiBriefUI.mount($('#aiBriefGuide'), {onChange:saveSoon, onReview:saveNow});
+    AI.guide = window.AiBriefUI.mount($('#aiBriefGuide'), {onChange:saveSoon, onReview:saveNow,
+      suggestQuestions: async (topic, {signal}={}) => {
+        const provider = $('#aiProvSel')?.value || AICFG.provider;
+        const model = $('#aiModelSel')?.value ?? AICFG.models[provider] ?? '';
+        if (provider !== 'gemini') throw new Error('질문 초안은 Gemini API에서만 받을 수 있어요. 모델을 바꾸거나 질문을 직접 적어 주세요.');
+        if (!model) throw new Error('질문을 만들 Gemini 모델을 먼저 골라 주세요.');
+        const j = await postJson('/api/ai/brief-questions', {topic,provider,model}, signal);
+        return j.questions;
+      }});
     $('#aiModeGuided').onclick = () => changeBriefMode('guided');
     $('#aiModeDirect').onclick = () => changeBriefMode('direct');
     for (const [id,key] of [['aiTailFilter','tailFilter'],['aiTargetFilter','targetFilter'],['aiReviewFilter','reviewFilter']]) $('#'+id).onchange = e => { AI[key]=e.target.value; draw(); };
@@ -607,7 +615,7 @@ ${window.WorkTitle.field('aiTitle')}
     $('#aiLenMin').value = f.minLen;
     $('#aiLenMax').value = f.maxLen;
     $('#aiMinVol').value = f.minVol; $('#aiMinVol2').value = f.minVol;
-    AI.guide.load(Brief.normalize(f.briefV1));
+    AI.guide.load(f.briefV1);
     setBriefMode(f.briefMode==='guided'?'guided':'direct');
     lenUI();
   }
@@ -617,6 +625,7 @@ ${window.WorkTitle.field('aiTitle')}
     $('#aiWeb').checked=!$('#aiWeb').disabled && (guided ? localStorage.getItem('aiBriefWeb')==='1' : localStorage.getItem('aiWeb')!=='0');
   }
   function setBriefMode(mode) {
+    if(mode!=='guided') AI.guide?.cancelSuggestion?.();
     AI.briefMode=mode;
     const guided=mode==='guided';
     $('#aiBriefGuide').classList.toggle('hidden',!guided);
@@ -868,14 +877,14 @@ ${window.WorkTitle.field('aiTitle')}
   const isGuided = () => AI.briefMode==='guided';
   const effectiveTopic = (form) => form.briefMode==='guided' ? Brief.summary(form.briefV1) : form.topic;
   const refsFor = (form) => form.briefMode==='guided' ? Brief.payload(form.briefV1).refs : splitList(form.examples);
-  const guidedSeeds = (state,refs) => Brief.words([...refs,...state.product.trim().split(/[\s,/()]+/).slice(0,8),state.customTopic],12);
+  const guidedSeeds = (state,refs) => Brief.words([...refs,...state.product.trim().split(/[\s,/()]+/).slice(0,8),state.adaptive?.text||state.customTopic],12);
   // 생성: ① AI가 브리프 해석(탐색 계획·씨앗 단어) → ② 분석기가 씨앗으로 네이버 실제 검색 데이터 서칭 → ③ AI가 그 안에서 고르고 빈 각도 채움 → 검색량 → 재검증
   async function generate(more, fb) {
     if (AI.busy) return;
     const form = readForm(), session = AI.cur;
     session.feedback = Array.isArray(session.feedback) ? session.feedback : [];
     const redo = !!fb && fb.mode === 'redo';
-    const guided=form.briefMode==='guided', state=form.briefV1;
+    const guided=form.briefMode==='guided', state=guided?Brief.forRequest(form.briefV1):null;
     const topic=effectiveTopic(form), refs=refsFor(form), pos=splitList(form.pos);
     const neg=[...negAll(form),...(guided ? Brief.payload(state).excludeIntents : [])];
     const refMode=!guided && form.refMode==='expand'?'expand':'ref';

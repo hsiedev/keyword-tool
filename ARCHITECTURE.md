@@ -41,7 +41,7 @@ start.bat → server.mjs (127.0.0.1:8787)
 
 ### AI 대화형 브리프 · 페르소나 발굴 계약
 
-- `public/ai-brief.js`는 공용 입력 정규화·진행 상태·결과 수치 분류. `public/ai-brief-ui.js`와 `ai-brief.css`는 질문·검토 UI. `aiSessions`의 탭별 `form.briefV1`과 입력 모드에 저장하며, 새 탭만 대화형 기본, 예전 탭은 직접 입력을 유지한다. 작성 중 외부 요청은 하지 않는다.
+- `public/ai-brief.js`는 공용 입력 정규화·진행 상태·결과 수치 분류. `public/ai-brief-ui.js`와 `ai-brief.css`는 질문·검토 UI. `aiSessions`의 탭별 `form.briefV1`과 입력 모드에 저장하며, 새 탭만 대화형 기본, 예전 탭은 직접 입력을 유지한다. 새 대화형 작업만 적응형 상태를 사용한다. `adaptive`에 주제·분야별 초안을 저장한다. `forRequest`는 다른 초안과 비활성 조건을 제외하고, `payload`는 현재 질문별 답변·미정 상태를 구조화한다. 작성 중 자동 외부 요청은 없다. 일반 분야의 `/api/ai/brief-questions`는 명시적 버튼으로 주제만 선택 Gemini 모델에 전송하며, 웹 조사/모델 대체 없이 질문만 반환한다.
 - `ai-persona.mjs`가 타깃·시드 구조와 모델 입출력을 구성한다. `/api/ai/persona-plan-stream` → `/api/ai/persona-research-stream` → 기존 `/api/ai/generate-stream`의 구조화 분기. 지정 타깃은 보존, AI 타깃은 가설 표시, 후보는 공백 정규화 후 합치고 복수 태그를 연결한다. 새 후보 수신 전 기존 결과는 교체하지 않는다. 직접 입력 분기·단일 분석·파워링크는 기존 처리 유지.
 - 네이버 관측어 출처는 실제 조회에 정확히 일치할 때만 붙인다. 대화형 `/api/volumes`는 전용 캐시로 소량/누락/실제 0과 조회일을 보존한다. AI는 수치를 생성하지 않는다. 소량·미조회·낮은 검색량, 보류·제외는 구분하고 자동 집행·업로드는 없다. XLSX는 기존 열 뒤에 메타데이터를 붙이고 TXT는 키워드만 내보낸다.
 

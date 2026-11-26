@@ -37,7 +37,13 @@ function setup(){
     if (u.origin===home) return realFetch(url,init);
     if (u.host==='generativelanguage.googleapis.com') {
       if (u.pathname==='/v1beta/models') return Response.json({models:[{name:'models/gemini-3.8-flash',supportedGenerationMethods:['generateContent']}]});
-      const p=JSON.parse(init.body||'{}').contents?.[0]?.parts?.[0]?.text||'';
+      const req=JSON.parse(init.body||'{}');
+      const p=req.contents?.[0]?.parts?.[0]?.text||'';
+      if(req.systemInstruction?.parts?.[0]?.text?.includes('검색광고 브리프를 위한 확인 질문')) {
+        const {topic}=JSON.parse(p);
+        if(topic.includes('거절모의')) return new Response('fixture refusal',{status:400});
+        return Response.json({candidates:[{content:{parts:[{text:JSON.stringify({questions:['고객이 가장 먼저 해결하고 싶은 문제는 무엇인가요?','우선할 지역이나 시기가 있나요?']})}]},finishReason:'STOP'}]});
+      }
       modelCalls++;lastPrompt=p;
       if(p.includes('실패테스트')&&p.includes('조사 후보를 페르소나별로'))return new Response('fixture refusal',{status:400});
       if(p.includes('중지테스트')&&p.includes('조사 후보를 페르소나별로'))await new Promise(r=>setTimeout(r,3000));
@@ -88,7 +94,18 @@ try {
   assert.equal(gen.items[0].personas.length,2);assert.equal(gen.items[2].tail,'long');assert.equal(gen.items[2].seed,'체크카드발급');
   assert.deepEqual(gen.items.slice(3).map(x=>x.discovery),['hold','exclude','hold']);
   assert.ok(gen.items.every(x=>x.total===undefined&&x.source===undefined));assert.ok(!lastPrompt.includes('987654321'));
-  const legacy=await last(await post('/api/ai/generate-stream',{topic:'현재 직접 브리프',count:30}));
+  const adapted=Brief.adaptive.selectTopic(Brief.blankAdaptive(),'체크카드 첫 발급');
+Object.assign(adapted,{product:'카드 격리 상품',step:4,max:4});
+Object.assign(adapted.adaptive,{goal:'submit',scenarios:[0],fields:{eligibility:{status:'given',value:'가입 자격 근거 fixture'},usage:{status:'given',value:'숨긴 사용처 fixture'}}});
+const aPlan=await last(await post('/api/ai/persona-plan-stream',{briefV1:adapted}));
+assert(aPlan.personas?.length===1);
+assert(lastPrompt.includes('가입 자격 근거 fixture'));
+assert(!lastPrompt.includes('숨긴 사용처 fixture'));
+const adaptedResult=await last(await post('/api/ai/generate-stream',{briefV1:adapted,plan:aPlan,count:30}));
+assert(adaptedResult.items?.some(x=>x.keyword==='체크카드발급'));
+assert(lastPrompt.includes('가입 자격 근거 fixture'));
+assert(!lastPrompt.includes('숨긴 사용처 fixture'));
+const legacy=await last(await post('/api/ai/generate-stream',{topic:'현재 직접 브리프',count:30}));
   assert.deepEqual(legacy.items,[{keyword:'직접입력키워드',intent:'가입·구매',reason:'직접 방식'}]);
   const keys=['확인된영','일부누락','데이터없음','소량표기'];
   const vol=await (await post('/api/volumes',{persona:true,keywords:keys})).json();
