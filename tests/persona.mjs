@@ -7,6 +7,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import Brief from '../public/ai-brief.js';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const aiUi = fs.readFileSync(path.join(root,'public','ai.js'),'utf8');
+assert.match(aiUi, /<div class="ai-gen-actions">\s*<label[^>]+for="aiCount"[^>]*>생성 개수 <select id="aiCount"[^>]*>[\s\S]*?<\/select><\/label>\s*<button[^>]+id="aiGen"/);
+assert.equal((aiUi.match(/id="aiCount"/g)||[]).length,1);
+assert.match(aiUi, /count: '50'/);
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'kt-persona-'));
 const browser=process.argv.includes('--browser');
 const port=browser?18812:19000+Math.floor(Math.random()*1000);

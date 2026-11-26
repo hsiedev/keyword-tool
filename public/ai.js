@@ -324,7 +324,7 @@ ${window.WorkTitle.field('aiTitle')}
               </div>
               <textarea id="aiExamples" class="inp" rows="2" placeholder="예: 카카오페이카드발급, 카카오페이신용카드 (잘 되던 키워드 등)"></textarea>
               </div>
-              <details id="aiGenDetails" class="ai-gen-details"><summary>고급 생성 설정 <span class="muted">개수 · 검색량 · 금지어 · 조사</span></summary>
+              <details id="aiGenDetails" class="ai-gen-details"><summary>고급 생성 설정 <span class="muted">길이 · 검색량 · 금지어 · 조사</span></summary>
               <div class="grid g2 pn-grid" style="gap:10px;margin-top:10px">
                 <div><label class="muted pn-l pos">포함할 것 · Positive <span class="muted">(선택)</span></label>
                   <textarea id="aiPos" class="inp" rows="3" placeholder="꼭 다뤄야 할 방향·단어·대상 (쉼표나 줄바꿈)&#10;예: 발급 혜택, 캐시백, 실물카드, 사회초년생"></textarea></div>
@@ -337,9 +337,6 @@ ${window.WorkTitle.field('aiTitle')}
                 <label class="inl"><input type="checkbox" class="sw" id="aiBanN"> 네이버 <span class="muted" id="aiBanNc"></span></label>
                 <label class="inl"><input type="checkbox" class="sw" id="aiBanG"> 구글 <span class="muted" id="aiBanGc"></span></label>
                 <a href="#" class="ext" id="aiBanEdit">목록 편집 (설정)</a>
-              </div>
-              <div style="display:flex;gap:10px;margin-top:10px;align-items:end;flex-wrap:wrap">
-                <div><label class="muted">개수</label><br><select id="aiCount" class="inp" style="width:110px">${[30, 50, 80, 100, 150].map((n) => `<option>${n}</option>`).join('')}</select></div>
               </div>
               <div style="margin-top:12px">
                 <div style="display:flex;justify-content:space-between;align-items:baseline"><label class="muted">키워드 길이 (띄어쓰기 제외)</label><b id="aiLenTxt" style="font-size:13px"></b></div>
@@ -357,12 +354,14 @@ ${window.WorkTitle.field('aiTitle')}
               </details>
               <div id="aiGuideSendNote" class="muted hidden">생성을 누르면 브리프가 선택한 AI로 전송돼요. 광고 등록·입찰 변경은 하지 않아요.</div>
               <div id="aiModel" class="ai-model-row"></div>
-              <div style="display:flex;gap:8px;margin-top:12px">
+              <div class="ai-gen-actions">
+                <label class="ai-gen-count" for="aiCount">생성 개수 <select id="aiCount" class="inp" aria-describedby="aiCountHint">${[30, 50, 80, 100, 150].map((n) => `<option value="${n}">${n}개</option>`).join('')}</select></label>
                 <button class="btn pri" id="aiGen">키워드 생성</button>
                 <button class="btn" id="aiMore">이어서 더 생성</button>
                 <button class="btn hidden" id="aiStop">중지</button>
                 <span class="muted" id="aiMsg" style="align-self:center"></span>
               </div>
+              <p id="aiCountHint" class="muted ai-gen-count-hint">후보 목표 개수예요. 중복·제외 조건에 따라 적게 나올 수 있어요.</p>
               ${progHTML('aiProg')}
               <details class="ai-plan hidden" id="aiPlan" open><summary>AI 탐색 계획</summary><div id="aiPlanBody"></div></details>
             </div>
