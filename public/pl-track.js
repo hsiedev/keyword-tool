@@ -328,7 +328,7 @@
     bindSteps($('.plt-tbl', S.root), (inp) => { clearTimeout(inp._t); inp._t = setTimeout(() => saveTarget(inp), 700); });
     $$('[data-tg]', S.root).forEach((inp) => { inp.onchange = () => saveTarget(inp); });
     // 체크 · 전체 선택 (다시 누르면 전체 해제)
-    $$('[data-pick]', S.root).forEach((c) => (c.onchange = () => { if (c.checked) S.pick.add(c.dataset.pick); else S.pick.delete(c.dataset.pick); draw(); }));
+    $$('[data-pick]', S.root).forEach((c) => (c.onchange = () => { if (c.checked) S.pick.add(c.dataset.pick); else S.pick.delete(c.dataset.pick); clearTimeout(S.pickT); S.pickT = setTimeout(() => draw(), 0); })); // Shift로 여러 줄을 한 번에 체크해도 한 번만 다시 그림
     const all = $('#pltAll', S.root);
     if (all) all.onchange = () => { const keys = [...new Set(t.rows.map((r) => r.key))]; if (keys.every((k) => S.pick.has(k))) S.pick.clear(); else keys.forEach((k) => S.pick.add(k)); draw(); };
     // 키워드마다 추적 켜기/끄기
