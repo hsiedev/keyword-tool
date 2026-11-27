@@ -46,7 +46,8 @@ export function cleanTracker(b, old) {
     seen.add(key);
     const o = before.get(key) || {};
     const obj = x && typeof x === 'object' ? x : null;
-    items.push({ key, kw, on: obj && 'on' in obj ? obj.on !== false : o.on !== false, // 설정을 저장해도 키워드별 꺼짐은 그대로 bid0: obj && 'bid0' in obj ? won(obj.bid0) : o.bid0 ?? null, // 최초 입찰가 (올린 파일·분석의 입찰가)
+    // on: 설정을 저장해도 키워드별 꺼짐은 그대로
+    items.push({ key, kw, on: obj && 'on' in obj ? obj.on !== false : o.on !== false, bid0: obj && 'bid0' in obj ? won(obj.bid0) : o.bid0 ?? null, // 최초 입찰가 (올린 파일·분석의 입찰가)
       target: { pc: obj && 'targetPc' in obj ? tg(obj.targetPc) : o.target?.pc ?? null, mo: obj && 'targetMo' in obj ? tg(obj.targetMo) : o.target?.mo ?? null } });
   }
   if (!items.length) throw new Error('추적할 키워드를 넣어주세요');
