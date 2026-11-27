@@ -262,7 +262,9 @@
     const show = (id, on) => document.getElementById(id)?.classList.toggle('hidden', !on);
     show('aiSide', v === 'ai'); show('bSide', v === 'bulk'); show('cSide', v === 'copy'); show('mSide', v === 'mock'); show('pSide', v === 'pl'); show('bidSide', v === 'bid'); show('ktSide', v === 'kt'); show('asRecent', v === 'analyze'); show('asNone', v === 'dup');
     document.getElementById('asLabel').textContent = v === 'analyze' ? '최근 검색' : v === 'mock' ? '캠페인' : '내역';
-    document.getElementById('asLabel').classList.toggle('hidden', v === 'plt');
+    document.getElementById('asLabel').classList.toggle('hidden', v === 'plt' || v === 'pl'); // 파워링크 내역은 상단 바로
+    if (v === 'pl' && !document.getElementById('plTop')) window.__PL_TOP?.();
+    document.getElementById('plTop')?.classList.toggle('hidden', v !== 'pl' || isG());
     // 설정 › 화면 › 숨길 버튼 → 사이드바에도 적용
     const hide = new Set((window.SETTINGS?.ui?.hideButtons) || []);
     side.querySelectorAll('[data-view]').forEach((b) => { const k = b.dataset.view; b.style.display = k !== 'analyze' && hide.has(k) && k !== v ? 'none' : ''; });

@@ -108,7 +108,7 @@
       btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M3 9V5a2 2 0 0 1 2-2h4M15 3h4a2 2 0 0 1 2 2v4M21 15v4a2 2 0 0 1-2 2h-4M9 21H5a2 2 0 0 1-2-2v-4"/></svg> 집중 피킹';
       btn.onclick = () => { const tb = w.querySelector('table'); if (FP.table && FP.table === tb) stop(); else if (tb) start(tb); };
       const prev = w.previousElementSibling;
-      if (prev && prev.classList.contains('toolbar') && !prev.id) prev.append(btn); // 고정 툴바
+      if (prev && ((prev.classList.contains('toolbar') && !prev.id) || prev.classList.contains('fp-bar'))) prev.append(btn); // 고정 툴바 · 열 맞춤 설정 줄
       else {
         const bar = document.createElement('div');
         bar.className = 'fp-bar';

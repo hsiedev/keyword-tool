@@ -1021,3 +1021,26 @@ table.rel.plt tbody tr.sel td{background:color-mix(in oklab,var(--accent) 9%,tra
 .as-item .plt-live{margin-left:auto;font-style:normal;font-size:11px;font-weight:600;color:var(--ok-fg);display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .as-item .plt-live::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--ok-fg)}
 .side-collapsed .as-item .plt-live,body.side-mini .as-item .plt-live{display:none}
+
+/* ---------------------------------------------------------------- 파워링크: 상단 바 내역 (pl.js) */
+.pl-top{display:flex;align-items:center;gap:6px;flex:1;min-width:0}
+.pl-top.hidden{display:none}
+.pl-top .btn.sm{flex:none;white-space:nowrap}
+.plh-strip{display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;min-width:0;flex:1;padding:2px 0}
+.plh-strip::-webkit-scrollbar{display:none}
+.plh-chip{flex:none;display:inline-flex;align-items:center;gap:6px;max-width:230px;height:30px;border:1px solid var(--border);background:var(--card);color:var(--foreground);border-radius:8px;padding:0 10px;font:inherit;font-size:12.5px;cursor:pointer;white-space:nowrap}
+.plh-chip:hover{background:var(--muted)}
+.plh-chip .plh-n{overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.plh-chip small{color:var(--muted-fg);font-size:11px;flex:none}
+.plh-chip.on{border-color:var(--foreground);box-shadow:inset 0 0 0 1px var(--foreground)}
+.plh-chip.run small{color:var(--ok-fg);font-weight:600}
+.plh-empty{font-size:12px;white-space:nowrap}
+.plh-arr{flex:none;width:22px;height:28px;border:0;background:transparent;color:var(--muted-fg);cursor:pointer;font-size:18px;line-height:1;border-radius:6px;padding:0}
+.plh-arr:hover:not([disabled]){background:var(--muted);color:var(--foreground)}
+.plh-arr[disabled]{opacity:.25;cursor:default}
+.plh-arr[hidden]{display:none}
+#pSide .pl-usage{margin-top:0;border-top:0}
+/* 공용 열 맞춤 설정 (tablecols.js) */
+.cw-hide{display:none!important}
+.cw-btn small{margin-left:2px}
+.fp-bar{gap:6px}

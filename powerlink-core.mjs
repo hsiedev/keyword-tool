@@ -3,8 +3,8 @@ import { comparePowerlink, keyOf, periodOf, reports } from './powerlink-compare.
 // 파워링크 분석기 (AI 없이 이 PC에서 크롤링)
 // - 순위: 로그아웃 상태의 네이버 '광고 더보기' 페이지 HTML을 받아 광고 순서를 읽음 (PC 최대 25위, 모바일 최대 15위). 가볍고 빠름
 //         같은 키워드를 여러 번(기본 4회) 검색해서 평균 순위를 냄 (검색할 때마다 순위가 조금씩 바뀜)
-// - 캡처: 이 PC의 Edge(없으면 Chrome)를 화면 없이(headless) 띄워 통합검색 화면의 파워링크 영역을 찍고 내 광고에 빨간 테두리
-//         통합검색 영역 밖(PC 11위~ 등)이면 '광고 더보기' 화면을 찍음
+// - 캡처: 기본으로 안 찍음 (2026-11-27 사용자 요청으로 화면에서 뺌). 설정 rules.powerlink.capture = true 일 때만
+//         이 PC의 Edge(없으면 Chrome)를 화면 없이(headless) 띄워 통합검색 화면의 파워링크 영역을 찍음
 // - 내 광고 찾기: 사용자가 준 URL(고유번호·추적값 없어도 됨)과 광고의 표시 URL을 비교 (주소+경로 > 같은 주소 > 같은 도메인)
 // - 입찰가: 네이버 검색광고 API의 순위별 평균 입찰가(최근 4주)와 그 입찰가의 예상 실적 (읽기 전용 호출만)
 // - 네이버 검색 제한을 피하려고 모든 검색 사이에 간격(기본 1.2초), 제한에 걸리면 자동으로 쉬었다 이어감
@@ -273,7 +273,7 @@ export function buildReportColumns(rawFiles, selectedRows) {
       }
     }
   }
-  const ordered = [...columns.values()].sort((a, b) => a.id.localeCompare(b.id));
+  const ordered = [...columns.values()]; // 붙여넣은 엑셀의 열 순서 그대로
   const indices = new Map(ordered.map((col, i) => [col.id, i]));
   return { columns: ordered, rows: [...observed].map(([key, values]) => [key, Object.fromEntries([...values].map(([id, v]) => [indices.get(id), v]))]) };
 }
@@ -452,7 +452,7 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
     res.seen = seen.length; res.n = runs;
     if (seen.length) { res.avg = Math.round((seen.reduce((a, b) => a + b, 0) / seen.length) * 10) / 10; res.min = Math.min(...seen); res.max = Math.max(...seen); }
     // 캡처: 통합검색 화면에서 내 광고가 보이면 그 영역, 아니면 광고 더보기
-    try { res.cap = await capture(j, row, dev); } catch (e) { if (e.message === 'STOP') throw e; res.capErr = String(e.message).slice(0, 140); }
+    if (R().capture === true) { try { res.cap = await capture(j, row, dev); } catch (e) { if (e.message === 'STOP') throw e; res.capErr = String(e.message).slice(0, 140); } }
   }
   async function browser() {
     if (RUN.browser?.ws) return RUN.browser;
@@ -520,7 +520,8 @@ export function createPowerlink({ dataDir, adRequest, hasAd, getRules }) {
           if (row.on === false || row.done) continue;
           RUN.cur = row.kw;
           for (const dev of j.devices) {
-            if (row.res?.[dev]?.cap || (row.res?.[dev]?.seen != null && row.res?.[dev]?.capErr)) continue;
+            const x0 = row.res?.[dev];
+            if (x0?.seen != null && (R().capture !== true || x0.cap || x0.capErr)) continue; // 이미 순위를 잰 기기는 건너뜀
             await measure(j, row, dev);
           }
           row.done = true; save(j, true); // 키워드 하나 끝날 때마다 바로 저장
