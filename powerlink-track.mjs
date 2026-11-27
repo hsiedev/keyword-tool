@@ -41,7 +41,8 @@ export function cleanTracker(b, old) {
     seen.add(key);
     const o = before.get(key) || {};
     const obj = x && typeof x === 'object' ? x : null;
-    items.push({ key, kw, on: obj?.on !== false,
+    const won = (v) => { if (v == null || v === '') return null; const n = Math.round(Number(String(v).replace(/[^\d.]/g, ''))); return n >= 0 && n <= 100000 ? n : null; };
+    items.push({ key, kw, on: obj?.on !== false, bid0: obj && 'bid0' in obj ? won(obj.bid0) : o.bid0 ?? null, // 최초 입찰가 (올린 파일·분석의 입찰가)
       target: { pc: obj && 'targetPc' in obj ? tg(obj.targetPc) : o.target?.pc ?? null, mo: obj && 'targetMo' in obj ? tg(obj.targetMo) : o.target?.mo ?? null } });
   }
   if (!items.length) throw new Error('추적할 키워드를 넣어주세요');
@@ -247,7 +248,7 @@ export function createTracker({ root, rankOnce, limiter }) {
     const rows = [];
     for (const it of t.items) for (const dev of t.devices) {
       const k = it.key + '|' + dev, L = t.last?.[k] || {};
-      rows.push({ key: it.key, kw: it.kw, dev, on: it.on !== false, target: it.target?.[dev] ?? null, r: L.r ?? null, at: L.at || null, prev: L.prev, prevAt: L.prevAt || null,
+      rows.push({ key: it.key, kw: it.kw, dev, on: it.on !== false, bid0: it.bid0 ?? null, target: it.target?.[dev] ?? null, r: L.r ?? null, at: L.at || null, prev: L.prev, prevAt: L.prevAt || null,
         total: L.total ?? null, n: L.n || 0, state: L.state || null, focus: !!(t.on && t.focus?.[it.key]?.until > Date.now()),
         sp: withSpark ? (m?.get(k) || []) : undefined });
     }
@@ -276,7 +277,9 @@ export function createTracker({ root, rankOnce, limiter }) {
     for (const p of pts) rows.push([fmt(p[0]), kwOf.get(p[1]) || p[1], DEVN[p[2]] || p[2], rankText(p[3], p[2]), p[3] ?? '', p[4] ?? '']);
     const bids = [['기록 시각', '키워드', '기기', '입찰가(원)', '메모']];
     for (const b of t.bids || []) if (b.at >= a && b.at <= z) bids.push([fmt(b.at), kwOf.get(b.key) || b.key, b.dev === 'pc' ? 'PC' : b.dev === 'mo' ? '모바일' : 'PC·모바일', b.bid ?? '', b.note || '']);
-    return buildXlsx([{ name: '순위 기록', rows, widths: [20, 28, 8, 12, 10, 8] }, { name: '입찰가 기록', rows: bids, widths: [20, 28, 10, 12, 30] }]);
+    const kws = [['키워드', '최초 입찰가(원)', 'PC 목표', '모바일 목표']];
+    for (const i of t.items) kws.push([i.kw, i.bid0 ?? '', i.target?.pc ?? '', i.target?.mo ?? '']);
+    return buildXlsx([{ name: '순위 기록', rows, widths: [20, 28, 8, 12, 10, 8] }, { name: '입찰가 기록', rows: bids, widths: [20, 28, 10, 12, 30] }, { name: '키워드', rows: kws, widths: [28, 14, 10, 10] }]);
   }
 
   // ---------------------------------------------------------------- HTTP (/api/pl/track...)

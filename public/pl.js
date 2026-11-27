@@ -880,6 +880,10 @@
   }
   window.__PL_OPEN_TRACK = openTrack;
   window.__PL_JOBS = () => S.jobs;
+  window.__PL_ROWS = {
+    file: async (f) => inputRows((await readReport(f)).sheets),
+    clip: (cd) => { const rows = window.XlsxLite?.clipRows(cd, { raw: true }); return rows && window.PowerlinkColumns.find(rows) ? fromSheet(rows) : null; },
+  };
   // 헤더는 알려진 작업 상태만 읽으며, 다른 화면에서는 진행 여부만 갱신한다.
   window.__PL_WORK = { read: () => S.running, open: id => S.cur === id ? undefined : openJob(id) };
   setInterval(() => { if (S.running && $('#plView').classList.contains('hidden') && !document.hidden) loadJobs(); }, 5000);

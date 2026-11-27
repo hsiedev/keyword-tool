@@ -126,7 +126,7 @@
   function tableHTML(t) {
     if (!S.row || !t.rows.some((r) => r.key + '|' + r.dev === S.row)) S.row = t.rows[0] ? t.rows[0].key + '|' + t.rows[0].dev : '';
     const rows = t.rows.filter((r) => r.on);
-    return `<div class="tbl-wrap plt-tbl"><table class="rel plt"><thead><tr><th class="l">키워드</th><th class="l">기기</th><th>지금</th><th>직전 대비</th><th>목표</th><th class="l">최근 3시간</th><th>확인</th><th class="l">입찰가 기록</th></tr></thead><tbody>
+    return `<div class="tbl-wrap plt-tbl"><table class="rel plt"><thead><tr><th class="l">키워드</th><th class="l">기기</th><th>지금</th><th>직전 대비</th><th>목표</th><th class="l">최근 3시간</th><th>확인</th><th title="키워드 파일·분석에서 가져온 처음 입찰가">최초 입찰가</th><th class="l">입찰가 기록</th></tr></thead><tbody>
       ${rows.map((r) => {
         const k = r.key + '|' + r.dev, hit = r.r != null && r.target && r.r <= r.target;
         let ch = '<span class="muted">—</span>';
@@ -144,7 +144,8 @@
           <td class="plt-tg"><input class="plt-tgi" type="number" min="1" max="25" placeholder="-" value="${r.target ?? ''}" data-tg="${e2(r.key)}" data-dev="${r.dev}" title="목표 순위 (비우면 목표 없음)">위 ${r.target ? `<span class="${hit ? 'plt-up' : 'muted'}" style="font-size:12px">${hit ? '달성' : r.at ? '미달' : ''}</span>` : ''}</td>
           <td class="l">${spark(r.sp, r.dev)}</td>
           <td class="muted" title="${r.at ? '확인 ' + r.n + '번' : ''}">${r.at ? clock(r.at) : ''}</td>
-          <td class="l">${b ? `<span class="plt-bid" title="${e2(b.note || '')}">${dayClock(b.at)} · ${b.bid == null ? '메모' : n0(b.bid) + '원'}</span> ` : ''}<button class="btn sm" data-bid="${e2(r.key)}" data-dev="${r.dev}">+ 기록</button></td></tr>`;
+          <td>${r.bid0 != null ? n0(r.bid0) + '원' : '<span class="muted">—</span>'}</td>
+          <td class="l">${b ? `<span class="plt-bid" title="${e2(b.note || '')}">${dayClock(b.at)} · ${b.bid == null ? '메모' : n0(b.bid) + '원'}${b.bid != null && r.bid0 != null && b.bid !== r.bid0 ? ` <span class="${b.bid > r.bid0 ? 'plt-up' : 'plt-down'}">(${b.bid > r.bid0 ? '+' : '−'}${n0(Math.abs(b.bid - r.bid0))})</span>` : ''}</span> ` : ''}<button class="btn sm" data-bid="${e2(r.key)}" data-dev="${r.dev}">+ 기록</button></td></tr>`;
       }).join('')}</tbody></table></div>`;
   }
 
@@ -280,7 +281,7 @@
     bg.innerHTML = `<div class="cfm" role="dialog" aria-modal="true" style="width:min(440px,92vw)">
       <div class="cfm-msg"><b>${e2(it?.kw || key)}</b> 입찰가 기록</div>
       <div class="muted" style="font-size:13px;margin:6px 0 10px">네이버 광고관리에서 입찰가를 바꾼 뒤 여기에 적으면 그래프에 세로선이 생겨요. 실제 입찰가는 바뀌지 않아요.</div>
-      <label class="plt-f">새 입찰가 <span><input class="inp" id="pbBid" inputmode="numeric" placeholder="${prev?.bid != null ? '지난 기록 ' + n0(prev.bid) + '원' : '예: 1200'}" style="width:140px"> 원</span></label>
+      <label class="plt-f">새 입찰가 <span><input class="inp" id="pbBid" inputmode="numeric" placeholder="${prev?.bid != null ? '지난 기록 ' + n0(prev.bid) + '원' : it?.bid0 != null ? '최초 ' + n0(it.bid0) + '원' : '예: 1200'}" style="width:140px"> 원${it?.bid0 != null ? ` <span class="muted" style="font-size:12px">최초 입찰가 ${n0(it.bid0)}원</span>` : ''}</span></label>
       <label class="plt-f">기기 <select class="inp" id="pbDev" style="width:auto">${t.devices.length > 1 ? '<option value="both">PC·모바일 둘 다</option>' : ''}${t.devices.map((d) => `<option value="${d}" ${d === dev && t.devices.length === 1 ? 'selected' : ''}>${DEVN[d]}</option>`).join('')}</select></label>
       <label class="plt-f">메모 <input class="inp" id="pbNote" maxlength="100" placeholder="선택 (예: 3위 목표로 올림)"></label>
       <label class="inl" style="margin-top:6px"><input type="checkbox" id="pbFocus" ${t.on ? 'checked' : 'disabled'}> 20분 동안 이 키워드만 1분마다 확인 (집중 확인)${t.on ? '' : ' · 추적을 켜야 돼요'}</label>
@@ -308,16 +309,36 @@
     const f = t ? {
       id: t.id, name: t.name, urls: t.urls.join('\n'), devices: [...t.devices], interval: t.interval, cap: t.cap,
       kws: t.items.map((i) => { const pc = i.target?.pc ?? null, mo = i.target?.mo ?? null; return pc == null && mo == null ? i.kw : pc === mo ? `${i.kw}, ${pc}` : `${i.kw}, ${pc ?? '-'}, ${mo ?? '-'}`; }).join('\n'),
-      sched: { ...t.sched }, notify: t.notify, on: t.on,
-    } : { id: '', name: '', urls: localStorage.getItem('plUrls') || '', devices: ['pc', 'mo'], interval: 5, cap: 30, kws: '', sched: { mode: 'always', from: '09:00', to: '24:00', minutes: 60 }, notify: true, on: false };
+      sched: { ...t.sched }, notify: t.notify, on: t.on, bid0: Object.fromEntries(t.items.filter((i) => i.bid0 != null).map((i) => [i.key, i.bid0])),
+    } : { bid0: {}, id: '', name: '', urls: localStorage.getItem('plUrls') || '', devices: ['pc', 'mo'], interval: 5, cap: 30, kws: '', sched: { mode: 'always', from: '09:00', to: '24:00', minutes: 60 }, notify: true, on: false };
     S.edit = f; draw();
   }
   const parseKws = (txt) => String(txt || '').split(/\n/).map((l) => l.trim()).filter(Boolean).map((l) => {
     const p = l.split(/[,\t]/).map((s) => s.trim());
     const n = (v) => (v && /^\d{1,2}$/.test(v) ? +v : '');
     const pc = n(p[1]), mo = p.length > 2 ? n(p[2]) : pc;
-    return { kw: p[0], targetPc: pc, targetMo: mo };
+    const key = p[0].replace(/\s+/g, '').toUpperCase(), b0 = S.edit?.bid0?.[key];
+    return { kw: p[0], targetPc: pc, targetMo: mo, bid0: b0 ?? null };
   }).filter((x) => x.kw);
+  // 키워드 파일·붙여넣은 표 → 키워드 칸 + 최초 입찰가 (노출가능만)
+  function takeRows(rows, from) {
+    const r = S.root, f = S.edit;
+    const on = rows.filter((x) => x.on !== false && x.kw);
+    if (!on.length) { toast(from + ': 노출가능 키워드를 찾지 못했어요', 'warn'); return; }
+    f.bid0 = f.bid0 || {};
+    const lines = $('#pfKws', r).value.split(/\n/).map((l) => l.trim()).filter(Boolean);
+    const have = new Set(lines.map((l) => l.split(/[,\t]/)[0].trim().replace(/\s+/g, '').toUpperCase()));
+    let add = 0, withBid = 0;
+    for (const x of on) {
+      const key = x.kw.replace(/\s+/g, '').toUpperCase();
+      if (x.bid != null) { f.bid0[key] = x.bid; withBid++; }
+      if (!have.has(key)) { have.add(key); lines.push(x.kw); add++; }
+    }
+    $('#pfKws', r).value = lines.join('\n');
+    const cap = +$('#pfCap', r).value;
+    toast(`${from}: 키워드 ${add}개 추가 · 최초 입찰가 ${withBid}개${lines.length > cap ? ` · 상한 ${cap}개를 넘으니 추적할 키워드만 남겨 주세요` : ''}`, lines.length > cap ? 'warn' : 'ok', 6000);
+    estimate();
+  }
   function formHTML() {
     const f = S.edit, s = f.sched;
     const hours = (v) => Array.from({ length: 25 }, (_, h) => `<option value="${pad(h)}:00" ${v === pad(h) + ':00' ? 'selected' : ''}>${h}시</option>`).join('');
@@ -330,6 +351,8 @@
           <label class="plt-f">이름 <input class="inp" id="pfName" maxlength="60" placeholder="비우면 첫 키워드로 지어요" value="${e2(f.name)}"></label>
           ${jobs.length ? `<label class="plt-f">분석에서 가져오기 <select class="inp" id="pfJob"><option value="">파워링크 분석 내역에서 URL·기기·키워드 불러오기</option>${jobs.map((m) => `<option value="${e2(m.id)}">${e2(m.name)} (${m.total}개)</option>`).join('')}</select></label>` : ''}
           <label class="plt-f">내 파워링크 URL <span class="muted" style="font-size:12px">한 줄에 하나 · 분석기와 같은 방식으로 찾아요</span><textarea class="inp" id="pfUrls" rows="2" placeholder="https://www.example.com/event">${e2(f.urls)}</textarea></label>
+          <div class="plt-f">키워드 파일 <span class="muted" style="font-size:12px">네이버 광고관리 키워드 다운로드 엑셀을 넣으면 키워드와 <b>최초 입찰가</b>를 읽어요 ('노출가능'만) · DRM으로 못 열면 엑셀 표를 머리글부터 복사해 아래 키워드 칸에 붙여넣기</span>
+            <div style="margin-top:4px"><label class="btn sm" style="cursor:pointer">파일 선택<input type="file" id="pfFile" accept=".xlsx,.xlsm,.csv,.txt" hidden multiple></label> <span class="muted" id="pfBidN" style="font-size:12px"></span></div></div>
           <label class="plt-f">키워드 <span class="muted" style="font-size:12px">한 줄에 하나 · 목표를 같이 쓰려면 "키워드, 3" (PC·모바일 같게) 또는 "키워드, 3, 2" (PC, 모바일 · 없으면 -)</span><textarea class="inp" id="pfKws" rows="7" placeholder="비씨카드발급, 3&#10;비씨바로카드신청, 3, 2&#10;BC카드캐시백이벤트, -, 2&#10;비씨카드온라인발급">${e2(f.kws)}</textarea></label>
         </div>
         <div>
@@ -370,6 +393,7 @@
     if (kws.length > f.cap) warns.push(`키워드가 ${kws.length}개라 상한(${f.cap}개)을 넘어요`);
     if (sec > f.interval * 60) warns.push(`한 바퀴(약 ${dur(sec * 1000)})가 확인 간격보다 길어서 쉬지 않고 계속 돌아요`);
     if (perDay > 15000) warns.push('하루 검색이 많아요. 네이버 검색 제한에 걸리면 이 PC에서 네이버 검색할 때 자동입력 방지 문자가 나올 수 있어요');
+    const bn = $('#pfBidN', S.root); if (bn) { const c = kws.filter((x) => x.bid0 != null).length; bn.textContent = c ? `최초 입찰가 ${c}개 읽음` : ''; }
     el.innerHTML = kws.length ? `키워드 ${kws.length}개 × ${f.devices.length}기기 = 한 바퀴 <b>${n}번</b> 검색 · 약 ${dur(sec * 1000)} · ${f.sched.mode === 'for' ? `${fmtMin(f.sched.minutes)} 동안` : '하루'} 최대 약 ${perDay.toLocaleString('ko-KR')}번
       ${warns.map((w) => `<div class="plt-warn">${e2(w)}</div>`).join('')}` : '<span class="muted">키워드를 넣으면 한 바퀴 걸리는 시간을 계산해 드려요</span>';
   }
@@ -391,11 +415,23 @@
         const rows = (jb.rows || []).filter((x) => x.on !== false);
         const cap = +$('#pfCap', r).value;
         $('#pfKws', r).value = rows.slice(0, 100).map((x) => x.kw).join('\n');
+        S.edit.bid0 = {}; for (const x of rows) if (x.bid != null) S.edit.bid0[x.kw.replace(/\s+/g, '').toUpperCase()] = x.bid;
         if (!$('#pfName', r).value.trim()) $('#pfName', r).value = jb.name || '';
         toast(rows.length > cap ? `키워드 ${rows.length}개를 불러왔어요. 상한 ${cap}개에 맞게 추적할 키워드만 남겨 주세요` : `키워드 ${rows.length}개를 불러왔어요`, rows.length > cap ? 'warn' : 'ok');
       } catch (e) { toast(e.message, 'warn'); }
       estimate();
     };
+    const fileIn = $('#pfFile', r);
+    if (fileIn) fileIn.onchange = async () => {
+      if (!window.__PL_ROWS) return toast('새로고침한 뒤 다시 해 주세요', 'warn');
+      for (const f of fileIn.files) { try { takeRows(await window.__PL_ROWS.file(f), f.name); } catch (e) { toast(f.name + ': ' + e.message, 'warn'); } }
+      fileIn.value = '';
+    };
+    $('#pfKws', r).addEventListener('paste', (e) => {
+      const rows = window.__PL_ROWS?.clip(e.clipboardData);
+      if (!rows) return; // 머리글 없는 일반 글은 그대로 붙여넣기
+      e.preventDefault(); takeRows(rows, '붙여넣은 표');
+    });
     $('#pfCancel', r).onclick = () => { S.edit = null; draw(); };
     const save = async (start) => {
       const f = readForm(), items = parseKws(f.kws);
