@@ -443,13 +443,17 @@
   setInterval(pollEvents, 15000);
   setTimeout(pollEvents, 3000);
 
-  // 왼쪽 목록의 '순위 추적' 칸 (pl.js 가 그림) 의 상태만 갱신
+  // 왼쪽 메뉴 '순위 추적'에 추적 중 개수 표시
   function sideBadge() {
-    const el = document.getElementById('pSideTrack');
-    if (!el) return;
-    const dot = el.querySelector('.plt-dot'), sm = el.querySelector('.sm');
-    if (dot) dot.className = 'plt-dot ' + (S.onCount ? 'on' : '');
-    if (sm) sm.textContent = S.onCount ? `추적 중 ${S.onCount}개` : '켜 두면 계속 순위 확인';
+    const b = document.querySelector('.as-item[data-view="plt"]');
+    if (!b) return;
+    let m = b.querySelector('.plt-live');
+    if (S.onCount) {
+      if (!m) { m = document.createElement('em'); m.className = 'plt-live'; b.appendChild(m); }
+      m.textContent = '추적 중 ' + S.onCount;
+      b.querySelector('.as-new')?.classList.add('hidden');
+      b.title = `순위 추적 · 추적 중 ${S.onCount}개`;
+    } else { m?.remove(); b.querySelector('.as-new')?.classList.remove('hidden'); b.title = '순위 추적'; }
   }
 
   // 화면이 보이는 동안: 5초마다 상태, 1초마다 '다음 확인' 남은 시간

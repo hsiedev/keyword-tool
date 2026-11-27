@@ -7,6 +7,7 @@
     dup: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
     copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
     pl: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="1.5"/><path d="M7 7h6"/><path d="M3 14h10M3 18h7"/><circle cx="18" cy="17" r="3"/><path d="m20.2 19.2 1.8 1.8"/></svg>',
+    plt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 6-7"/><circle cx="20" cy="7" r="1.2" fill="currentColor"/></svg>',
     kt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h9M4 12h6M4 18h5"/><circle cx="16.5" cy="15.5" r="3.5"/><path d="m19 18 2.5 2.5"/></svg>',
     bid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 19V5m-4 4 4-4 4 4m4-4v14m-4-4 4 4 4-4"/></svg>',
     mock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M7 13h6M7 16h10"/></svg>',
@@ -23,6 +24,7 @@
     ['dup', '키워드 중복 검사'],
     ['bulk', '대량 분석'],
     ['pl', '파워링크 분석기'],
+    ['plt', '순위 추적'],
     ['bid', '키워드 입찰가 조정'],
     ['copy', 'AI 카피 생성기'],
     ['mock', '광고 목업'],
@@ -30,7 +32,7 @@
   const NAME = Object.fromEntries(VIEWS);
   // 사이드바 묶음 제목 (그 묶음의 첫 메뉴 위에) · 새 메뉴 표시
   const NAV_GROUP = { analyze: '키워드 찾기', bulk: '분석 · 운영', copy: '광고 만들기' };
-  const NAV_NEW = new Set(['kt']);
+  const NAV_NEW = new Set(['kt', 'plt']);
   // NAVER / Google 모드 (구글은 지금 '키워드 분석'만)
   const getMode = () => (localStorage.getItem('siteMode') === 'google' ? 'google' : 'naver');
   const isG = () => getMode() === 'google';
@@ -138,7 +140,7 @@
 
   // ---------------------------------------------------------------- 화면 전환
   const isOn = (id) => { const el = document.getElementById(id); return el && !el.classList.contains('hidden'); };
-  const current = () => (isG() ? 'analyze' : isOn('ktView') ? 'kt' : isOn('bidView') ? 'bid' : isOn('copyView') ? 'copy' : isOn('mockView') ? 'mock' : isOn('plView') ? 'pl' : isOn('aiView') ? 'ai' : isOn('dupView') ? 'dup' : isOn('bulkView') ? 'bulk' : 'analyze');
+  const current = () => (isG() ? 'analyze' : isOn('ktView') ? 'kt' : isOn('bidView') ? 'bid' : isOn('copyView') ? 'copy' : isOn('mockView') ? 'mock' : isOn('plView') ? (localStorage.getItem('plTrack') === '1' ? 'plt' : 'pl') : isOn('aiView') ? 'ai' : isOn('dupView') ? 'dup' : isOn('bulkView') ? 'bulk' : 'analyze');
   // 메뉴(탭)마다 마지막 스크롤 위치: 새로고침해도 유지 (sessionStorage)
   let POS = {};
   try { POS = JSON.parse(sessionStorage.getItem('ktPos') || '{}') || {}; } catch {}
@@ -178,10 +180,11 @@
     }
     if (v !== 'copy') window.__hideCopy?.();
     if (v !== 'mock') window.__hideMock?.();
-    if (v !== 'pl') window.__hidePl?.();
+    if (v !== 'pl' && v !== 'plt') window.__hidePl?.();
     if (v === 'copy') window.showCopy?.(true);
     if (v === 'mock') window.showMock?.(true);
-    if (v === 'pl') window.showPl?.(true);
+    if (v === 'pl') { window.__PL_EXIT_TRACK?.(); window.showPl?.(true); }
+    if (v === 'plt') { window.__PL_SET_TRACK?.(); window.showPl?.(true); } // 순위 추적: 파워링크 화면을 같이 씀
     if (v === 'bid') window.__BID?.show(true);
     if (v === 'kt') { if (isOn('aiView')) window.showAI?.(false); if (isOn('dupView')) window.showDup?.(false); if (isOn('bulkView')) window.showBulk?.(false); window.__KTV?.show(); }
     if (v === 'analyze') {
@@ -259,6 +262,7 @@
     const show = (id, on) => document.getElementById(id)?.classList.toggle('hidden', !on);
     show('aiSide', v === 'ai'); show('bSide', v === 'bulk'); show('cSide', v === 'copy'); show('mSide', v === 'mock'); show('pSide', v === 'pl'); show('bidSide', v === 'bid'); show('ktSide', v === 'kt'); show('asRecent', v === 'analyze'); show('asNone', v === 'dup');
     document.getElementById('asLabel').textContent = v === 'analyze' ? '최근 검색' : v === 'mock' ? '캠페인' : '내역';
+    document.getElementById('asLabel').classList.toggle('hidden', v === 'plt');
     // 설정 › 화면 › 숨길 버튼 → 사이드바에도 적용
     const hide = new Set((window.SETTINGS?.ui?.hideButtons) || []);
     side.querySelectorAll('[data-view]').forEach((b) => { const k = b.dataset.view; b.style.display = k !== 'analyze' && hide.has(k) && k !== v ? 'none' : ''; });

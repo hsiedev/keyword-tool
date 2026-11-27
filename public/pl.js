@@ -159,15 +159,12 @@
     const group = (r) => { const ks = kids(r), openT = r.id === curRoot; return item(r, false, ks.length, openT) + (openT ? ks.map((k) => item(k, true)).join('') : ''); };
     const last = (r) => Math.max(r.createdAt, ...kids(r).map((k) => k.createdAt));
     const pinned = roots.filter((r) => r.pinned).sort((x, y) => last(y) - last(x)), rest = roots.filter((r) => !r.pinned).sort((x, y) => last(y) - last(x));
-    const TS = window.__PLT?.summary?.() || { on: 0 };
     side.innerHTML = `<button class="btn pri newbtn" id="pSideNew">+ 새 분석</button>
-      <div class="sit pl-trk ${S.track ? 'on' : ''}" id="pSideTrack" title="켜 두면 정해진 간격으로 내 파워링크 순위를 계속 확인해요"><div class="sn"><span class="plt-dot ${TS.on ? 'on' : ''}"></span><span>순위 추적</span></div><div class="sm">${TS.on ? `추적 중 ${TS.on}개` : '켜 두면 계속 순위 확인'}</div></div>
       ${pinned.length ? `<div class="side-h">고정됨</div>${pinned.map(group).join('')}` : ''}
       <div class="side-h">내역</div>
       ${rest.map(group).join('') || '<div class="muted" style="padding:6px 10px;font-size:12px">분석할 때마다 여기 쌓여요</div>'}
       <div class="pl-usage" id="plUsage">${usageHTML()}</div>`;
     bindUsage();
-    $('#pSideTrack').onclick = () => openTrack();
     $('#pSideNew').onclick = () => { clearTimeout(S.timer); S.track = false; localStorage.setItem('plTrack', ''); S.cur = null; S.job = null; S.reportView = null; S.thread = []; S.prev = null; localStorage.setItem('plCur', ''); draw(); };
     $$('[data-pid]', side).forEach((el) => {
       el.onclick = () => openJob(el.dataset.pid);
@@ -409,6 +406,7 @@
     if (!box) return;
     if (S.columnEdit && !editOf(S.job)) closeColumnEditor();
     drawSide();
+    window.__LAYOUT?.sync?.(); // 왼쪽 메뉴 강조 (파워링크 분석기 ↔ 순위 추적)
     if (S.track && window.__PLT) {
       box.innerHTML = `<div class="sec"><h2>파워링크 순위 추적 <span class="muted" style="font-size:13px;font-weight:500">켜 두면 이 PC가 정해진 간격으로 내 파워링크 순위를 계속 확인 · 클릭·캡처 없음</span></h2><div id="pltRoot"></div></div>`;
       window.__PLT.mount($('#pltRoot'));
@@ -869,12 +867,16 @@
   }
   window.showPl = showPl;
   // 순위 추적 화면 열기 (왼쪽 '순위 추적', Ctrl+K, 알림 누르기)
+  function setTrack(on) {
+    S.track = on; localStorage.setItem('plTrack', on ? '1' : '');
+    if (on) { clearTimeout(S.timer); closeColumnEditor(); S.cur = null; S.job = null; S.reportView = null; S.thread = []; S.prev = null; localStorage.setItem('plCur', ''); }
+  }
+  window.__PL_SET_TRACK = () => setTrack(true);
+  window.__PL_EXIT_TRACK = () => { if (S.track) setTrack(false); };
   function openTrack() {
-    clearTimeout(S.timer); closeColumnEditor();
-    S.track = true; S.cur = null; S.job = null; S.reportView = null; S.thread = []; S.prev = null;
-    localStorage.setItem('plCur', ''); localStorage.setItem('plTrack', '1');
-    if ($('#plView').classList.contains('hidden')) { if (window.__LAYOUT?.go) window.__LAYOUT.go('pl'); else showPl(true); }
-    draw();
+    setTrack(true);
+    if (window.__LAYOUT?.go && window.__LAYOUT.current() !== 'plt') window.__LAYOUT.go('plt');
+    else { if ($('#plView').classList.contains('hidden')) showPl(true); draw(); }
   }
   window.__PL_OPEN_TRACK = openTrack;
   window.__PL_JOBS = () => S.jobs;
@@ -899,5 +901,5 @@
     }
   });
   others.forEach((id) => { const el = document.getElementById(id); if (el) watch.observe(el, { attributes: true, attributeFilter: ['class'] }); });
-  if (location.hash === '#pl') setTimeout(() => (window.__LAYOUT?.go ? window.__LAYOUT.go('pl') : showPl(true)), 0);
+  if (location.hash === '#pl') setTimeout(() => (window.__LAYOUT?.go ? window.__LAYOUT.go(S.track ? 'plt' : 'pl') : showPl(true)), 0);
 })();

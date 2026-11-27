@@ -1018,3 +1018,6 @@ table.rel.plt tbody tr.sel td{background:color-mix(in oklab,var(--accent) 9%,tra
 .plt-est{font-size:13px;line-height:1.7;background:var(--muted);border-radius:8px;padding:8px 10px}
 .plt-warn{color:var(--warn-fg);font-weight:500}
 .plt-spark .plt-sp-last{fill:var(--info-fg)}
+.as-item .plt-live{margin-left:auto;font-style:normal;font-size:11px;font-weight:600;color:var(--ok-fg);display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.as-item .plt-live::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--ok-fg)}
+.side-collapsed .as-item .plt-live,body.side-mini .as-item .plt-live{display:none}
