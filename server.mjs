@@ -70,7 +70,7 @@ const hasAd = () => !!(config.adApiKey && config.adSecret && config.adCustomerId
 const TRACK = createBidTracking(path.join(__dirname, 'data'));
 const PL = createPowerlink({ dataDir: path.join(__dirname, 'data'), adRequest: (...a) => adRequest(...a), hasAd: () => hasAd(), getRules: () => SETTINGS.rules.powerlink });
 // 파워링크 순위 추적 (켜 두면 서버가 계속 순위 확인, 서버를 다시 켜도 이어감) — data\powerlink\track\
-const TRK = createTracker({ root: path.join(__dirname, 'data', 'powerlink'), rankOnce: PL.rankOnce, limiter: PL.limiter });
+const TRK = createTracker({ root: path.join(__dirname, 'data', 'powerlink'), rankOnce: PL.rankOnce, limiter: PL.limiter, adRequest: (...a) => adRequest(...a), hasAd: () => hasAd() });
 const hasOpen = () => !!(config.clientId && config.clientSecret);
 
 // ---------------------------------------------------------------- 캐시 (디스크에도 저장)

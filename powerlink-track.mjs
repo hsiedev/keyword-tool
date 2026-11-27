@@ -5,6 +5,8 @@
 // - 알림: 목표 순위 도달 · 이탈, 미노출 · 다시 노출, 추적 시간 끝 (순위가 흔들려서 2번 연속 같을 때만)
 // - 저장: data\powerlink\track\<id>\tracker.json (설정 · 최근 상태), p-YYYYMMDD.jsonl (확인 기록, 30일 지나면 삭제)
 // - 서버를 다시 켜면 켜져 있던 추적은 알아서 이어감
+// - 키워드마다 추적 켜기/끄기(on), 여러 키워드 한 번에: 목표 순위 · 목표 입찰가(입찰가 기록) · 켜기/끄기 (/api/pl/track/bulk)
+// - 순위별 평균 입찰가: 검색광고 API estimate/average-position-bid (PC 1~10위, 모바일 1~5위, 최근 4주), 6시간마다 새로
 import fs from 'node:fs';
 import path from 'node:path';
 import { buildXlsx } from './powerlink-core.mjs';
@@ -23,6 +25,9 @@ const hm = (s) => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || '').trim())
 const fmtMin = (m) => (m < 60 ? `${m}분` : m % 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${m / 60}시간`);
 const rankText = (r, dev) => (r == null ? '미노출' : r > MAXN[dev] ? `더보기 ${r}위` : `${r}위`);
 const clock = (t) => { const d = new Date(t); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const won = (v) => { if (v == null || v === '') return null; const n = Math.round(Number(String(v).replace(/[^\d.]/g, ''))); return Number.isFinite(n) && n >= 0 && n <= 100000 ? n : null; };
+const POS_TTL = 6 * 3600000;
 
 // 추적 설정 검사 (화면에서 받은 값 → 저장할 값)
 export function cleanTracker(b, old) {
@@ -41,8 +46,7 @@ export function cleanTracker(b, old) {
     seen.add(key);
     const o = before.get(key) || {};
     const obj = x && typeof x === 'object' ? x : null;
-    const won = (v) => { if (v == null || v === '') return null; const n = Math.round(Number(String(v).replace(/[^\d.]/g, ''))); return n >= 0 && n <= 100000 ? n : null; };
-    items.push({ key, kw, on: obj?.on !== false, bid0: obj && 'bid0' in obj ? won(obj.bid0) : o.bid0 ?? null, // 최초 입찰가 (올린 파일·분석의 입찰가)
+    items.push({ key, kw, on: obj && 'on' in obj ? obj.on !== false : o.on !== false, // 설정을 저장해도 키워드별 꺼짐은 그대로 bid0: obj && 'bid0' in obj ? won(obj.bid0) : o.bid0 ?? null, // 최초 입찰가 (올린 파일·분석의 입찰가)
       target: { pc: obj && 'targetPc' in obj ? tg(obj.targetPc) : o.target?.pc ?? null, mo: obj && 'targetMo' in obj ? tg(obj.targetMo) : o.target?.mo ?? null } });
   }
   if (!items.length) throw new Error('추적할 키워드를 넣어주세요');
@@ -66,7 +70,7 @@ export function judge(L, r, target) {
   return null;
 }
 
-export function createTracker({ root, rankOnce, limiter }) {
+export function createTracker({ root, rankOnce, limiter, adRequest, hasAd }) {
   const DIR = path.join(root, 'track');
   fs.mkdirSync(DIR, { recursive: true });
   const okId = (id) => /^tr\d{8,}[a-z0-9]*$/.test(String(id || ''));
@@ -226,6 +230,7 @@ export function createTracker({ root, rankOnce, limiter }) {
         t.inRound = true; t.roundAt = st; t.nextAt = st + t.interval * 60000;
         for (const it of items) {
           if (!alive(t)) break;
+          if (it.on === false) continue; // 도는 중에 끈 키워드
           for (const dev of t.devices) { if (!alive(t)) break; t.cur = it.kw; await check(t, it, dev); }
         }
         t.inRound = false; t.cur = '';
@@ -242,19 +247,66 @@ export function createTracker({ root, rankOnce, limiter }) {
   }
   setInterval(tick, 1500).unref?.();
 
+  // ---------------------------------------------------------------- 순위별 평균 입찰가 (검색광고 API, 읽기 전용 예상치)
+  const fetching = new Set();
+  async function fetchPos(t, force = false) {
+    if (fetching.has(t.id) || !T.has(t.id)) return;
+    t.posTry = Date.now();
+    if (!adRequest || !hasAd?.()) { t.pos = { at: t.pos?.at || null, data: t.pos?.data || {}, err: '검색광고 API 키가 없어 순위별 평균 입찰가를 못 받아요 (설정 › 네이버 API)' }; return; }
+    fetching.add(t.id);
+    try {
+      const data = { ...(t.pos?.data || {}) };
+      const stale = force || !t.pos?.at || Date.now() - t.pos.at > POS_TTL;
+      const reqKey = (it) => it.kw.replace(/\s+/g, '');
+      for (const dev of t.devices) {
+        const N = MAXN[dev], api = dev === 'pc' ? 'PC' : 'MOBILE', per = Math.max(1, Math.floor(100 / N));
+        const need = t.items.filter((it) => stale || !Array.isArray(data[it.key]?.[dev]));
+        const put = (it, arr) => { const d = (data[it.key] = { ...(data[it.key] || {}) }); d[dev] = arr; delete d[dev + 'Err']; };
+        for (let x = 0; x < need.length; x += per) {
+          const chunk = need.slice(x, x + per);
+          const items = chunk.flatMap((it) => Array.from({ length: N }, (_, p) => ({ key: reqKey(it), position: p + 1 })));
+          try {
+            const r = await adRequest('POST', '/estimate/average-position-bid/keyword', { body: { device: api, items } });
+            const got = new Map();
+            (r.estimate || []).forEach((e, idx) => { const k = String(e.keyword ?? items[idx]?.key).toUpperCase(), p = e.position ?? items[idx]?.position; got.set(k + '|' + p, e.bid ?? null); });
+            for (const it of chunk) put(it, Array.from({ length: N }, (_, p) => got.get(reqKey(it).toUpperCase() + '|' + (p + 1)) ?? null));
+          } catch {
+            for (const it of chunk) { // 묶음이 실패하면 하나씩 (네이버가 모르는 키워드가 섞인 경우)
+              try { const r = await adRequest('POST', '/estimate/average-position-bid/keyword', { body: { device: api, items: Array.from({ length: N }, (_, p) => ({ key: reqKey(it), position: p + 1 })) } }); put(it, (r.estimate || []).map((e) => e.bid ?? null)); }
+              catch (e2) { const d = (data[it.key] = { ...(data[it.key] || {}) }); d[dev + 'Err'] = String(e2.message).slice(0, 120); }
+            }
+          }
+          await sleep(120);
+        }
+      }
+      t.pos = { at: Date.now(), data, err: '' };
+      save(t);
+    } catch (e) { t.pos = { at: t.pos?.at || null, data: t.pos?.data || {}, err: String(e.message).slice(0, 160) }; }
+    finally { fetching.delete(t.id); }
+  }
+  // 화면이 읽을 때: 오래됐거나 없는 추적만 (실패했으면 10분 뒤 다시)
+  function kickPos() {
+    for (const t of T.values()) {
+      const old = !t.pos?.at || Date.now() - t.pos.at > POS_TTL || t.items.some((i) => t.devices.some((d) => !t.pos?.data?.[i.key]?.[d] && !t.pos?.data?.[i.key]?.[d + 'Err']));
+      if (old && Date.now() - (t.posTry || 0) > 10 * 60000) fetchPos(t).catch(() => {});
+    }
+  }
+
   // ---------------------------------------------------------------- 화면에 보낼 모양
   function view(t, withSpark = true) {
     const m = recent.get(t.id);
     const rows = [];
     for (const it of t.items) for (const dev of t.devices) {
       const k = it.key + '|' + dev, L = t.last?.[k] || {};
-      rows.push({ key: it.key, kw: it.kw, dev, on: it.on !== false, bid0: it.bid0 ?? null, target: it.target?.[dev] ?? null, r: L.r ?? null, at: L.at || null, prev: L.prev, prevAt: L.prevAt || null,
+      rows.push({ key: it.key, kw: it.kw, dev, on: it.on !== false, bid0: it.bid0 ?? null, target: it.target?.[dev] ?? null,
+        pos: t.pos?.data?.[it.key]?.[dev] || null, posErr: t.pos?.data?.[it.key]?.[dev + 'Err'] || '', r: L.r ?? null, at: L.at || null, prev: L.prev, prevAt: L.prevAt || null,
         total: L.total ?? null, n: L.n || 0, state: L.state || null, focus: !!(t.on && t.focus?.[it.key]?.until > Date.now()),
         sp: withSpark ? (m?.get(k) || []) : undefined });
     }
     return { id: t.id, name: t.name, urls: t.urls, devices: t.devices, cap: t.cap, interval: t.interval, sched: t.sched, notify: t.notify !== false,
       items: t.items, on: !!t.on, waiting: !!t.waiting, inRound: !!t.inRound, cur: t.cur || '', note: t.note || '', nextAt: t.nextAt || 0, endAt: t.endAt || null,
       startedAt: t.startedAt || null, stoppedAt: t.stoppedAt || null, endReason: t.endReason || '', roundMs: t.roundMs || null, rounds: t.rounds || 0, checks: t.checks || 0,
+      posAt: t.pos?.at || null, posErr: t.pos?.err || '', posBusy: fetching.has(t.id),
       bids: (t.bids || []).slice(-200), createdAt: t.createdAt, updatedAt: t.updatedAt, saveErr: t.saveErr || '', rows };
   }
   function eventsSince(since) {
@@ -294,6 +346,7 @@ export function createTracker({ root, rankOnce, limiter }) {
         const base = { now: Date.now(), pauseUntil: lim.pauseUntil > Date.now() ? lim.pauseUntil : 0, on: on.length,
           onKw: on.reduce((n, t) => n + t.items.filter((i) => i.on !== false).length * t.devices.length, 0), events: since ? eventsSince(since) : [] };
         if (u.searchParams.get('lite') === '1') return send(res, 200, { ...base, names: on.map((t) => t.name) });
+        kickPos();
         return send(res, 200, { ...base, trackers: [...T.values()].sort((a, b) => b.createdAt - a.createdAt).map((t) => view(t)) });
       }
       if (p === '/api/pl/track/points') {
@@ -319,6 +372,7 @@ export function createTracker({ root, rankOnce, limiter }) {
           if (devChanged) old.last = {};
           if (old.on) { old.nextAt = 0; if (old.sched.mode === 'for') old.endAt = (old.startedAt || Date.now()) + old.sched.minutes * 60000; else old.endAt = null; }
           if (b.start && !old.on) start(old); else save(old, true);
+          fetchPos(old).catch(() => {}); // 새로 넣은 키워드의 평균 입찰가
           return send(res, 200, { id: old.id });
         }
         if (T.size >= 20) throw new Error('추적은 20개까지 만들 수 있어요. 안 쓰는 추적을 지워 주세요');
@@ -327,6 +381,7 @@ export function createTracker({ root, rankOnce, limiter }) {
         T.set(t.id, t); recent.set(t.id, new Map());
         if (b.start) start(t); else save(t, true);
         if (t.saveErr) { T.delete(t.id); throw new Error('추적을 저장하지 못했어요: ' + t.saveErr); }
+        fetchPos(t).catch(() => {});
         return send(res, 200, { id: t.id });
       }
       if (p === '/api/pl/track/start') { const t = get(b.id); if (!t.on) start(t); return send(res, 200, { ok: true }); }
@@ -337,6 +392,59 @@ export function createTracker({ root, rankOnce, limiter }) {
         if (t.waiting) throw new Error(t.note || '지금은 추적 시간이 아니에요');
         if (!t.inRound) t.nextAt = 0;
         return send(res, 200, { ok: true, inRound: !!t.inRound });
+      }
+      if (p === '/api/pl/track/posbids') {
+        const t = get(b.id);
+        await fetchPos(t, true);
+        if (t.pos?.err) throw new Error(t.pos.err);
+        return send(res, 200, { ok: true, at: t.pos?.at });
+      }
+      if (p === '/api/pl/track/bulk') {
+        const t = get(b.id);
+        const keys = new Set((Array.isArray(b.keys) ? b.keys : []).map(String));
+        const its = t.items.filter((i) => keys.has(i.key));
+        if (!its.length) throw new Error('키워드를 골라 주세요');
+        const out = { target: 0, on: 0, bids: 0, skipped: [], focus: '' };
+        if (b.target && typeof b.target === 'object') {
+          for (const dev of ['pc', 'mo']) {
+            if (!(dev in b.target) || !t.devices.includes(dev)) continue;
+            const v = b.target[dev], n = v === '' || v == null ? null : Math.round(Number(v));
+            if (n != null && !(n >= 1 && n <= 25)) throw new Error('목표 순위는 1~25 사이로 넣어 주세요');
+            for (const it of its) {
+              it.target = { ...(it.target || {}), [dev]: n };
+              const L = t.last?.[it.key + '|' + dev]; if (L) { L.state = null; L.cand = null; L.candN = 0; }
+              out.target++;
+            }
+          }
+        }
+        if (typeof b.on === 'boolean') {
+          for (const it of its) { if ((it.on !== false) !== b.on) out.on++; it.on = b.on; if (!b.on && t.focus) delete t.focus[it.key]; }
+          if (b.on && out.on && t.on && !t.waiting && !t.inRound) t.nextAt = 0; // 다시 켠 키워드는 바로 확인
+        }
+        if (b.bid && typeof b.bid === 'object') {
+          const mode = b.bid.mode, note = String(b.bid.note || '').trim().slice(0, 100), now = Date.now(), add = [];
+          for (const it of its) {
+            if (mode === 'fixed') { const v = won(b.bid.value); if (v == null) throw new Error('입찰가를 넣어 주세요'); add.push({ at: now, key: it.key, dev: 'both', bid: v, note }); continue; }
+            for (const dev of t.devices) {
+              const n = mode === 'target' ? it.target?.[dev] : Math.round(Number(b.bid.rank));
+              const v = n && n <= MAXN[dev] ? t.pos?.data?.[it.key]?.[dev]?.[n - 1] ?? null : null;
+              if (v == null) { out.skipped.push(`${it.kw} · ${DEVN[dev]}${!n ? ' (목표 없음)' : n > MAXN[dev] ? ` (${DEVN[dev]} 평균 입찰가는 ${MAXN[dev]}위까지)` : ' (평균 입찰가 없음)'}`); continue; }
+              add.push({ at: now, key: it.key, dev, bid: v, note: note || `${mode === 'target' ? '목표 ' : ''}${n}위 평균 입찰가` });
+            }
+          }
+          t.bids = [...(t.bids || []), ...add].slice(-500);
+          out.bids = add.length;
+          const fk = [...new Set(add.map((x) => x.key))];
+          if (add.length && b.bid.focus !== false && t.on) {
+            if (fk.length <= 5) { // 몇 개면 20분 동안 1분마다
+              t.focus = t.focus || {};
+              for (const k of fk) { const devs = [...new Set(add.filter((x) => x.key === k).map((x) => x.dev))]; t.focus[k] = { until: Date.now() + FOCUS_MS, next: 0, dev: devs.length === 1 ? devs[0] : 'both' }; }
+              out.focus = 'focus';
+            } else if (!t.waiting && !t.inRound) { t.nextAt = 0; out.focus = 'round'; } // 많으면 바로 한 바퀴
+          }
+        }
+        save(t, true);
+        return send(res, 200, out);
       }
       if (p === '/api/pl/track/notify') { const t = get(b.id); t.notify = !!b.on; save(t, true); return send(res, 200, { ok: true }); }
       if (p === '/api/pl/track/target') {
