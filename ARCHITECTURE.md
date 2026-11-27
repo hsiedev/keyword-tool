@@ -123,6 +123,10 @@ start.bat → server.mjs (127.0.0.1:8787)
 
 `public/quick.js`는 화면 코드만 쓴다(서버 변경 없음). 통합 검색은 `window.__AI.AI.sessions`, `/api/bulk-history`, `/api/pl/jobs`, localStorage `kwHistory`·`ktHistory`·`kwStars`를 읽어 `__LAYOUT.go`, `__AI.openTab`, `__BULK.openSession`, `__PL_WORK.open`, `__KT_OPEN`으로 이동한다. 줄 바로가기는 표의 `td.kwc a[data-go|data-run]`이 있는 모든 표에 자동 적용된다(새 표도 이 구조를 따르면 됨). 사이드바 묶음은 layout.js `NAV_GROUP`·`NAV_NEW`.
 
+### Shift+클릭 범위 체크 (shiftcheck.js)
+
+`public/shiftcheck.js`는 문서 전체에 클릭(캡처 단계)을 걸어, 체크박스를 누를 때마다 기준(같은 id 조상 · 줄 종류 · 칸 위치 · data-* 이름이 같은 목록)을 기억한다. Shift가 눌린 클릭이면(마우스 이벤트의 shiftKey 또는 키보드 Shift 상태) 누른 칸의 화면 처리가 끝난 뒤 기준과 사이 줄을 누른 칸과 같은 상태가 되도록 줄마다 `.click()`한다. 화면마다 원래 쓰던 onchange 처리를 그대로 타므로 표별 수정이 필요 없다. 중간에 표가 다시 그려지면 줄 키(체크박스와 줄의 data-* 값)로 새 줄을 찾는다. 대상: `tbody` 줄 체크박스, `.src-row`, `.cp-item`, `.pl-col-item`. 제외: 머리글, 표 안 `.sw` 스위치, disabled, 숨겨진 줄, `data-noshift`. Shift+마우스다운은 글자 드래그 선택을 막는다. 순위 추적 표는 체크마다 다시 그리던 것을 한 번으로 묶었다(`S.pickT`).
+
 ### AI 생성기: 사용자 의견
 
 결과 위 'AI에게 의견 주기'(`#aiFbCard`)는 탭(`session.feedback`)에 `{text, liked, mode, result}`를 쌓는다. 생성 때 `feedback`(최근 8개)·`liked`(체크한 키워드 + 적합 확정, 최대 80개)를 `/api/ai/generate-stream`·탐색 계획에 보내고, `ai-persona.mjs`의 `feedbackLines`가 일반·대화형 요청문 모두에 '[사용자 의견]' 단계를 붙인다. 의견이 바뀌면 탐색 계획을 다시 세운다. 조건 재검증은 의견을 요청 사항(`extra`)으로 받는다. [다시 만들기]는 체크·적합 확정 키워드를 남기고 나머지만 교체한다.
