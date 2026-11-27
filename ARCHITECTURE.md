@@ -111,6 +111,14 @@ start.bat → server.mjs (127.0.0.1:8787)
 
 서버가 1.5초마다 켜진 추적을 하나씩 돌며, 차례가 된 것만 `PL.rankOnce`(광고 더보기 HTML 1회, 캡처 없음)로 확인한다. `powerlink-core.mjs`의 `gate(stop)`·`getHtml(url, ua, stop)`은 분석과 추적이 같은 검색 간격·제한 대기(`pauseUntil`)를 공유하고, 각자의 멈춤 조건만 다르다. 추적 상태 판정(`judge`)은 hit / show / gone 가운데 같은 값이 2번 연속일 때 바뀐 것으로 보고, 첫 확인은 기준만 잡는다. 바뀌면 `events`(최근 100개)에 쌓고, 화면은 `/api/pl/track?lite=1&since=`로 15초마다 읽어 알린다. 입찰가 기록은 `focus[key]`(20분, 1분 간격)를 켠다. 시간대(`sched.mode=hours`)는 서버 PC 시각 기준이며, 자정을 넘는 구간도 된다. `/api/restart`는 추적 때문에 막지 않는다(다시 켜면 `on`인 추적을 이어감).
 
+### 열 맞춤 설정 통일 (tablecols.js)
+
+`tablecols.js`가 키워드 표(`TABLES`)와 `#bidTable`에 [열 맞춤 설정] 버튼을 [집중 피킹]과 같은 줄(`.fp-bar` 또는 고정 `.toolbar`)에 단다. 순서는 기존 `colOrder:<표>`, 숨김은 `colHide:<표>`(열 제목 라벨 목록)에 저장하고, 다시 그려질 때마다 `applyOrder` → `applyHide`(`.cw-hide`)로 적용한다. 창을 여는 동안은 `OVR`로 미리보기하고, 취소하면 저장값(없으면 처음 순서 `DEF`)으로 되돌린다. 키워드 열과 그 왼쪽은 고정. 머리글이 두 줄인 표(키워드 도구)는 칸 수가 맞지 않아 제외. 파워링크 결과 표는 보고서 원본 열을 다루는 자체 편집기(`pl.js`, `plResultColumns.v2`)를 같은 모양으로 쓴다.
+
+### 파워링크 상단 내역 (pl.js)
+
+`#plTop`은 상단 바 `.top-context` 안에 붙고 `layout.sync`가 파워링크 분석기에서만 보이게 한다. 내역 칩은 첫 분석(루트)만, 재분석은 결과 화면의 스레드 줄에서 고른다. Shift+휠(또는 가로 휠)만 옆으로 넘기고 그냥 휠은 화면 스크롤. 캡처는 `rules.powerlink.capture === true`일 때만 찍고, `runJob`은 순위를 잰 기기(`res.seen != null`)를 건너뛴다.
+
 ### 빠른 이동 (quick.js)
 
 `public/quick.js`는 화면 코드만 쓴다(서버 변경 없음). 통합 검색은 `window.__AI.AI.sessions`, `/api/bulk-history`, `/api/pl/jobs`, localStorage `kwHistory`·`ktHistory`·`kwStars`를 읽어 `__LAYOUT.go`, `__AI.openTab`, `__BULK.openSession`, `__PL_WORK.open`, `__KT_OPEN`으로 이동한다. 줄 바로가기는 표의 `td.kwc a[data-go|data-run]`이 있는 모든 표에 자동 적용된다(새 표도 이 구조를 따르면 됨). 사이드바 묶음은 layout.js `NAV_GROUP`·`NAV_NEW`.
