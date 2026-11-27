@@ -3,7 +3,7 @@
 // 표는 화면마다 innerHTML로 다시 그려지므로, 다시 그려질 때마다 저장된 순서대로 칸을 옮기고 고정을 다시 적용함
 (function () {
   const TABLES = '#relTbl, #aiTbl, #bTblWrap > table, #dTblWrap > table, #gView table.g-tbl';
-  const EXTRA = '#ktTbl, #bidTable'; // 번호 열·틀 고정은 없이 열 맞춤만 (키워드 도구 · 입찰가 조정)
+  const EXTRA = '#bidTable'; // 번호 열·틀 고정은 없이 열 맞춤만 (입찰가 조정). 키워드 도구 표는 머리글이 두 줄(월간 검색량 › PC·모바일)이라 제외
   const COLSET = TABLES + ', ' + EXTRA;
   const OVR = new Map(); // 열 맞춤 창을 여는 동안 미리보기 { order, hidden }
   const KEY = (t) => 'colOrder:' + (t.id || t.closest('[id]')?.id || 'tbl') + (t.classList.contains('g-tbl') ? ':' + headLabels(t).join('|').slice(0, 60) : '');

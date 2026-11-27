@@ -1044,3 +1044,4 @@ table.rel.plt tbody tr.sel td{background:color-mix(in oklab,var(--accent) 9%,tra
 .cw-hide{display:none!important}
 .cw-btn small{margin-left:2px}
 .fp-bar{gap:6px}
+.top-context:has(.pl-top:not(.hidden)) .top-title{display:none}
