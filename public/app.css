@@ -1045,3 +1045,25 @@ table.rel.plt tbody tr.sel td{background:color-mix(in oklab,var(--accent) 9%,tra
 .cw-btn small{margin-left:2px}
 .fp-bar{gap:6px}
 .top-context:has(.pl-top:not(.hidden)) .top-title{display:none}
+
+/* 순위 추적: 목표 순위 ▲▼, 일괄 적용, 키워드 켜기/끄기, 순위별 평균 입찰가 */
+table.rel.plt{min-width:1080px}
+.plt-step{display:inline-flex;align-items:stretch;border:1px solid var(--input);border-radius:6px;overflow:hidden;background:var(--background);vertical-align:middle}
+.plt-step .plt-tgi{border:0;border-radius:0;width:32px;text-align:center;padding:3px 2px;background:transparent}
+.plt-step .plt-tgi:focus{outline:none;background:var(--muted)}
+.plt-stb{display:flex;flex-direction:column;border-left:1px solid var(--input)}
+.plt-stb button{border:0;background:transparent;color:var(--muted-fg);font-size:8px;line-height:1;height:13px;width:18px;padding:0;cursor:pointer}
+.plt-stb button:hover{background:var(--muted);color:var(--foreground)}
+.plt-stb button+button{border-top:1px solid var(--input)}
+table.rel.plt tr.plt-off td{opacity:.5}
+table.rel.plt tr.plt-off td.plt-swc,table.rel.plt tr.plt-off td:first-child{opacity:1}
+.plt-swc{text-align:center}
+.plt-bulk{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:10px 12px;margin-bottom:10px;border:1px solid var(--accent);border-radius:8px;background:color-mix(in oklab,var(--accent) 6%,transparent);font-size:13px}
+.plt-bk-g{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.plt-bk-l{font-weight:600}
+.plt-bulk select.inp,.plt-bulk input.inp{width:auto;padding:4px 6px;font-size:12px}
+.plt-bulk .inp.hidden{display:none}
+.plt-bk-pos{flex-basis:100%;font-size:12px;display:flex;gap:6px;align-items:center}
+.plt-bulk-hint{font-size:12px;margin-bottom:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.plt-sep{opacity:.5}
+.plt-posn{border:1px solid var(--input);border-radius:6px;background:var(--background);color:var(--foreground);font:inherit;font-size:12px;padding:1px 2px;cursor:pointer}

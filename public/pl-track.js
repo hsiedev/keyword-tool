@@ -19,7 +19,8 @@
   const RANGES = [['1h', '1시간'], ['3h', '3시간'], ['today', '오늘'], ['7d', '7일'], ['30d', '30일']];
 
   const S = { list: [], sel: localStorage.getItem('pltSel') || '', row: '', range: localStorage.getItem('pltRange') || 'today', edit: null,
-    pause: 0, onCount: 0, onKw: 0, root: null, loaded: false, pts: null, ptsKey: '', busy: false };
+    pause: 0, onCount: 0, onKw: 0, root: null, loaded: false, pts: null, ptsKey: '', busy: false,
+    pick: new Set(), posN: localStorage.getItem('pltPosN') || 't', hold: 0 }; // pick = 체크한 키워드, posN = 평균 입찰가 볼 순위('t' = 목표 순위), hold = 화살표 누르는 동안 다시 그리기 멈춤
   const api = async (url, body) => {
     const r = await fetch(url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { cache: 'no-store' });
     if (r.status === 404 && !(r.headers.get('content-type') || '').includes('json')) throw new Error('서버를 다시 시작해야 순위 추적을 쓸 수 있어요 (상단 [서버 다시 시작])');
@@ -50,7 +51,8 @@
     if (!root?.isConnected) return;
     if (S.edit) { if (!soft || !root.querySelector('#pltForm')) { root.innerHTML = formHTML(); bindForm(); } return; }
     // 표의 목표 칸에 입력 중이면 통째로 다시 그리지 않음 (상태 줄만)
-    const typing = root.contains(document.activeElement) && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName);
+    const ae = document.activeElement;
+    const typing = (root.contains(ae) && (ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || (ae.tagName === 'INPUT' && !/checkbox|radio|button/.test(ae.type)))) || Date.now() < S.hold;
     if (soft && typing) { const h = root.querySelector('#pltHead'); if (h && cur()) h.outerHTML = headHTML(cur()); bindHead(); return; }
     if (!S.loaded) { root.innerHTML = '<div class="muted" style="padding:20px">불러오는 중…</div>'; return; }
     if (S.err && !S.list.length) { root.innerHTML = `<div class="card"><b>순위 추적을 불러오지 못했어요</b><div class="muted" style="margin-top:6px">${e2(S.err)}</div></div>`; return; }
@@ -123,25 +125,56 @@
     }
     return `<svg class="plt-spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><path d="${d}"/>${dots}${lx != null ? `<circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="2.2" class="plt-sp-last"/>` : ''}</svg>`;
   }
+  // 목표 순위 입력: ▲ = 한 순위 위(1위 쪽), ▼ = 한 순위 아래. 키보드 ↑↓도 같음
+  const stepHTML = (val, attrs, start) => `<span class="plt-step"><input class="plt-tgi" inputmode="numeric" autocomplete="off" placeholder="-" value="${val ?? ''}" data-start="${start ?? ''}" ${attrs} title="목표 순위 · ▲(↑)는 1위 쪽, ▼(↓)는 아래 순위 쪽 · 비우면 목표 없음"><span class="plt-stb"><button type="button" data-st="-1" tabindex="-1" title="한 순위 위로 (1위 쪽)">▲</button><button type="button" data-st="1" tabindex="-1" title="한 순위 아래로">▼</button></span></span>`;
+  const posName = (t) => t.posErr ? `<span class="plt-warn">${e2(t.posErr)}</span>` : t.posBusy ? '순위별 평균 입찰가 받는 중…' : t.posAt ? `순위별 평균 입찰가: ${dayClock(t.posAt)} 받음 (네이버 최근 4주 기준)` : '순위별 평균 입찰가 아직 없음';
+  function bulkHTML(t) {
+    const n = [...S.pick].filter((k) => t.items.some((i) => i.key === k)).length;
+    const pos = `<span>${posName(t)}</span> <button type="button" class="btn sm" id="pltPosRe" ${t.posBusy ? 'disabled' : ''}>새로 받기</button>`;
+    if (!n) return `<div class="plt-bulk-hint muted"><span>키워드를 체크하면 <b>목표 순위 · 목표 입찰가 · 추적 켜기/끄기</b>를 한 번에 바꿀 수 있어요</span><span class="plt-sep">·</span>${pos}</div>`;
+    const ranks = Array.from({ length: 10 }, (_, i) => `<option value="${i + 1}">${i + 1}위</option>`).join('');
+    return `<div class="plt-bulk" id="pltBulk"><b>${n}개 선택</b>
+      <span class="plt-bk-g"><span class="plt-bk-l">목표 순위</span>${t.devices.map((d) => `${t.devices.length > 1 ? DEVN[d] + ' ' : ''}${stepHTML('', `data-bk="${d}"`, d === 'pc' ? 3 : 2)}`).join(' ')}<button type="button" class="btn sm" id="pbkT">일괄 적용</button></span>
+      <span class="plt-bk-g"><span class="plt-bk-l" title="네이버 광고관리에서 입찰가를 바꾼 뒤 눌러 기록해요. 실제 입찰가는 바뀌지 않아요">목표 입찰가</span><select class="inp" id="pbkMode"><option value="target">각 키워드 목표 순위의 평균 입찰가</option><option value="rank">정한 순위의 평균 입찰가</option><option value="fixed">직접 입력</option></select><select class="inp hidden" id="pbkRank">${ranks}</select><input class="inp hidden" id="pbkWon" inputmode="numeric" placeholder="예: 1200" style="width:90px"><button type="button" class="btn sm pri" id="pbkB">일괄 적용</button></span>
+      <span class="plt-bk-g"><span class="plt-bk-l">추적</span><button type="button" class="btn sm" id="pbkOn">켜기</button><button type="button" class="btn sm" id="pbkOff">끄기</button></span>
+      <button type="button" class="btn sm" id="pbkClr">선택 해제</button>
+      <div class="plt-bk-pos muted">${pos}</div></div>`;
+  }
+  function posCell(t, r) {
+    const n = S.posN === 't' ? r.target : +S.posN;
+    if (!n) return '<span class="muted" title="목표 순위를 정하면 그 순위의 평균 입찰가가 보여요">목표 없음</span>';
+    if (n > MAXN[r.dev]) return `<span class="muted" title="${DEVN[r.dev]} 평균 입찰가는 ${MAXN[r.dev]}위까지 있어요">${n}위 -</span>`;
+    const v = r.pos?.[n - 1];
+    if (v == null) return `<span class="muted" title="${e2(r.posErr || t.posErr || '아직 못 받았어요')}">${n}위 -</span>`;
+    const base = lastBid(t, r.key, r.dev)?.bid ?? r.bid0;
+    const diff = base != null && v !== base ? `<div class="muted" style="font-size:11px" title="${lastBid(t, r.key, r.dev)?.bid != null ? '마지막 입찰가 기록' : '최초 입찰가'} ${n0(base)}원 대비">${v > base ? '+' : '−'}${n0(Math.abs(v - base))}원</div>` : '';
+    return `<span class="muted" style="font-size:11px">${n}위</span> ${n0(v)}원${diff}`;
+  }
   function tableHTML(t) {
     if (!S.row || !t.rows.some((r) => r.key + '|' + r.dev === S.row)) S.row = t.rows[0] ? t.rows[0].key + '|' + t.rows[0].dev : '';
-    const rows = t.rows.filter((r) => r.on);
-    return `<div class="tbl-wrap plt-tbl"><table class="rel plt"><thead><tr><th class="l">키워드</th><th class="l">기기</th><th>지금</th><th>직전 대비</th><th>목표</th><th class="l">최근 3시간</th><th>확인</th><th title="키워드 파일·분석에서 가져온 처음 입찰가">최초 입찰가</th><th class="l">입찰가 기록</th></tr></thead><tbody>
+    const rows = t.rows, keys = [...new Set(rows.map((r) => r.key))];
+    for (const k of [...S.pick]) if (!keys.includes(k)) S.pick.delete(k);
+    const allOn = keys.length > 0 && keys.every((k) => S.pick.has(k));
+    const posHead = `<select id="pltPosN" class="plt-posn" title="네이버 검색광고 API 순위별 평균 입찰가 (최근 4주) · 어느 순위를 볼지">${[['t', '목표 순위'], ...Array.from({ length: 10 }, (_, i) => [String(i + 1), i + 1 + '위'])].map(([v, nm]) => `<option value="${v}" ${S.posN === v ? 'selected' : ''}>${nm}</option>`).join('')}</select> 평균 입찰가`;
+    return `${bulkHTML(t)}<div class="tbl-wrap plt-tbl"><table class="rel plt"><thead><tr><th style="width:30px"><input type="checkbox" id="pltAll" ${allOn ? 'checked' : ''} title="전체 선택 · 다시 누르면 전체 해제"></th><th class="l">키워드</th><th class="l">기기</th><th title="키워드마다 추적 켜기/끄기 (PC·모바일 같이)">추적</th><th>지금</th><th>직전 대비</th><th>목표</th><th>${posHead}</th><th class="l">최근 3시간</th><th>확인</th><th title="키워드 파일·분석에서 가져온 처음 입찰가">최초 입찰가</th><th class="l">입찰가 기록</th></tr></thead><tbody>
       ${rows.map((r) => {
         const k = r.key + '|' + r.dev, hit = r.r != null && r.target && r.r <= r.target;
         let ch = '<span class="muted">—</span>';
-        if (r.at && r.prevAt) {
+        if (r.on && r.at && r.prevAt) {
           if (r.r != null && r.prev != null) ch = r.r < r.prev ? `<span class="plt-up">▲${r.prev - r.r}</span>` : r.r > r.prev ? `<span class="plt-down">▼${r.r - r.prev}</span>` : '<span class="muted">그대로</span>';
           else if (r.r == null && r.prev != null) ch = '<span class="plt-down">사라짐</span>';
           else if (r.r != null && r.prev == null) ch = '<span class="plt-up">다시 보임</span>';
         }
         const b = lastBid(t, r.key, r.dev);
-        const now = r.at ? `<span class="plt-rk ${r.r == null || r.r > MAXN[r.dev] ? 'dim' : hit ? 'ok' : ''}">${rankText(r.r, r.dev)}</span>` : '<span class="muted">아직</span>';
-        return `<tr data-row="${e2(k)}" class="${k === S.row ? 'sel' : ''}">
+        const now = !r.on ? `<span class="muted" title="${r.at ? '마지막 ' + clock(r.at) + ' ' + rankText(r.r, r.dev) : ''}">꺼짐</span>` : r.at ? `<span class="plt-rk ${r.r == null || r.r > MAXN[r.dev] ? 'dim' : hit ? 'ok' : ''}">${rankText(r.r, r.dev)}</span>` : '<span class="muted">아직</span>';
+        return `<tr data-row="${e2(k)}" class="${k === S.row ? 'sel' : ''} ${r.on ? '' : 'plt-off'}">
+          <td><input type="checkbox" data-pick="${e2(r.key)}" ${S.pick.has(r.key) ? 'checked' : ''} title="체크하면 위에서 한 번에 바꿀 수 있어요"></td>
           <td class="l"><b>${e2(r.kw)}</b>${r.focus ? ' <span class="plt-tag" title="입찰가 기록 뒤 20분 동안 1분마다 확인">집중 확인</span>' : ''}</td>
           <td class="l muted">${DEVN[r.dev]}</td>
+          <td class="plt-swc"><input type="checkbox" class="sw" data-onkey="${e2(r.key)}" ${r.on ? 'checked' : ''} title="${r.on ? '추적 끄기' : '추적 켜기'} (${e2(r.kw)} · PC·모바일 같이)"></td>
           <td>${now}</td><td>${ch}</td>
-          <td class="plt-tg"><input class="plt-tgi" type="number" min="1" max="25" placeholder="-" value="${r.target ?? ''}" data-tg="${e2(r.key)}" data-dev="${r.dev}" title="목표 순위 (비우면 목표 없음)">위 ${r.target ? `<span class="${hit ? 'plt-up' : 'muted'}" style="font-size:12px">${hit ? '달성' : r.at ? '미달' : ''}</span>` : ''}</td>
+          <td class="plt-tg">${stepHTML(r.target, `data-tg="${e2(r.key)}" data-dev="${r.dev}"`, r.r != null && r.r <= 25 ? r.r : 3)}위 ${r.target ? `<span class="${hit ? 'plt-up' : 'muted'}" style="font-size:12px">${hit ? '달성' : r.at && r.on ? '미달' : ''}</span>` : ''}</td>
+          <td>${posCell(t, r)}</td>
           <td class="l">${spark(r.sp, r.dev)}</td>
           <td class="muted" title="${r.at ? '확인 ' + r.n + '번' : ''}">${r.at ? clock(r.at) : ''}</td>
           <td>${r.bid0 != null ? n0(r.bid0) + '원' : '<span class="muted">—</span>'}</td>
@@ -230,7 +263,7 @@
 
   // ---------------------------------------------------------------- 동작
   function bindChips() {
-    $$('[data-tid]', S.root).forEach((b) => (b.onclick = () => { S.sel = b.dataset.tid; localStorage.setItem('pltSel', S.sel); S.row = ''; S.ptsKey = ''; draw(); }));
+    $$('[data-tid]', S.root).forEach((b) => (b.onclick = () => { S.sel = b.dataset.tid; localStorage.setItem('pltSel', S.sel); S.row = ''; S.ptsKey = ''; S.pick.clear(); draw(); }));
     const nb = $('#pltNew', S.root); if (nb) nb.onclick = () => openForm();
   }
   function bindHead() {
@@ -256,21 +289,84 @@
       try { await api('/api/pl/track/notify', { id: t.id, on: nf.checked }); t.notify = nf.checked; } catch (e) { toast(e.message, 'warn'); }
     };
   }
+  // ▲▼ 버튼 · ↑↓ 키 (▲/↑ = 1위 쪽)
+  function bindSteps(root, onStep) {
+    $$('.plt-step', root).forEach((sp) => {
+      const inp = sp.querySelector('input');
+      const bump = (d) => {
+        const c = parseInt(inp.value, 10);
+        const v = Math.max(1, Math.min(25, Number.isNaN(c) ? (+inp.dataset.start || 3) : c + d));
+        inp.value = v; S.hold = Date.now() + 2500;
+        onStep?.(inp);
+      };
+      sp.querySelectorAll('[data-st]').forEach((b) => (b.onclick = (e) => { e.stopPropagation(); bump(+b.dataset.st); }));
+      inp.addEventListener('keydown', (e) => { if (e.key === 'ArrowUp') { e.preventDefault(); bump(-1); } else if (e.key === 'ArrowDown') { e.preventDefault(); bump(1); } else if (e.key === 'Enter') inp.blur(); });
+      inp.addEventListener('input', () => { inp.value = inp.value.replace(/[^\d]/g, '').slice(0, 2); });
+    });
+  }
+  async function bulk(t, body, msg) {
+    try { const j = await api('/api/pl/track/bulk', { id: t.id, keys: [...S.pick], ...body }); toast(msg(j), j.skipped?.length && !j.bids ? 'warn' : 'ok', 7000); S.ptsKey = ''; await refresh(true); return j; }
+    catch (e) { toast(e.message, 'warn'); }
+  }
   function bindTable(t) {
     $$('tr[data-row]', S.root).forEach((tr) => (tr.onclick = (e) => {
-      if (e.target.closest('input,button')) return;
+      if (e.target.closest('input,button,select,label')) return;
       S.row = tr.dataset.row; S.ptsKey = '';
       $$('tr[data-row]', S.root).forEach((x) => x.classList.toggle('sel', x === tr));
       chart(t);
     }));
-    $$('[data-tg]', S.root).forEach((inp) => {
-      inp.onkeydown = (e) => { if (e.key === 'Enter') inp.blur(); };
-      inp.onchange = async () => {
-        try { await api('/api/pl/track/target', { id: t.id, key: inp.dataset.tg, dev: inp.dataset.dev, value: inp.value.trim() }); toast(inp.value.trim() ? `목표 ${inp.value.trim()}위로 정했어요` : '목표를 지웠어요', 'ok'); S.ptsKey = ''; }
-        catch (e) { toast(e.message, 'warn'); }
-        inp.blur(); refresh(true);
+    // 목표 순위 (줄마다): 화살표는 멈춘 뒤 0.7초에 저장, 직접 쓰면 칸을 벗어날 때 저장
+    const saveTarget = async (inp) => {
+      clearTimeout(inp._t);
+      const v = inp.value.trim();
+      if (v === (inp.dataset.saved ?? inp.defaultValue)) return;
+      inp.dataset.saved = v;
+      try { await api('/api/pl/track/target', { id: t.id, key: inp.dataset.tg, dev: inp.dataset.dev, value: v }); toast(v ? `목표 ${v}위로 정했어요` : '목표를 지웠어요', 'ok'); S.ptsKey = ''; }
+      catch (e) { toast(e.message, 'warn'); }
+      S.hold = Date.now() + 600; setTimeout(() => refresh(true), 700);
+    };
+    bindSteps($('.plt-tbl', S.root), (inp) => { clearTimeout(inp._t); inp._t = setTimeout(() => saveTarget(inp), 700); });
+    $$('[data-tg]', S.root).forEach((inp) => { inp.onchange = () => saveTarget(inp); });
+    // 체크 · 전체 선택 (다시 누르면 전체 해제)
+    $$('[data-pick]', S.root).forEach((c) => (c.onchange = () => { if (c.checked) S.pick.add(c.dataset.pick); else S.pick.delete(c.dataset.pick); draw(); }));
+    const all = $('#pltAll', S.root);
+    if (all) all.onchange = () => { const keys = [...new Set(t.rows.map((r) => r.key))]; if (keys.every((k) => S.pick.has(k))) S.pick.clear(); else keys.forEach((k) => S.pick.add(k)); draw(); };
+    // 키워드마다 추적 켜기/끄기
+    $$('[data-onkey]', S.root).forEach((c) => (c.onchange = async () => {
+      const it = t.items.find((i) => i.key === c.dataset.onkey);
+      try { await api('/api/pl/track/bulk', { id: t.id, keys: [c.dataset.onkey], on: c.checked }); toast(`'${it?.kw || ''}' 추적을 ${c.checked ? '켰어요' : '껐어요'}`, 'ok'); }
+      catch (e) { toast(e.message, 'warn'); }
+      refresh(true);
+    }));
+    // 평균 입찰가 볼 순위 · 새로 받기
+    const pn = $('#pltPosN', S.root);
+    if (pn) { pn.onclick = (e) => e.stopPropagation(); pn.onchange = () => { S.posN = pn.value; localStorage.setItem('pltPosN', S.posN); pn.blur(); draw(); }; }
+    const pr = $('#pltPosRe', S.root);
+    if (pr) pr.onclick = async () => { pr.disabled = true; try { await api('/api/pl/track/posbids', { id: t.id }); toast('순위별 평균 입찰가를 새로 받았어요', 'ok'); } catch (e) { toast(e.message, 'warn'); } refresh(true); };
+    // 일괄 적용 줄
+    const bar = $('#pltBulk', S.root);
+    if (bar) {
+      bindSteps(bar);
+      const mode = $('#pbkMode', bar);
+      const showMode = () => { $('#pbkRank', bar).classList.toggle('hidden', mode.value !== 'rank'); $('#pbkWon', bar).classList.toggle('hidden', mode.value !== 'fixed'); };
+      mode.onchange = showMode; showMode();
+      $('#pbkClr', bar).onclick = () => { S.pick.clear(); draw(); };
+      $('#pbkT', bar).onclick = () => {
+        const target = {};
+        $$('[data-bk]', bar).forEach((inp) => { if (inp.value.trim()) target[inp.dataset.bk] = inp.value.trim(); });
+        if (!Object.keys(target).length) return toast('목표 순위를 넣어 주세요 (▲▼ 또는 숫자)', 'warn');
+        bulk(t, { target }, (j) => `목표 순위를 ${Object.entries(target).map(([d, v]) => (t.devices.length > 1 ? DEVN[d] + ' ' : '') + v + '위').join(' · ')}로 정했어요 (${S.pick.size}개 키워드)`);
       };
-    });
+      $('#pbkB', bar).onclick = async () => {
+        const m = mode.value, rank = $('#pbkRank', bar).value, value = $('#pbkWon', bar).value.trim();
+        if (m === 'fixed' && !value) return toast('입찰가를 넣어 주세요', 'warn');
+        const what = m === 'target' ? '각 키워드 목표 순위의 평균 입찰가' : m === 'rank' ? rank + '위 평균 입찰가' : n0(value) + '원';
+        if (!(await uiConfirm(`체크한 ${S.pick.size}개 키워드에 ${what}를 입찰가 기록으로 남길까요?\n네이버 광고관리에서 입찰가를 이 값으로 바꾼 뒤 누르세요. 이 화면은 실제 입찰가를 바꾸지 않아요.`, { ok: '일괄 적용', danger: false }))) return;
+        bulk(t, { bid: { mode: m, rank, value, focus: true } }, (j) => `${j.bids}개 기록했어요${j.skipped.length ? ` · ${j.skipped.length}개 건너뜀 (${j.skipped.slice(0, 3).join(', ')}${j.skipped.length > 3 ? ' …' : ''})` : ''}${j.focus === 'focus' ? ' · 20분 동안 1분마다 확인해요' : j.focus === 'round' ? ' · 바로 한 바퀴 확인해요' : ''}`);
+      };
+      $('#pbkOn', bar).onclick = () => bulk(t, { on: true }, (j) => `${S.pick.size}개 키워드 추적을 켰어요`);
+      $('#pbkOff', bar).onclick = () => bulk(t, { on: false }, (j) => `${S.pick.size}개 키워드 추적을 껐어요`);
+    }
     $$('[data-bid]', S.root).forEach((b) => (b.onclick = () => bidDialog(t, b.dataset.bid, b.dataset.dev)));
   }
   function bidDialog(t, key, dev) {
