@@ -5,7 +5,10 @@
 // - 줄마다 진짜 클릭처럼 .click() → 화면마다 따로 고칠 필요 없음. 표가 중간에 다시 그려져도 줄 키로 다시 찾음
 (function () {
   const ROW = 'tr, .src-row, .cp-item, .pl-col-item';
-  let last = null, busy = false;
+  let last = null, busy = false, held = false; // held = 키보드 Shift를 누르고 있는지 (마우스 이벤트에 Shift가 안 실려 올 때 대비)
+  addEventListener('keydown', (e) => { if (e.key === 'Shift') held = true; }, true);
+  addEventListener('keyup', (e) => { if (e.key === 'Shift') held = false; }, true);
+  addEventListener('blur', () => { held = false; });
 
   const rowOf = (cb) => cb.closest(ROW);
   const kindOf = (r) => r.tagName === 'TR' ? 'tr' : ['src-row', 'cp-item', 'pl-col-item'].find((c) => r.classList.contains(c)) || '';
@@ -61,7 +64,7 @@
 
   // Shift+클릭 때 글자가 드래그 선택되지 않게
   document.addEventListener('mousedown', (e) => {
-    if (!e.shiftKey || !last) return;
+    if (!(e.shiftKey || held) || !last) return;
     const t = e.target;
     const cb = t instanceof HTMLInputElement ? t : t.closest?.('label')?.querySelector('input[type=checkbox]');
     if (cb && ok(cb)) e.preventDefault();
@@ -72,7 +75,7 @@
     const cb = e.target;
     if (!ok(cb)) return;
     const info = describe(cb);
-    if (e.shiftKey && last && same(last, info) && last.key !== info.key) {
+    if ((e.shiftKey || held) && last && same(last, info) && last.key !== info.key) {
       const from = last.key, state = cb.checked;
       setTimeout(() => range(info, from, info.key, state), 0); // 누른 칸의 화면 처리가 끝난 뒤 사이 줄 처리
     }
